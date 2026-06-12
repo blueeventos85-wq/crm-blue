@@ -1,0 +1,1792 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blue Eventos · CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="app">
+    <!-- ============ SIDEBAR ============ -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo">
+          <i data-lucide="bar-chart-3"></i>
+        </div>
+        <div class="brand-text">
+          <span class="brand-name">Blue</span>
+          <span class="brand-sub">Eventos</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <p class="nav-label">Menu principal</p>
+        <ul>
+          <li>
+            <a href="#" class="nav-item active" data-page="home">
+              <i data-lucide="home"></i>
+              <span>Home</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="nav-item" data-page="dashboard">
+              <i data-lucide="layout-dashboard"></i>
+              <span>Dashboard</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="nav-item" data-page="crm">
+              <i data-lucide="kanban-square"></i>
+              <span>CRM</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="nav-item" data-page="clientes">
+              <i data-lucide="users"></i>
+              <span>Cliente da Base</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="nav-item" data-page="calendario">
+              <i data-lucide="calendar-days"></i>
+              <span>Calendário</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="nav-item" data-page="rotina">
+              <i data-lucide="clipboard-list"></i>
+              <span>Rotina Blue</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="nav-item" data-page="pomodoro">
+              <i data-lucide="timer"></i>
+              <span>Pomodoro</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="nav-item" data-page="conversas">
+              <i data-lucide="message-circle"></i>
+              <span>Conversas</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="nav-item" data-page="configuracoes">
+              <i data-lucide="settings"></i>
+              <span>Configurações</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="nav-item" data-page="auditoria">
+              <i data-lucide="shield"></i>
+              <span>Auditoria</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="nav-item" data-page="administrador">
+              <i data-lucide="shield-check"></i>
+              <span>Administrador</span>
+            </a>
+          </li>
+        </ul>
+
+        <p class="nav-label">Atalhos</p>
+        <ul>
+          <li>
+            <a href="#" class="nav-item">
+              <i data-lucide="file-text"></i>
+              <span>Obrigações</span>
+              <span class="nav-badge">12</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="nav-item">
+              <i data-lucide="inbox"></i>
+              <span>Documentos</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="nav-item">
+              <i data-lucide="life-buoy"></i>
+              <span>Suporte</span>
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-card">
+          <div class="user-avatar">CS</div>
+          <div class="user-info">
+            <p class="user-name">Camila Souza</p>
+            <p class="user-role">Contadora Sênior</p>
+          </div>
+          <button class="user-action" title="Sair">
+            <i data-lucide="log-out"></i>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ============ MAIN ============ -->
+    <main class="main">
+      <!-- HEADER -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="icon-btn menu-toggle" title="Menu">
+            <i data-lucide="menu"></i>
+          </button>
+          <div>
+            <h1 class="page-title" id="pageTitle">Home</h1>
+            <p class="page-subtitle" id="pageSubtitle">Bem-vinda de volta, Camila ✨</p>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <button class="icon-btn" id="themeToggle" title="Alternar tema" aria-label="Ativar tema escuro" aria-pressed="false">
+            <i data-lucide="moon"></i>
+          </button>
+          <button class="icon-btn" title="Notificações">
+            <i data-lucide="bell"></i>
+            <span class="dot"></span>
+          </button>
+          <button class="icon-btn" title="Mensagens">
+            <i data-lucide="message-square"></i>
+          </button>
+          <button class="btn-primary" id="primaryAction">
+            <i data-lucide="plus"></i>
+            <span>Novo cliente</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- CONTENT -->
+      <div class="content">
+        <!-- ============ HOME ============ -->
+        <section class="page active" id="page-home">
+          <header class="home-hero">
+            <div class="home-hero-content">
+              <h1 class="home-hero-title">Bem vindo a Blue Eventos</h1>
+              <p class="home-hero-sub">Acesse rapidamente os módulos e recursos do sistema</p>
+            </div>
+            <div class="home-hero-search">
+              <i data-lucide="search" aria-hidden="true"></i>
+              <input type="text" id="homeSearchInput" placeholder="Buscar módulos..." aria-label="Buscar módulos" />
+              <kbd>/</kbd>
+            </div>
+          </header>
+          <main class="home-main"></main>
+        </section>
+
+        <!-- ============ DASHBOARD ============ -->
+        <section class="page" id="page-dashboard">
+          <!-- Date Segmentation Control -->
+          <div class="dash-period-bar">
+            <div class="seg-control" id="dashPeriodSeg" role="tablist" aria-label="Filtro de período">
+              <button class="seg active" data-period="today" role="tab" aria-selected="true">Hoje</button>
+              <button class="seg" data-period="yesterday" role="tab" aria-selected="false">Ontem</button>
+              <button class="seg" data-period="week" role="tab" aria-selected="false">Semana</button>
+              <button class="seg" data-period="month" role="tab" aria-selected="false">Mês</button>
+              <button class="seg" data-period="custom" role="tab" aria-selected="false">Período</button>
+            </div>
+            <div class="dash-period-custom" id="dashCustomRange" style="display:none">
+              <input type="date" id="dashStartDate" aria-label="Data início">
+              <span>até</span>
+              <input type="date" id="dashEndDate" aria-label="Data fim">
+            </div>
+            <span class="dash-period-badge" id="dashPeriodBadge"></span>
+          </div>
+
+          <!-- KPI Row -->
+          <div class="dash-kpi-row" id="dashKpiRow">
+            <!-- Total de Leads -->
+            <div class="dash-widget kpi-card" data-kpi="total" role="button" tabindex="0" aria-label="Total de Leads: 1240">
+              <div class="kpi-head">
+                <span class="kpi-label">Total de Leads</span>
+                <div class="kpi-icon"><i data-lucide="users-round"></i></div>
+              </div>
+              <h2 class="kpi-value" id="kpiTotal">1.240</h2>
+              <span class="kpi-trend up" id="kpiTotalTrend"><i data-lucide="trending-up"></i> +8% vs mês anterior</span>
+              <canvas class="kpi-spark" id="sparkTotal" width="120" height="32"></canvas>
+            </div>
+            <!-- Finalizados -->
+            <div class="dash-widget kpi-card" data-kpi="finalizados" role="button" tabindex="0" aria-label="Finalizados: 410">
+              <div class="kpi-head">
+                <span class="kpi-label">Finalizados</span>
+                <div class="kpi-icon green"><i data-lucide="check-circle-2"></i></div>
+              </div>
+              <h2 class="kpi-value" id="kpiFin">410</h2>
+              <span class="kpi-trend up" id="kpiFinTrend"><i data-lucide="trending-up"></i> 33% do total</span>
+              <div class="kpi-donut-wrap">
+                <canvas class="kpi-donut" id="donutFin" width="40" height="40"></canvas>
+              </div>
+            </div>
+            <!-- Em Andamento -->
+            <div class="dash-widget kpi-card" data-kpi="andamento" role="button" tabindex="0" aria-label="Em Andamento: 620">
+              <div class="kpi-head">
+                <span class="kpi-label">Em Andamento</span>
+                <div class="kpi-icon blue"><i data-lucide="loader"></i></div>
+              </div>
+              <h2 class="kpi-value" id="kpiAnd">620</h2>
+              <span class="kpi-trend neutral" id="kpiAndTrend"><i data-lucide="minus"></i> 50% do total</span>
+              <div class="kpi-bar-mini">
+                <div class="kpi-bar-fill" style="width:50%"></div>
+              </div>
+            </div>
+            <!-- Pendentes -->
+            <div class="dash-widget kpi-card" data-kpi="pendentes" role="button" tabindex="0" aria-label="Pendentes: 210">
+              <div class="kpi-head">
+                <span class="kpi-label">Pendentes</span>
+                <div class="kpi-icon amber"><i data-lucide="alert-circle"></i></div>
+              </div>
+              <h2 class="kpi-value" id="kpiPen">210</h2>
+              <span class="kpi-trend down" id="kpiPenTrend"><i data-lucide="trending-down"></i> 17% do total</span>
+              <div class="kpi-bar-mini">
+                <div class="kpi-bar-fill amber" style="width:17%"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Row 2: Funil + Origens + Temperatura -->
+          <div class="dash-grid-3">
+            <!-- Funil por Cadência -->
+            <div class="dash-widget card">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title"><i data-lucide="filter"></i> Funil por Cadência</h3>
+                  <p class="card-sub">Conversão por etapas</p>
+                </div>
+              </div>
+              <div class="funnel-container" id="funnelContainer">
+                <!-- JS render -->
+              </div>
+            </div>
+            <!-- Origem dos Leads -->
+            <div class="dash-widget card">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title"><i data-lucide="compass"></i> Origem dos Leads</h3>
+                  <p class="card-sub">Distribuição por canal</p>
+                </div>
+              </div>
+              <div class="origins-container">
+                <canvas id="chartOrigins" aria-label="Distribuição de leads por origem" role="img"></canvas>
+                <ul class="origins-legend" id="originsLegend"></ul>
+              </div>
+            </div>
+            <!-- Temperatura -->
+            <div class="dash-widget card">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title"><i data-lucide="thermometer"></i> Temperatura</h3>
+                  <p class="card-sub">Distribuição dos leads</p>
+                </div>
+              </div>
+              <div class="temp-container" id="tempContainer">
+                <!-- JS render: 3 horizontal bars -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Row 3: Honorários + Lembrete -->
+          <div class="dash-grid-2">
+            <!-- Honorários -->
+            <div class="dash-widget card">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title"><i data-lucide="circle-dollar-sign"></i> Honorários</h3>
+                  <p class="card-sub">Faturamento por período</p>
+                </div>
+              </div>
+              <div class="honorarios-amount" id="honTotal">R$ 57.000</div>
+              <div class="chart-wrap">
+                <canvas id="chartHon" aria-label="Honorários por mês" role="img"></canvas>
+              </div>
+            </div>
+            <!-- Próximos Eventos -->
+            <div class="dash-widget card eventos-card">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title"><i data-lucide="calendar-days"></i> Próximos Eventos</h3>
+                  <p class="card-sub">Eventos agendados</p>
+                </div>
+              </div>
+              <div class="eventos-list" id="eventosList">
+                <!-- rendered by JS -->
+              </div>
+              <div class="card-footer">
+                <button class="btn-secondary eventos-cta" id="eventosCta">
+                  <i data-lucide="calendar-days"></i> Ver no Calendário
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ CRM ============ -->
+        <section class="page" id="page-crm">
+          <!-- Resumo por Cadência -->
+          <div class="cadence-section">
+            <div class="section-head">
+              <div>
+                <h2 class="section-title-main">Resumo por Cadência</h2>
+                <p class="section-sub">Clique em uma etapa para filtrar</p>
+              </div>
+              <div class="search-box small">
+                <i data-lucide="search"></i>
+                <input id="crmSearch" type="text" placeholder="Buscar lead por nome ou telefone..." />
+              </div>
+            </div>
+            <div class="cadence-grid" id="cadenceGrid">
+              <!-- preenchido via JS -->
+            </div>
+          </div>
+
+          <!-- Kanban / Pipeline -->
+          <div class="kanban-section">
+            <div class="section-head">
+              <div>
+                <h2 class="section-title-main">Pipeline de Leads</h2>
+                <p class="section-sub">Arraste um lead entre as colunas para mudar a cadência</p>
+              </div>
+              <div class="kanban-meta">
+                <span class="meta-pill"><i data-lucide="users"></i> <span id="kanbanTotal">0</span> leads</span>
+                <span class="meta-pill"><i data-lucide="circle-dollar-sign"></i> R$ <span id="kanbanValue">0</span></span>
+              </div>
+            </div>
+            <div class="kanban-board" id="kanbanBoard">
+              <!-- preenchido via JS -->
+            </div>
+            <div id="kanbanAnnouncer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+          </div>
+        </section>
+
+        <!-- ============ CLIENTES DA BASE ============ -->
+        <section class="page" id="page-clientes">
+          <div class="filters-bar">
+            <div class="search-box small">
+              <i data-lucide="search"></i>
+              <input type="text" id="clienteBaseSearch" placeholder="Buscar Cliente" />
+            </div>
+
+            <div class="filters-right">
+              <div class="filter-dropdown-wrap">
+                <button class="filter-btn" id="servicoFilterBtn" data-filter-trigger="servico">
+                  <i data-lucide="filter"></i> Tipo de Serviço
+                  <i data-lucide="chevron-down"></i>
+                </button>
+                <div class="filter-dropdown" id="servicoDropdown">
+                  <button class="filter-dropdown-item" data-svc="all">Todos</button>
+                  <button class="filter-dropdown-item" data-svc="Plataforma 360°">Plataforma 360°</button>
+                  <button class="filter-dropdown-item" data-svc="Totem de Fotos">Totem de Fotos</button>
+                  <button class="filter-dropdown-item" data-svc="Arco de lead">Arco de lead</button>
+                  <button class="filter-dropdown-item" data-svc="Setas de lead">Setas de lead</button>
+                  <button class="filter-dropdown-item" data-svc="Combo Blue">Combo Blue</button>
+                  <button class="filter-dropdown-item" data-svc="Filmagem de Drone">Filmagem de Drone</button>
+                  <button class="filter-dropdown-item" data-svc="Filmagem Terrestre">Filmagem Terrestre</button>
+                  <button class="filter-dropdown-item" data-svc="Som Profissional">Som Profissional</button>
+                  <button class="filter-dropdown-item" data-svc="Back Dropp">Back Dropp</button>
+                </div>
+              </div>
+              <div class="active-filter-badge" id="activeFilterBadge" hidden style="display:none!important">
+                <span id="activeFilterLabel"></span>
+                <button class="filter-badge-x" id="clearFilterBtn" aria-label="Limpar filtro">&times;</button>
+              </div>
+              <div class="view-toggle">
+                <button class="vt-btn active" data-view="grid"><i data-lucide="layout-grid"></i></button>
+                <button class="vt-btn" data-view="list"><i data-lucide="list"></i></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="cliente-base-summary" id="clienteBaseSummary">
+            <!-- atualizado via JS -->
+          </div>
+
+          <div class="client-grid" id="clientGrid">
+            <!-- cards injetados via JS (derivado dos leads) -->
+          </div>
+        </section>
+
+        <!-- ============ CALENDÁRIO ============ -->
+        <section class="page" id="page-calendario">
+          <div class="cal-toolbar">
+            <div class="cal-nav">
+              <button class="icon-btn" id="calPrev" aria-label="Mês anterior"><i data-lucide="chevron-left"></i></button>
+              <h3 class="cal-title" id="calTitle">Junho 2026</h3>
+              <button class="icon-btn" id="calNext" aria-label="Próximo mês"><i data-lucide="chevron-right"></i></button>
+              <button class="link-btn" id="calToday">Hoje</button>
+            </div>
+            <div class="cal-views">
+              <div class="seg-control" role="tablist" aria-label="Modo de visualização">
+                <button class="seg" role="tab" data-view="day" aria-label="Mostrar dia">Dia</button>
+                <button class="seg" role="tab" data-view="week" aria-label="Mostrar semana">Semana</button>
+                <button class="seg active" role="tab" data-view="month" aria-selected="true" aria-label="Mostrar mês">Mês</button>
+              </div>
+              <button class="btn-primary">
+                <i data-lucide="plus"></i> Novo evento
+              </button>
+            </div>
+          </div>
+
+          <div class="card cal-card" id="calCard">
+            <div class="cal-weekdays" id="calWeekdays">
+              <span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span>
+              <span>Qui</span><span>Sex</span><span>Sáb</span>
+            </div>
+            <div class="cal-grid" id="calGrid">
+              <!-- gerado por JS -->
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">Próximos eventos</h3>
+                <p class="card-sub">Agenda dos próximos dias</p>
+              </div>
+            </div>
+              <ul class="event-list" id="calUpcoming">
+                <!-- renderizado por JS (sync com Dashboard) -->
+              </ul>
+          </div>
+        </section>
+
+        <!-- ============ ROTINA BLUE ============ -->
+        <section class="page" id="page-rotina">
+          <div class="rotina-layout">
+            <!-- PAINEL LATERAL ESQUERDO -->
+            <aside class="rotina-sidebar">
+              <!-- Botão Criar Card -->
+              <button class="rotina-create-btn" id="rotinaCreateBtn">
+                <i data-lucide="plus"></i> Criar Card
+              </button>
+
+              <!-- Lembrete em Destaque -->
+              <div class="rotina-card rotina-reminder" id="rotinaReminder">
+                <!-- renderizado por JS -->
+              </div>
+
+              <!-- Filtros -->
+              <div class="rotina-card rotina-filters">
+                <h4 class="rotina-filters-title">Filtros</h4>
+                <div class="rotina-filter-list">
+                  <label class="rotina-filter-check"><input type="checkbox" checked data-filter="tarefa" /><span class="rotina-checkmark-sm"></span> Tarefas</label>
+                  <label class="rotina-filter-check"><input type="checkbox" checked data-filter="reuniao" /><span class="rotina-checkmark-sm"></span> Reuniões</label>
+                  <label class="rotina-filter-check"><input type="checkbox" checked data-filter="prazo" /><span class="rotina-checkmark-sm"></span> Prazos</label>
+                  <label class="rotina-filter-check"><input type="checkbox" checked data-filter="concluido" /><span class="rotina-checkmark-sm"></span> Concluído</label>
+                </div>
+              </div>
+            </aside>
+
+            <!-- ÁREA PRINCIPAL KANBAN -->
+            <div class="rotina-kanban-wrap">
+              <div class="rotina-kanban" id="rotinaKanban">
+                <!-- Coluna: Cadência / Demanda Recorrente -->
+                <div class="rotina-col" data-col="cadencia" id="rotinaColCadencia">
+                  <div class="rotina-col-head">
+                    <span class="rotina-col-dot cadencia"></span>
+                    <h3>Cadência / Demanda Recorrente</h3>
+                    <span class="rotina-col-count" id="rotinaCountCadencia">0</span>
+                  </div>
+                  <div class="rotina-col-list" id="rotinaListCadencia"></div>
+                </div>
+                <!-- Coluna: Em Andamento -->
+                <div class="rotina-col" data-col="andamento" id="rotinaColAndamento">
+                  <div class="rotina-col-head">
+                    <span class="rotina-col-dot andamento"></span>
+                    <h3>Em Andamento</h3>
+                    <span class="rotina-col-count" id="rotinaCountAndamento">0</span>
+                  </div>
+                  <div class="rotina-col-list" id="rotinaListAndamento"></div>
+                </div>
+                <!-- Coluna: Pendentes -->
+                <div class="rotina-col" data-col="pendentes" id="rotinaColPendentes">
+                  <div class="rotina-col-head">
+                    <span class="rotina-col-dot pendentes"></span>
+                    <h3>Pendentes</h3>
+                    <span class="rotina-col-count" id="rotinaCountPendentes">0</span>
+                  </div>
+                  <div class="rotina-col-list" id="rotinaListPendentes"></div>
+                </div>
+                <!-- Coluna: Concluído -->
+                <div class="rotina-col" data-col="concluido" id="rotinaColConcluido">
+                  <div class="rotina-col-head">
+                    <span class="rotina-col-dot concluido"></span>
+                    <h3>Concluído</h3>
+                    <span class="rotina-col-count" id="rotinaCountConcluido">0</span>
+                  </div>
+                  <div class="rotina-col-list" id="rotinaListConcluido"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal de detalhe/edição (Google Keep style) -->
+          <div class="rotina-detail-overlay rotina-hidden" id="rotinaDetailOverlay"></div>
+          <div class="rotina-detail-modal rotina-hidden" id="rotinaDetailModal">
+            <div class="rotina-detail-pin" title="Fixar nota"><i data-lucide="pin"></i></div>
+            <input type="text" class="rotina-detail-title" id="rotinaDetailTitle" placeholder="Título" autocomplete="off" />
+            <textarea class="rotina-detail-desc" id="rotinaDetailBody" placeholder="Adicionar uma nota..." rows="6"></textarea>
+            <div class="rotina-detail-colors" id="rotinaDetailColors">
+              <button class="rotina-color-dot" data-color="blue" style="background:#DBEAFE" title="Azul"></button>
+              <button class="rotina-color-dot" data-color="pink" style="background:#FCE7F3" title="Rosa"></button>
+              <button class="rotina-color-dot" data-color="yellow" style="background:#FEF9C3" title="Amarelo"></button>
+              <button class="rotina-color-dot" data-color="purple" style="background:#EDE9FE" title="Lilás"></button>
+              <button class="rotina-color-dot" data-color="green" style="background:#D1FAE5" title="Verde"></button>
+            </div>
+            <p class="rotina-detail-edited" id="rotinaDetailEdited"></p>
+            <div class="rotina-detail-toolbar">
+              <div class="rotina-detail-toolbar-left"></div>
+              <button class="rotina-detail-close" id="rotinaDetailClose">Fechar</button>
+            </div>
+          </div>
+
+          <!-- Modal Criar Card (Google Keep style) -->
+          <div class="rotina-create-overlay rotina-hidden" id="rotinaCreateOverlay"></div>
+          <div class="rotina-create-modal rotina-hidden" id="rotinaCreateModal">
+            <div class="rotina-create-pin" id="rotinaCreatePin" title="Fixar nota"><i data-lucide="pin"></i></div>
+            <input type="text" class="rotina-create-title" id="rotinaCreateTitle" placeholder="Título" autocomplete="off" />
+            <textarea class="rotina-create-desc" id="rotinaCreateDesc" placeholder="Criar uma nota..." rows="4"></textarea>
+
+            <!-- Chips de cor -->
+            <div class="rotina-create-colors" id="rotinaCreateColors">
+              <button class="rotina-color-dot active" data-color="blue" style="background:#DBEAFE" title="Azul"></button>
+              <button class="rotina-color-dot" data-color="pink" style="background:#FCE7F3" title="Rosa"></button>
+              <button class="rotina-color-dot" data-color="yellow" style="background:#FEF9C3" title="Amarelo"></button>
+              <button class="rotina-color-dot" data-color="purple" style="background:#EDE9FE" title="Lilás"></button>
+              <button class="rotina-color-dot" data-color="green" style="background:#D1FAE5" title="Verde"></button>
+            </div>
+
+            <!-- Barra de ferramentas inferior -->
+            <div class="rotina-create-toolbar">
+              <div class="rotina-create-toolbar-left">
+                <!-- Lembrete -->
+                <div class="rotina-toolbar-dropdown-wrap">
+                  <button class="rotina-toolbar-btn" id="rotinaReminderBtn" title="Lembrete"><i data-lucide="bell"></i></button>
+                  <div class="rotina-toolbar-dropdown" id="rotinaReminderDropdown" hidden>
+                    <button class="rotina-dropdown-item" data-reminder="custom"><i data-lucide="calendar-plus"></i> Escolher data e hora</button>
+                  </div>
+                </div>
+                <!-- Cor (abre paleta) -->
+                <button class="rotina-toolbar-btn" id="rotinaColorBtn" title="Mudar cor"><i data-lucide="palette"></i></button>
+              </div>
+              <button class="rotina-create-close" id="rotinaCreateClose">Fechar</button>
+            </div>
+            <!-- Date/Time Picker (oculto por padrão) -->
+            <div class="rotina-datetime-panel rotina-hidden" id="rotinaDateTimePanel">
+              <div class="rotina-datetime-row">
+                <label class="rotina-datetime-label">Data</label>
+                <input type="date" class="rotina-datetime-input" id="rotinaDatePicker" />
+              </div>
+              <div class="rotina-datetime-row">
+                <label class="rotina-datetime-label">Hora</label>
+                <input type="time" class="rotina-datetime-input" id="rotinaTimePicker" value="09:00" />
+              </div>
+              <div class="rotina-datetime-actions">
+                <button class="rotina-datetime-cancel" id="rotinaDateTimeCancel">Cancelar</button>
+                <button class="rotina-datetime-confirm" id="rotinaDateTimeConfirm"><i data-lucide="check"></i> Confirmar</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ CONFIGURAÇÕES ============ -->
+        <section class="page" id="page-configuracoes">
+          <div class="settings-layout">
+            <aside class="settings-nav">
+              <a href="#" class="settings-link active">
+                <i data-lucide="user"></i> Perfil
+              </a>
+              <a href="#" class="settings-link">
+                <i data-lucide="users-round"></i> Equipe
+              </a>
+              <a href="#" class="settings-link">
+                <i data-lucide="bell"></i> Notificações
+              </a>
+              <a href="#" class="settings-link">
+                <i data-lucide="calculator"></i> Parâmetros contábeis
+              </a>
+              <a href="#" class="settings-link">
+                <i data-lucide="shield"></i> Segurança
+              </a>
+              <a href="#" class="settings-link">
+                <i data-lucide="credit-card"></i> Plano
+              </a>
+            </aside>
+
+            <div class="settings-content">
+              <div class="card">
+                <div class="card-header">
+                  <div>
+                    <h3 class="card-title">Perfil do usuário</h3>
+                    <p class="card-sub">Informações pessoais e profissionais</p>
+                  </div>
+                </div>
+
+                <div class="profile-row">
+                  <div class="profile-photo">
+                    <div class="big-avatar">CS</div>
+                    <button class="link-btn"><i data-lucide="camera"></i> Alterar foto</button>
+                  </div>
+                  <div class="profile-form">
+                    <div class="form-grid">
+                      <div class="form-group">
+                        <label>Nome completo</label>
+                        <input type="text" value="Camila Souza" />
+                      </div>
+                      <div class="form-group">
+                        <label>Cargo</label>
+                        <input type="text" value="Contadora Sênior" />
+                      </div>
+                      <div class="form-group">
+                        <label>E-mail</label>
+                        <input type="email" value="camila@bluecontabilidade.com.br" />
+                      </div>
+                      <div class="form-group">
+                        <label>Telefone</label>
+                        <input type="tel" value="(11) 98765-4321" />
+                      </div>
+                      <div class="form-group full">
+                        <label>Bio</label>
+                        <textarea rows="3">Contadora apaixonada por transformar números em decisões estratégicas. Atendimento consultivo para PMEs.</textarea>
+                      </div>
+                    </div>
+                    <div class="form-actions">
+                      <button class="btn-ghost">Cancelar</button>
+                      <button class="btn-primary"><i data-lucide="save"></i> Salvar alterações</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-header">
+                  <div>
+                    <h3 class="card-title">Equipe</h3>
+                    <p class="card-sub">Gerencie quem tem acesso ao CRM</p>
+                  </div>
+                  <button class="btn-primary small">
+                    <i data-lucide="user-plus"></i> Convidar
+                  </button>
+                </div>
+                <ul class="team-list">
+                  <li class="team-item">
+                    <div class="avatar avatar-blue">CS</div>
+                    <div>
+                      <p class="client-name">Camila Souza</p>
+                      <p class="client-cnpj">camila@bluecontabilidade.com.br</p>
+                    </div>
+                    <span class="tag tag-blue">Admin</span>
+                  </li>
+                  <li class="team-item">
+                    <div class="avatar avatar-green">RF</div>
+                    <div>
+                      <p class="client-name">Rafaela Ferreira</p>
+                      <p class="client-cnpj">rafaela@bluecontabilidade.com.br</p>
+                    </div>
+                    <span class="tag tag-green">Contadora</span>
+                  </li>
+                  <li class="team-item">
+                    <div class="avatar avatar-amber">JP</div>
+                    <div>
+                      <p class="client-name">João Pedro</p>
+                      <p class="client-cnpj">joao@bluecontabilidade.com.br</p>
+                    </div>
+                    <span class="tag tag-amber">Auxiliar</span>
+                  </li>
+                  <li class="team-item">
+                    <div class="avatar avatar-purple">MA</div>
+                    <div>
+                      <p class="client-name">Marina Alves</p>
+                      <p class="client-cnpj">marina@bluecontabilidade.com.br</p>
+                    </div>
+                    <span class="tag tag-purple">Atendimento</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div class="card">
+                <div class="card-header">
+                  <div>
+                    <h3 class="card-title">Notificações</h3>
+                    <p class="card-sub">Como você quer ser avisado</p>
+                  </div>
+                </div>
+                <ul class="toggle-list">
+                  <li class="toggle-item">
+                    <div>
+                      <p class="toggle-title">E-mail · Vencimentos de obrigações</p>
+                      <p class="toggle-desc">Receber alerta 3 dias antes de cada obrigação</p>
+                    </div>
+                    <label class="switch on"><span></span></label>
+                  </li>
+                  <li class="toggle-item">
+                    <div>
+                      <p class="toggle-title">WhatsApp · Novos clientes</p>
+                      <p class="toggle-desc">Avisar quando um cliente entrar em implantação</p>
+                    </div>
+                    <label class="switch on"><span></span></label>
+                  </li>
+                  <li class="toggle-item">
+                    <div>
+                      <p class="toggle-title">Sistema · Reuniões do dia</p>
+                      <p class="toggle-desc">Resumo diário às 08:00 com a agenda</p>
+                    </div>
+                    <label class="switch on"><span></span></label>
+                  </li>
+                  <li class="toggle-item">
+                    <div>
+                      <p class="toggle-title">E-mail · Inadimplência</p>
+                      <p class="toggle-desc">Notificar clientes com mais de 15 dias em atraso</p>
+                    </div>
+                    <label class="switch"><span></span></label>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ POMODORO ============ -->
+        <section class="page" id="page-pomodoro">
+          <div class="pomo-full">
+            <!-- Integrated Header -->
+            <header class="pomo-header">
+              <div class="pomo-header-left">
+                <button class="pomo-hdr-btn" title="Menu">
+                  <i data-lucide="menu"></i>
+                </button>
+                <div>
+                  <h1 class="pomo-title">Pomodoro</h1>
+                  <p class="pomo-subtitle">Gestao de tempo e foco</p>
+                </div>
+              </div>
+              <div class="pomo-header-right">
+                <button class="pomo-hdr-btn" title="Modo noturno">
+                  <i data-lucide="moon"></i>
+                </button>
+                <button class="pomo-hdr-btn" title="Notificacoes">
+                  <i data-lucide="bell"></i>
+                </button>
+                <button class="pomo-hdr-btn" title="Chat">
+                  <i data-lucide="message-square"></i>
+                </button>
+                <button class="pomo-hdr-btn pomo-hdr-add" title="Novo">
+                  <i data-lucide="plus"></i>
+                </button>
+              </div>
+            </header>
+
+            <!-- Tabs -->
+            <div class="pomo-tabs" id="pomoTabs">
+              <button class="pomo-tab active" data-mode="pomodoro">Pomodoro</button>
+              <button class="pomo-tab" data-mode="shortBreak">Pausa Curta</button>
+              <button class="pomo-tab" data-mode="longBreak">Pausa Longa</button>
+            </div>
+
+            <!-- Circular Clock -->
+            <div class="pomo-clock-ring">
+              <div class="pomo-clock" id="pomoClock">25:00</div>
+            </div>
+
+            <!-- Controls -->
+            <div class="pomo-controls">
+              <button class="pomo-ctrl-btn pomo-reset-btn" id="pomoResetBtn" title="Resetar">
+                <i data-lucide="rotate-ccw"></i>
+              </button>
+              <button class="pomo-ctrl-btn pomo-play-btn" id="pomoStartBtn" title="Iniciar">
+                <i data-lucide="play" id="pomoPlayIcon"></i>
+              </button>
+            </div>
+
+            <!-- Cycle Dots -->
+            <div class="pomo-footer">
+              <div class="pomo-dots" id="pomoDots">
+                <span class="pomo-dot active"></span>
+                <span class="pomo-dot"></span>
+                <span class="pomo-dot"></span>
+                <span class="pomo-dot"></span>
+              </div>
+              <span class="pomo-cycle-num" id="pomoCycleNum">#1</span>
+            </div>
+
+            <!-- Motivation -->
+            <p class="pomo-motivation">Voce consegue! &#128293;</p>
+
+            <!-- Settings button -->
+            <button class="pomo-settings-trigger" id="pomoSettingsBtn" title="Configuracoes">
+              <i data-lucide="settings"></i> Settings
+            </button>
+          </div>
+
+          <!-- SETTINGS MODAL -->
+          <div class="pomo-settings-overlay rotina-hidden" id="pomoSettingsOverlay">
+            <div class="pomo-settings-modal">
+              <div class="pomo-settings-header">
+                <h3>Timer Settings</h3>
+                <button class="pomo-settings-close" id="pomoSettingsClose"><i data-lucide="x"></i></button>
+              </div>
+              <div class="pomo-settings-body">
+                <div class="pomo-settings-section">
+                  <label class="pomo-settings-label">Timer (minutes)</label>
+                  <div class="pomo-settings-row">
+                    <div class="pomo-settings-field">
+                      <span>Pomodoro</span>
+                      <input type="number" class="pomo-settings-input" id="pomoInputPomodoro" min="1" max="90" value="25" />
+                    </div>
+                    <div class="pomo-settings-field">
+                      <span>Short Break</span>
+                      <input type="number" class="pomo-settings-input" id="pomoInputShort" min="1" max="30" value="5" />
+                    </div>
+                    <div class="pomo-settings-field">
+                      <span>Long Break</span>
+                      <input type="number" class="pomo-settings-input" id="pomoInputLong" min="1" max="60" value="15" />
+                    </div>
+                  </div>
+                </div>
+                <div class="pomo-settings-section">
+                  <label class="pomo-settings-label">Auto Start</label>
+                  <div class="pomo-settings-row">
+                    <div class="pomo-settings-toggle-row">
+                      <span>Auto Start Breaks</span>
+                      <label class="pomo-toggle"><input type="checkbox" id="pomoAutoBreak" /><span class="pomo-toggle-slider"></span></label>
+                    </div>
+                    <div class="pomo-settings-toggle-row">
+                      <span>Auto Start Pomodoros</span>
+                      <label class="pomo-toggle"><input type="checkbox" id="pomoAutoPomodoro" /><span class="pomo-toggle-slider"></span></label>
+                    </div>
+                  </div>
+                </div>
+                <div class="pomo-settings-section">
+                  <label class="pomo-settings-label">Interval</label>
+                  <div class="pomo-settings-row">
+                    <div class="pomo-settings-field">
+                      <span>Long Break interval</span>
+                      <input type="number" class="pomo-settings-input" id="pomoInputInterval" min="2" max="10" value="4" />
+                    </div>
+                  </div>
+                </div>
+                <div class="pomo-settings-section">
+                  <label class="pomo-settings-label">Sound</label>
+                  <div class="pomo-settings-row">
+                    <div class="pomo-settings-field">
+                      <span>Alarm Sound</span>
+                      <select class="pomo-settings-select" id="pomoAlarmSound">
+                        <option value="digital">Digital</option>
+                        <option value="bell">Bell</option>
+                        <option value="chime">Chime</option>
+                      </select>
+                    </div>
+                    <div class="pomo-settings-field">
+                      <span>Volume</span>
+                      <input type="range" class="pomo-settings-range" id="pomoVolume" min="0" max="100" value="70" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="pomo-settings-footer">
+                <button class="pomo-settings-ok" id="pomoSettingsOk">OK</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ CONVERSAS ============ -->
+        <section class="page" id="page-conversas">
+          <div class="coming-soon">
+            <div class="coming-soon-icon">
+              <i data-lucide="message-circle"></i>
+            </div>
+            <h2 class="coming-soon-title">Conversas</h2>
+            <p class="coming-soon-text">Esta tela esta em desenvolvimento.<br>Em breve voce podera gerenciar suas conversas por aqui.</p>
+            <div class="coming-soon-badge">
+              <i data-lucide="wrench"></i> Em breve
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ AUDITORIA ============ -->
+        <section class="page" id="page-auditoria">
+          <!-- Header -->
+          <div class="audit-header">
+            <div>
+              <h2 class="audit-title">AUDITORIA</h2>
+              <p class="audit-subtitle">Rastreamento completo de todas as ações do sistema</p>
+            </div>
+            <div class="audit-header-actions">
+              <button class="btn-ghost" id="auditRefreshBtn"><i data-lucide="refresh-cw"></i> Atualizar</button>
+              <button class="btn-ghost" id="auditExportBtn"><i data-lucide="download"></i> Exportar CSV</button>
+            </div>
+          </div>
+
+          <!-- KPI Cards -->
+          <div class="audit-kpi-row">
+            <div class="audit-kpi-card">
+              <div class="audit-kpi-icon blue"><i data-lucide="history"></i></div>
+              <div>
+                <p class="audit-kpi-label">Ações Hoje</p>
+                <h3 class="audit-kpi-value" id="auditKpiAcoes">1.247</h3>
+              </div>
+            </div>
+            <div class="audit-kpi-card">
+              <div class="audit-kpi-icon green"><i data-lucide="users"></i></div>
+              <div>
+                <p class="audit-kpi-label">Usuários Ativos Hoje</p>
+                <h3 class="audit-kpi-value" id="auditKpiUsuarios">8</h3>
+              </div>
+            </div>
+            <div class="audit-kpi-card">
+              <div class="audit-kpi-icon purple"><i data-lucide="mouse-pointer"></i></div>
+              <div>
+                <p class="audit-kpi-label">Páginas Visitadas</p>
+                <h3 class="audit-kpi-value" id="auditKpiPaginas">34</h3>
+              </div>
+            </div>
+            <div class="audit-kpi-card">
+              <div class="audit-kpi-icon amber"><i data-lucide="info"></i></div>
+              <div>
+                <p class="audit-kpi-label">Total Registros</p>
+                <h3 class="audit-kpi-value" id="auditKpiTotal">18.502</h3>
+              </div>
+            </div>
+          </div>
+
+          <!-- Filtros -->
+          <div class="audit-filters">
+            <div class="audit-filters-row">
+              <div class="audit-filter-group">
+                <label>Linhas</label>
+                <select id="auditFilterRows">
+                  <option value="50">50</option>
+                  <option value="100" selected>100</option>
+                  <option value="250">250</option>
+                  <option value="500">500</option>
+                </select>
+              </div>
+              <div class="audit-filter-group">
+                <label>Período</label>
+                <select id="auditFilterPeriodo">
+                  <option value="hoje" selected>Hoje</option>
+                  <option value="7d">Últimos 7 dias</option>
+                  <option value="30d">Últimos 30 dias</option>
+                  <option value="mes">Este mês</option>
+                </select>
+              </div>
+              <div class="audit-filter-group">
+                <label>Ação</label>
+                <select id="auditFilterAcao">
+                  <option value="all" selected>Todas as Ações</option>
+                  <option value="Logins">Logins</option>
+                  <option value="Acessos">Acessos</option>
+                  <option value="Atualizações">Atualizações</option>
+                  <option value="Inclusões">Inclusões</option>
+                  <option value="Exclusões">Exclusões</option>
+                </select>
+              </div>
+              <div class="audit-filter-group">
+                <label>Módulo/Página</label>
+                <select id="auditFilterModulo">
+                  <option value="all">Todos</option>
+                  <option value="crm">CRM</option>
+                  <option value="clientes">Clientes</option>
+                  <option value="calendario">Calendário</option>
+                  <option value="rotina">Rotina</option>
+                  <option value="dashboard">Dashboard</option>
+                </select>
+              </div>
+              <div class="audit-filter-group">
+                <label>Funcionário</label>
+                <select id="auditFilterFunc">
+                  <option value="all">Todos</option>
+                  <option value="camila">Camila Souza</option>
+                  <option value="rafaela">Rafaela Ferreira</option>
+                  <option value="joao">João Pedro</option>
+                  <option value="marina">Marina Alves</option>
+                </select>
+              </div>
+              <div class="audit-filter-group">
+                <label>Dispositivo</label>
+                <select id="auditFilterDevice">
+                  <option value="all">Todos</option>
+                  <option value="desktop">Desktop</option>
+                  <option value="mobile">Mobile</option>
+                </select>
+              </div>
+            </div>
+            <div class="audit-search">
+              <i data-lucide="search"></i>
+              <input type="text" id="auditSearchInput" placeholder="Pesquisar..." />
+            </div>
+          </div>
+
+          <!-- Tabs -->
+          <div class="audit-tabs">
+            <button class="audit-tab active" data-audit-tab="historico">Histórico de Ações</button>
+            <button class="audit-tab" data-audit-tab="tempo">Tempo por Página</button>
+            <button class="audit-tab" data-audit-tab="educacao">Educação</button>
+          </div>
+
+          <!-- Tab: Histórico de Ações -->
+          <div class="audit-tab-content active" id="auditTabHistorico">
+            <div class="audit-table-wrap">
+              <table class="audit-table">
+                <thead>
+                  <tr>
+                    <th>Usuário</th>
+                    <th>Ação</th>
+                    <th>Módulo</th>
+                    <th>Dispositivo</th>
+                    <th>Data/Hora</th>
+                  </tr>
+                </thead>
+                <tbody id="auditTableBody">
+                </tbody>
+              </table>
+            </div>
+            <div class="audit-pagination" id="auditPagination"></div>
+          </div>
+
+          <!-- Tab: Tempo por Página -->
+          <div class="audit-tab-content" id="auditTabTempo">
+            <div class="audit-table-wrap">
+              <table class="audit-table">
+                <thead>
+                  <tr>
+                    <th>Página</th>
+                    <th>Tempo Médio</th>
+                    <th>Visitas</th>
+                    <th>Usuários Únicos</th>
+                    <th>Taxa de Retorno</th>
+                  </tr>
+                </thead>
+                <tbody id="auditTempoBody">
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Tab: Educação -->
+          <div class="audit-tab-content" id="auditTabEducacao">
+            <div class="audit-edu-grid">
+              <div class="audit-edu-card">
+                <i data-lucide="book-open"></i>
+                <h4>Guia de Uso do Sistema</h4>
+                <p>Como navegar e utilizar todas as funcionalidades do CRM Blue.</p>
+                <button class="btn-ghost small">Ler mais</button>
+              </div>
+              <div class="audit-edu-card">
+                <i data-lucide="shield-check"></i>
+                <h4>Boas Práticas de Segurança</h4>
+                <p>Proteção de dados, senhas seguras e prevenção contra acessos indevidos.</p>
+                <button class="btn-ghost small">Ler mais</button>
+              </div>
+              <div class="audit-edu-card">
+                <i data-lucide="zap"></i>
+                <h4>Atalhos e Dicas</h4>
+                <p>Produtividade com atalhos de teclado e dicas de uso rápido.</p>
+                <button class="btn-ghost small">Ler mais</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================
+             ADMINISTRADOR VIEW
+             ============================================ -->
+        <section class="page" id="page-administrador">
+          <!-- Header -->
+          <div class="admin-header">
+            <div>
+              <h2 class="admin-title"><i data-lucide="shield-check"></i> Administrador</h2>
+              <p class="admin-subtitle">Gerencie membros, permissões e convites</p>
+            </div>
+            <button class="btn-primary" id="adminNewMemberBtn"><i data-lucide="plus"></i> Novo Membro</button>
+          </div>
+
+          <!-- Tabs -->
+          <div class="admin-tabs">
+            <button class="admin-tab active" data-admin-tab="pendentes"><i data-lucide="key"></i> Pendentes</button>
+            <button class="admin-tab" data-admin-tab="usuarios"><i data-lucide="users"></i> Usuários</button>
+            <button class="admin-tab" data-admin-tab="permissoes"><i data-lucide="lock"></i> Permissões</button>
+            <button class="admin-tab" data-admin-tab="desenvolvimento"><i data-lucide="graduation-cap"></i> Desenvolvimento</button>
+          </div>
+
+          <!-- Tab: Pendentes -->
+          <div class="admin-tab-content active" data-admin-tab-content="pendentes">
+            <div class="admin-section-header">
+              <p class="admin-section-text">Convites pendentes de aprovação</p>
+            </div>
+            <div class="admin-table-wrap">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>Email</th>
+                    <th>Data do Convite</th>
+                    <th>Convidado por</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="adminPendentesBody">
+                  <tr>
+                    <td>Fernanda Lima</td>
+                    <td>fernanda@blueeventos.com</td>
+                    <td>10/06/2026</td>
+                    <td>Camila Souza</td>
+                    <td class="admin-actions-cell">
+                      <button class="btn-sm btn-primary">Aprovar</button>
+                      <button class="btn-sm btn-outline">Rejeitar</button>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Ricardo Santos</td>
+                    <td>ricardo@blueeventos.com</td>
+                    <td>09/06/2026</td>
+                    <td>Rafaela Ferreira</td>
+                    <td class="admin-actions-cell">
+                      <button class="btn-sm btn-primary">Aprovar</button>
+                      <button class="btn-sm btn-outline">Rejeitar</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Tab: Usuários -->
+          <div class="admin-tab-content" data-admin-tab-content="usuarios">
+            <div class="admin-section-header">
+              <p class="admin-section-text">Membros cadastrados na plataforma</p>
+            </div>
+            <div class="admin-table-wrap">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>Email</th>
+                    <th>Cargo</th>
+                    <th>Status</th>
+                    <th>Cadastro</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><div class="admin-user-cell"><span class="admin-avatar">CS</span> Camila Souza</div></td>
+                    <td>camila@blueeventos.com</td>
+                    <td><span class="admin-badge admin-badge-admin">Administrador</span></td>
+                    <td><span class="admin-status admin-status-ativo">Ativo</span></td>
+                    <td>01/01/2026</td>
+                    <td class="admin-actions-cell">
+                      <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
+                      <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td><div class="admin-user-cell"><span class="admin-avatar">RF</span> Rafaela Ferreira</div></td>
+                    <td>rafaela@blueeventos.com</td>
+                    <td><span class="admin-badge admin-badge-admin">Administrador</span></td>
+                    <td><span class="admin-status admin-status-ativo">Ativo</span></td>
+                    <td>15/02/2026</td>
+                    <td class="admin-actions-cell">
+                      <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
+                      <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td><div class="admin-user-cell"><span class="admin-avatar">JP</span> João Pedro</div></td>
+                    <td>joao@blueeventos.com</td>
+                    <td><span class="admin-badge admin-badge-marketing">Marketing</span></td>
+                    <td><span class="admin-status admin-status-ativo">Ativo</span></td>
+                    <td>20/03/2026</td>
+                    <td class="admin-actions-cell">
+                      <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
+                      <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Tab: Permissões -->
+          <div class="admin-tab-content" data-admin-tab-content="permissoes">
+            <div class="admin-section-header">
+              <p class="admin-section-text">Defina quais módulos cada perfil pode acessar</p>
+              <div class="admin-section-actions">
+                <input type="text" class="admin-input" placeholder="Novo perfil…" id="adminNovoPerfilInput" />
+                <button class="btn-outline" id="adminAddPerfilBtn"><i data-lucide="plus"></i> Adicionar Perfil</button>
+                <button class="btn-primary" id="adminSavePermsBtn"><i data-lucide="save"></i> Salvar Permissões</button>
+              </div>
+            </div>
+            <div class="admin-table-wrap">
+              <table class="admin-table admin-table-perms">
+                <thead>
+                  <tr>
+                    <th class="perm-col-action">Módulo / Ação</th>
+                    <th class="perm-col-role">Administrador</th>
+                    <th class="perm-col-role">Marketing</th>
+                  </tr>
+                </thead>
+                <tbody id="adminPermsBody">
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Tab: Desenvolvimento -->
+          <div class="admin-tab-content" data-admin-tab-content="desenvolvimento">
+            <div class="admin-section-header">
+              <p class="admin-section-text">Configurações avançadas e ferramentas de desenvolvimento</p>
+            </div>
+            <div class="admin-dev-grid">
+              <div class="admin-dev-card">
+                <div class="admin-dev-icon blue"><i data-lucide="database"></i></div>
+                <h4>Banco de Dados</h4>
+                <p>Gerenciar tabelas e migrações do Supabase.</p>
+                <button class="btn-outline btn-sm">Abrir Console</button>
+              </div>
+              <div class="admin-dev-card">
+                <div class="admin-dev-icon green"><i data-lucide="terminal"></i></div>
+                <h4>Logs do Sistema</h4>
+                <p>Visualizar logs de erro e depuração.</p>
+                <button class="btn-outline btn-sm">Ver Logs</button>
+              </div>
+              <div class="admin-dev-card">
+                <div class="admin-dev-icon purple"><i data-lucide="plug"></i></div>
+                <h4>Integrações</h4>
+                <p>Gerenciar chaves de API e webhooks.</p>
+                <button class="btn-outline btn-sm">Configurar</button>
+              </div>
+              <div class="admin-dev-card">
+                <div class="admin-dev-icon orange"><i data-lucide="hard-drive"></i></div>
+                <h4>Backup & Restore</h4>
+                <p>Exportar ou importar dados do sistema.</p>
+                <button class="btn-outline btn-sm">Gerenciar</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+        <!-- ============ DRAWER: PERFIL DO CLIENTE ============ -->
+  <div class="drawer-overlay" id="drawerOverlay"></div>
+  <aside class="drawer" id="clientDrawer">
+    <div class="drawer-head">
+      <div class="drawer-title">
+        <div class="avatar avatar-blue lg" id="drawerAvatar">TS</div>
+        <div>
+          <h3 id="drawerName">Tech Solutions LTDA</h3>
+          <p id="drawerCnpj">12.345.678/0001-90</p>
+        </div>
+      </div>
+      <button class="icon-btn" id="drawerClose"><i data-lucide="x"></i></button>
+    </div>
+
+    <div class="drawer-tabs">
+      <button class="d-tab active">Visão geral</button>
+      <button class="d-tab">Documentos</button>
+      <button class="d-tab">Histórico</button>
+      <button class="d-tab">Obrigações</button>
+    </div>
+
+    <div class="drawer-body">
+      <div class="info-grid">
+        <div>
+          <p class="info-label">Regime</p>
+          <p class="info-value">Lucro Presumido</p>
+        </div>
+        <div>
+          <p class="info-label">Status</p>
+          <p class="info-value"><span class="status status-active">Ativo</span></p>
+        </div>
+        <div>
+          <p class="info-label">Responsável</p>
+          <p class="info-value">Camila Souza</p>
+        </div>
+        <div>
+          <p class="info-label">Cliente desde</p>
+          <p class="info-value">Mar/2022</p>
+        </div>
+      </div>
+
+      <h4 class="section-title">Situação fiscal/contábil</h4>
+      <div class="situation-grid">
+        <div class="sit-item ok">
+          <i data-lucide="check-circle-2"></i>
+          <div>
+            <p>Certidões negativas</p>
+            <span>Regular · vence em 45 dias</span>
+          </div>
+        </div>
+        <div class="sit-item warn">
+          <i data-lucide="alert-circle"></i>
+          <div>
+            <p>SPED Contribuições</p>
+            <span>Pendente · vence 10/06</span>
+          </div>
+        </div>
+        <div class="sit-item ok">
+          <i data-lucide="check-circle-2"></i>
+          <div>
+            <p>Folha de pagamento</p>
+            <span>Em dia · próxima em 05/06</span>
+          </div>
+        </div>
+        <div class="sit-item ok">
+          <i data-lucide="check-circle-2"></i>
+          <div>
+            <p>Conciliação bancária</p>
+            <span>Concluída · 100%</span>
+          </div>
+        </div>
+      </div>
+
+      <h4 class="section-title">Histórico de interações</h4>
+      <ul class="timeline">
+        <li>
+          <span class="tl-dot" style="background:var(--primary-blue)"></span>
+          <div>
+            <p class="tl-title">Reunião de fechamento · Abril</p>
+            <p class="tl-meta">28/04/2026 · 45 min · com João Silva</p>
+            <p class="tl-desc">Apresentados resultados do trimestre e alinhamento de estratégias tributárias.</p>
+          </div>
+        </li>
+        <li>
+          <span class="tl-dot" style="background:#10b981"></span>
+          <div>
+            <p class="tl-title">E-mail · Documentos recebidos</p>
+            <p class="tl-meta">22/04/2026 · Notas fiscais de abril</p>
+            <p class="tl-desc">Cliente enviou XMLs de NF-e para conciliação.</p>
+          </div>
+        </li>
+        <li>
+          <span class="tl-dot" style="background:#a855f7"></span>
+          <div>
+            <p class="tl-title">Ligação · Planejamento tributário</p>
+            <p class="tl-meta">15/04/2026 · 20 min · com a sócia Ana</p>
+            <p class="tl-desc">Avaliação de mudança de regime para 2027.</p>
+          </div>
+        </li>
+        <li>
+          <span class="tl-dot" style="background:#f59e0b"></span>
+          <div>
+            <p class="tl-title">Entrega · ECF 2025</p>
+            <p class="tl-meta">10/04/2026 · Sistema</p>
+            <p class="tl-desc">Obrigação entregue no prazo com sucesso.</p>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </aside>
+
+  <!-- ============ MODAL: DETALHES DO LEAD ============ -->
+  <div class="modal-overlay" id="leadModalOverlay"></div>
+  <div class="modal modal-lg" id="leadModal" role="dialog" aria-labelledby="leadModalTitle">
+    <div class="modal-head">
+      <div class="modal-head-left">
+        <div class="modal-avatar" id="leadModalAvatar">TS</div>
+        <div>
+          <h2 id="leadModalTitle">Tech Solutions LTDA</h2>
+          <p class="modal-meta">
+            <span id="leadModalCreated">Criado em 15/04/2026 às 10:32</span>
+            <span class="dot-sep">·</span>
+            <span>Último atendimento: <strong id="leadModalLastTouch">28/05/2026</strong></span>
+          </p>
+        </div>
+      </div>
+      <div class="modal-head-right">
+        <span class="thermal-tag" id="leadModalThermal">Quente</span>
+      <span class="sync-badge" id="leadSyncBadge" hidden data-tooltip="Este lead espelha o registro em Clientes da Base">
+        <i data-lucide="refresh-cw"></i> Sincronizado com Clientes da Base
+      </span>
+        <button class="btn-ghost small" data-action="history" title="Histórico">
+          <i data-lucide="history"></i> Histórico
+        </button>
+        <button class="btn-ghost small" data-action="whatsapp" title="Abrir WhatsApp">
+          <i data-lucide="message-circle"></i> WhatsApp
+        </button>
+        <button class="icon-btn small" data-action="close-modal" title="Fechar">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Barra de progresso da jornada -->
+    <div class="lead-journey">
+      <div class="journey-step done" data-step="1">
+        <span class="journey-dot"></span>
+        <span class="journey-label">Dados IA</span>
+      </div>
+      <span class="journey-arrow"></span>
+      <div class="journey-step done" data-step="2">
+        <span class="journey-dot"></span>
+        <span class="journey-label">Coletados</span>
+      </div>
+      <span class="journey-arrow"></span>
+      <div class="journey-step done" data-step="3">
+        <span class="journey-dot"></span>
+        <span class="journey-label">Qualificado</span>
+      </div>
+      <span class="journey-arrow"></span>
+      <div class="journey-step active" data-step="4">
+        <span class="journey-dot"></span>
+        <span class="journey-label">Em atendimento</span>
+      </div>
+      <span class="journey-arrow"></span>
+      <div class="journey-step" data-step="5">
+        <span class="journey-dot"></span>
+        <span class="journey-label">Diagnóstico grátis</span>
+      </div>
+      <span class="journey-arrow"></span>
+      <div class="journey-step" data-step="6">
+        <span class="journey-dot"></span>
+        <span class="journey-label">Reunião realizada</span>
+      </div>
+      <span class="journey-arrow"></span>
+      <div class="journey-step" data-step="7">
+        <span class="journey-dot"></span>
+        <span class="journey-label">Contrato</span>
+      </div>
+    </div>
+
+    <div class="modal-body">
+      <!-- Aba de edição (padrão) -->
+      <div class="lead-tab" data-tab="edit" data-active="true">
+        <div class="form-grid-2">
+          <div class="form-group full">
+            <label>Nome <span class="req">*</span></label>
+            <input type="text" name="empresa" required placeholder="Nome do cliente / empresa" />
+            <span class="form-error" data-error="empresa"></span>
+          </div>
+
+          <div class="form-group">
+            <label>Número (telefone) <span class="req">*</span></label>
+            <input type="tel" name="telefone" required placeholder="(11) 98765-4321" />
+            <span class="form-error" data-error="telefone"></span>
+          </div>
+          <div class="form-group">
+            <label>Data do Evento <span class="req">*</span></label>
+            <input type="date" name="dataEvento" required />
+            <span class="form-error" data-error="dataEvento"></span>
+          </div>
+
+          <div class="form-group full">
+            <label>Tipo de Serviço <span class="req">*</span></label>
+            <div class="chip-group chip-group-services" data-name="tiposServico" id="leadServiceChips">
+              <!-- Chips carregados dinamicamente do Supabase -->
+            </div>
+            <span class="form-error" data-error="tiposServico"></span>
+          </div>
+
+          <div class="form-group full">
+            <label>Endereço do Evento</label>
+            <input type="text" name="enderecoEvento" placeholder="Rua, número, bairro, cidade/UF" />
+          </div>
+
+          <div class="form-group">
+            <label>Quantidade de Horas</label>
+            <input type="number" name="quantidadeHoras" placeholder="0" min="1" step="1" />
+            <span class="form-error" data-error="quantidadeHoras"></span>
+          </div>
+          <div class="form-group">
+            <label>Temperatura</label>
+            <select name="thermal" id="leadThermal">
+              <option value="frio" selected>Frio</option>
+              <option value="morno">Morno</option>
+              <option value="quente">Quente</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Honorários (R$)</label>
+            <input type="text" name="honorarios" id="leadHon" placeholder="R$ 0,00" inputmode="decimal" />
+            <span class="form-error" data-error="honorarios"></span>
+          </div>
+
+          <div class="form-group full">
+            <label>Observações</label>
+            <textarea name="observacoes" rows="3" placeholder="Anotações internas sobre o evento..."></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Aba de histórico -->
+      <div class="lead-tab" data-tab="history">
+        <button class="btn-ghost small history-back-btn" data-action="back-to-edit" style="margin-bottom:16px">
+          <i data-lucide="arrow-left"></i> Voltar ao detalhe
+        </button>
+        <ul class="modal-history" id="leadHistoryList">
+          <!-- preenchido via JS -->
+        </ul>
+      </div>
+    </div>
+
+    <div class="modal-foot">
+      <div class="modal-foot-meta">
+        <span id="leadModalMetaCreate">Criado em 15/04/2026 às 10:32</span>
+        <span class="dot-sep">·</span>
+        <span>Último atendimento: <strong id="leadModalMetaLast">28/05/2026</strong></span>
+      </div>
+      <div class="modal-foot-actions">
+        <button class="btn-ghost" data-action="close-modal">Cancelar</button>
+        <button class="btn-primary" id="leadSaveBtn">
+          <i data-lucide="save"></i> Salvar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MODAL: EVENTO DO CALENDÁRIO ============ -->
+  <div class="modal-overlay" id="calEventOverlay"></div>
+  <div class="modal modal-lg" id="calEventModal" role="dialog" aria-labelledby="calEventTitle">
+    <div class="modal-head">
+      <div class="modal-head-left">
+        <div class="modal-avatar" id="calEventAvatar"><i data-lucide="calendar-plus"></i></div>
+        <div>
+          <h2 id="calEventTitle">Adicionar evento</h2>
+          <p class="modal-meta"><span id="calEventDateLabel">18/06/2026</span> <span id="calEventReadOnlyBadge" class="badge-readonly" style="display:none"></span></p>
+        </div>
+      </div>
+      <div class="modal-head-right">
+        <button class="btn-ghost small" id="calEventDeleteBtn" style="display:none" title="Excluir">
+          <i data-lucide="trash-2"></i> Excluir
+        </button>
+        <button class="icon-btn small" data-action="close-cal-event" title="Fechar">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="modal-body">
+      <div class="form-grid-2">
+        <!-- Linha 1: Título + Tipo (mesma linha) -->
+        <div class="form-group">
+          <label>Título do evento <span class="req">*</span></label>
+          <input type="text" name="calTitle" id="calEventInputTitle" placeholder="Ex: Reunião técnica" required />
+          <span class="form-error" data-error="calTitle"></span>
+        </div>
+
+        <div class="form-group">
+          <label>Tipo de evento <span class="req">*</span></label>
+          <select name="calType" id="calEventType" required>
+            <option value="">Selecionar...</option>
+            <option value="casamento">Casamento</option>
+            <option value="festa15">Festa de 15 anos</option>
+            <option value="aniversario">Aniversário</option>
+            <option value="corporativo">Corporativo</option>
+            <option value="evento">Evento</option>
+          </select>
+          <span class="form-error" data-error="calType"></span>
+        </div>
+
+        <!-- Linha 2: Cliente + Telefone -->
+        <div class="form-group">
+          <label>Cliente / Lead</label>
+          <div class="autocomplete-wrap">
+            <input type="text" name="calClient" id="calEventClient" placeholder="Buscar cliente..." autocomplete="off" />
+            <div class="autocomplete-list" id="calClientDropdown" hidden></div>
+          </div>
+          <input type="hidden" name="calClientId" id="calEventClientId" />
+        </div>
+
+        <div class="form-group">
+          <label>Telefone de contato</label>
+          <input type="tel" name="calPhone" id="calEventPhone" placeholder="(11) 98765-4321" />
+        </div>
+
+        <!-- Linha 3: Local + Data -->
+        <div class="form-group">
+          <label>Local</label>
+          <input type="text" name="calLocation" id="calEventLocation" placeholder="Endereço ou link Zoom" />
+        </div>
+
+        <div class="form-group">
+          <label>Data <span class="req">*</span></label>
+          <input type="date" name="calDate" id="calEventDate" required />
+          <span class="form-error" data-error="calDate"></span>
+        </div>
+
+        <!-- Linha 4: Hora início + Hora término + Duração -->
+        <div class="form-group">
+          <label>Hora de início</label>
+          <input type="time" name="calTimeStart" id="calEventTimeStart" value="09:00" />
+        </div>
+
+        <div class="form-group">
+          <label>Hora de término</label>
+          <input type="time" name="calTimeEnd" id="calEventTimeEnd" />
+          <span class="form-error" data-error="calTimeEnd"></span>
+        </div>
+
+        <div class="form-group">
+          <label>Duração</label>
+          <input type="time" name="calDuration" id="calEventDuration" placeholder="—" />
+        </div>
+
+        <!-- Linha 5: Serviços -->
+        <div class="form-group full">
+          <label>Serviços</label>
+          <div class="chip-group" data-name="calServices" id="calEventServices">
+            <button type="button" class="chip-toggle" data-value="Plataforma 360°">Plataforma 360°</button>
+            <button type="button" class="chip-toggle" data-value="Totem de Fotos">Totem de Fotos</button>
+            <button type="button" class="chip-toggle" data-value="Arco de lead">Arco de lead</button>
+            <button type="button" class="chip-toggle" data-value="Setas de lead">Setas de lead</button>
+            <button type="button" class="chip-toggle" data-value="Combo Blue">Combo Blue</button>
+            <button type="button" class="chip-toggle" data-value="Filmagem de Drone">Filmagem de Drone</button>
+            <button type="button" class="chip-toggle" data-value="Filmagem Terrestre">Filmagem Terrestre</button>
+            <button type="button" class="chip-toggle" data-value="Som Profissional">Som Profissional</button>
+            <button type="button" class="chip-toggle" data-value="Back Dropp">Back Dropp</button>
+          </div>
+        </div>
+
+        <!-- Linha 6: Temperatura + Honorários -->
+        <div class="form-group">
+          <label>Temperatura do lead</label>
+          <select name="calTemperature" id="calEventTemperature">
+            <option value="">Não definir</option>
+            <option value="frio">Frio</option>
+            <option value="morno">Morno</option>
+            <option value="quente">Quente</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Honorários (R$)</label>
+          <input type="text" name="calHonorarios" id="calEventHon" placeholder="0,00" inputmode="decimal" />
+        </div>
+
+        <!-- Linha 7: Observações -->
+        <div class="form-group full">
+          <label>Observações</label>
+          <textarea name="calNotes" id="calEventNotes" rows="3" placeholder="Notas sobre o evento..."></textarea>
+        </div>
+
+        <!-- Linha 8: Cor do evento -->
+        <div class="form-group full">
+          <label>Cor do evento</label>
+          <div class="color-picker" id="calEventColorPicker" role="radiogroup" aria-label="Cor do evento">
+            <button type="button" class="color-swatch" data-color="#EF4444" style="background:#EF4444" role="radio" aria-checked="false" aria-label="Vermelho" tabindex="0"></button>
+            <button type="button" class="color-swatch" data-color="#F59E0B" style="background:#F59E0B" role="radio" aria-checked="false" aria-label="Laranja" tabindex="0"></button>
+            <button type="button" class="color-swatch" data-color="#EAB308" style="background:#EAB308" role="radio" aria-checked="false" aria-label="Amarelo" tabindex="0"></button>
+            <button type="button" class="color-swatch" data-color="#10B981" style="background:#10B981" role="radio" aria-checked="false" aria-label="Verde" tabindex="0"></button>
+            <button type="button" class="color-swatch" data-color="#06B6D4" style="background:#06B6D4" role="radio" aria-checked="false" aria-label="Azul claro" tabindex="0"></button>
+            <button type="button" class="color-swatch" data-color="#2F80ED" style="background:#2F80ED" role="radio" aria-checked="false" aria-label="Azul" tabindex="0"></button>
+            <button type="button" class="color-swatch" data-color="#A855F7" style="background:#A855F7" role="radio" aria-checked="false" aria-label="Roxo" tabindex="0"></button>
+            <button type="button" class="color-swatch" data-color="#6B7280" style="background:#6B7280" role="radio" aria-checked="false" aria-label="Cinza" tabindex="0"></button>
+          </div>
+          <input type="hidden" name="calColor" id="calEventColor" value="#2F80ED" />
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-foot">
+      <div class="modal-foot-meta"></div>
+      <div class="modal-foot-actions">
+        <button class="btn-ghost" data-action="close-cal-event">Cancelar</button>
+        <button class="btn-primary" id="calEventSaveBtn">
+          <i data-lucide="save"></i> Salvar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Compact event popup (single click) -->
+  <div class="cal-event-popup" id="calEventPopup" role="dialog" aria-label="Detalhes do evento" tabindex="0" hidden>
+    <div class="cal-event-popup-head">
+      <span class="cal-event-popup-color" id="calPopupColor"></span>
+      <h4 id="calPopupTitle"></h4>
+      <div class="cal-event-popup-actions">
+        <button class="icon-btn small" id="calPopupEditBtn" aria-label="Editar" title="Editar"><i data-lucide="pencil"></i></button>
+        <button class="icon-btn small" id="calPopupDeleteBtn" aria-label="Excluir" title="Excluir"><i data-lucide="trash-2"></i></button>
+        <button class="icon-btn small" data-action="close-cal-popup" aria-label="Fechar" title="Fechar"><i data-lucide="x"></i></button>
+      </div>
+    </div>
+    <div class="cal-event-popup-body">
+      <div class="cal-popup-info-row" id="calPopupDateRow">
+        <i data-lucide="calendar"></i>
+        <span id="calPopupDate"></span>
+      </div>
+      <div class="cal-popup-info-row" id="calPopupTimeRow">
+        <i data-lucide="clock"></i>
+        <span>
+          <strong id="calPopupTimeStart"></strong>
+          <span id="calPopupTimeEnd"></span>
+        </span>
+      </div>
+      <div class="cal-popup-info-row" id="calPopupPhoneRow">
+        <i data-lucide="phone"></i>
+        <span id="calPopupPhone"></span>
+      </div>
+      <div class="cal-popup-info-row" id="calPopupLocationRow">
+        <i data-lucide="map-pin"></i>
+        <span id="calPopupLocation"></span>
+      </div>
+      <div class="cal-popup-services" id="calPopupServices">
+        <!-- chips de serviços renderizados por JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Popup: Editar Lead do Calendário -->
+  <div class="cal-event-popup cal-lead-popup" id="calLeadPopup" role="dialog" aria-label="Editar lead" tabindex="0" hidden>
+    <div class="cal-event-popup-head">
+      <span class="cal-event-popup-color" id="calLeadPopupColor"></span>
+      <h4 id="calLeadPopupTitle">Editar lead</h4>
+      <div class="cal-event-popup-actions">
+        <button class="icon-btn small" id="calLeadPopupSaveBtn" aria-label="Salvar" title="Salvar"><i data-lucide="check"></i></button>
+        <button class="icon-btn small" data-action="close-lead-popup" aria-label="Fechar" title="Fechar"><i data-lucide="x"></i></button>
+      </div>
+    </div>
+    <div class="cal-event-popup-body">
+      <div class="cal-lead-field">
+        <label>Nome</label>
+        <input type="text" id="calLeadPopupNome" placeholder="Nome do lead" />
+      </div>
+      <div class="cal-lead-field">
+        <label>Telefone</label>
+        <input type="tel" id="calLeadPopupTelefone" placeholder="(00) 00000-0000" />
+      </div>
+      <div class="cal-lead-field">
+        <label>Endereço do evento</label>
+        <input type="text" id="calLeadPopupEndereco" placeholder="Endereço" />
+      </div>
+      <div class="cal-lead-field">
+        <label>Temperatura</label>
+        <select id="calLeadPopupTemperatura">
+          <option value="">Não definir</option>
+          <option value="frio">Frio</option>
+          <option value="morno">Morno</option>
+          <option value="quente">Quente</option>
+        </select>
+      </div>
+      <div class="cal-lead-field">
+        <label>Honorários (R$)</label>
+        <input type="text" id="calLeadPopupHon" placeholder="0,00" inputmode="decimal" />
+      </div>
+      <div class="cal-lead-field">
+        <label>Observações</label>
+        <textarea id="calLeadPopupObs" rows="2" placeholder="Notas..."></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast de feedback -->
+  <div class="toast" id="toast" hidden>
+    <i data-lucide="check-circle-2"></i>
+    <span id="toastText">Salvo com sucesso</span>
+  </div>
+
+  <script src="supabaseClient.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
