@@ -6558,23 +6558,132 @@ textarea:focus-visible,
 /* Badge: Atendimento */
 .admin-badge-attend { background: #faf5ff; color: #9333ea; }
 
-/* Modal: Novo Membro */
-#adminMemberModal {
-  display: none; flex-direction: column;
-  max-width: 520px; width: 90%;
-}
+/* ============================================
+   MODAL: CRIAR NOVO MEMBRO
+   ============================================ */
 #adminMemberOverlay {
   display: none; position: fixed; inset: 0; z-index: 1000;
-  background: rgba(15,23,42,0.4); backdrop-filter: blur(4px);
+  background: rgba(15,23,42,0.45); backdrop-filter: blur(4px);
 }
-#adminMemberModal .modal-head { display: flex; justify-content: space-between; align-items: flex-start; padding: 20px 24px 16px; border-bottom: 1px solid var(--gray-200); }
+#adminMemberModal {
+  display: none; flex-direction: column;
+  max-width: 620px; width: 92%;
+  max-height: 90vh; overflow: hidden;
+  position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1001;
+  background: #fff; border-radius: 16px;
+  box-shadow: 0 25px 60px rgba(0,0,0,0.18);
+}
+#adminMemberModal .modal-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 22px 26px 16px; border-bottom: 1px solid var(--gray-200);
+  flex-shrink: 0;
+}
 #adminMemberModal .modal-head-left { display: flex; align-items: center; gap: 14px; }
-#adminMemberModal .modal-avatar { width: 44px; height: 44px; border-radius: 12px; background: var(--primary-blue-soft); color: var(--primary-blue); display: flex; align-items: center; justify-content: center; }
+#adminMemberModal .modal-avatar {
+  width: 44px; height: 44px; border-radius: 12px;
+  background: var(--primary-blue-soft); color: var(--primary-blue);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
 #adminMemberModal .modal-avatar i { width: 22px; height: 22px; }
 #adminMemberModal .modal-head h2 { font: 600 18px 'Inter', sans-serif; color: var(--text-primary); margin: 0; }
 #adminMemberModal .modal-meta { font: 400 13px 'Inter', sans-serif; color: var(--muted-text); margin: 2px 0 0; }
-#adminMemberModal .modal-body { padding: 20px 24px; }
-#adminMemberModal .modal-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--gray-200); }
+
+/* Body with scroll */
+.admin-member-body {
+  padding: 0 26px 20px; overflow-y: auto; flex: 1;
+}
+
+/* Section blocks */
+.admin-form-section {
+  padding: 20px 0 16px;
+  border-bottom: 1px solid var(--gray-100);
+}
+.admin-form-section:last-child { border-bottom: none; }
+
+.admin-form-section-title {
+  font: 600 11px 'Inter', sans-serif;
+  color: var(--muted-text); text-transform: uppercase;
+  letter-spacing: 0.8px; margin: 0 0 14px;
+}
+.admin-form-section-title .req { color: var(--error); }
+
+/* Form grid inside modal */
+.admin-member-body .form-grid-2 {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px;
+}
+.admin-member-body .form-group { display: flex; flex-direction: column; gap: 5px; }
+.admin-member-body .form-group.full { grid-column: 1 / -1; }
+.admin-member-body .form-group label {
+  font: 500 13px 'Inter', sans-serif; color: var(--gray-700);
+}
+.admin-member-body .form-group label .req { color: var(--error); }
+.admin-member-body .form-group input,
+.admin-member-body .form-group select {
+  padding: 10px 12px; border: 1.5px solid var(--gray-200);
+  border-radius: 8px; font: 400 14px 'Inter', sans-serif;
+  color: var(--gray-800); background: #fff;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  outline: none; width: 100%;
+}
+.admin-member-body .form-group input:focus,
+.admin-member-body .form-group select:focus {
+  border-color: var(--primary-blue);
+  box-shadow: 0 0 0 3px rgba(22,91,255,0.1);
+}
+.admin-member-body .form-group input::placeholder { color: var(--gray-400); }
+.admin-member-body .form-group select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236B7885' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+
+/* Password field with toggle inside modal */
+.admin-member-body .auth-input-wrap {
+  position: relative; display: flex; align-items: center;
+  background: #fff; border: 1.5px solid var(--gray-200);
+  border-radius: 8px; padding: 0 12px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.admin-member-body .auth-input-wrap:focus-within {
+  border-color: var(--primary-blue);
+  box-shadow: 0 0 0 3px rgba(22,91,255,0.1);
+}
+.admin-member-body .auth-input-wrap i { width: 16px; height: 16px; color: var(--gray-400); flex-shrink: 0; }
+.admin-member-body .auth-input-wrap input {
+  flex: 1; border: none; background: transparent;
+  padding: 10px 8px; font: 400 14px 'Inter', sans-serif;
+  color: var(--gray-800); outline: none;
+}
+.admin-member-body .auth-input-wrap input::placeholder { color: var(--gray-400); }
+.admin-member-body .auth-pw-toggle {
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none; cursor: pointer;
+  padding: 4px; color: var(--gray-400); transition: color 0.2s;
+}
+.admin-member-body .auth-pw-toggle:hover { color: var(--gray-600); }
+.admin-member-body .auth-pw-toggle i { width: 16px; height: 16px; }
+
+/* Footer */
+.admin-member-foot {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 26px; border-top: 1px solid var(--gray-200);
+  flex-shrink: 0; gap: 12px;
+}
+.admin-foot-note {
+  font: 400 12px 'Inter', sans-serif; color: var(--muted-text);
+  margin: 0; flex: 1;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  #adminMemberModal { max-width: 100%; width: 100%; max-height: 100vh; border-radius: 0; }
+  .admin-member-body .form-grid-2 { grid-template-columns: 1fr; }
+  .admin-member-foot { flex-direction: column; align-items: stretch; }
+}
 
 /* ============================================
    AUTH OVERLAY (Login / Cadastro)

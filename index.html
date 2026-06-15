@@ -59,51 +59,6 @@
         <div class="auth-error" id="loginError" hidden></div>
       </form>
 
-      <!-- Register Form -->
-      <form class="auth-form" id="registerForm" style="display:none" autocomplete="on">
-        <div class="auth-field">
-          <label for="regName">Nome completo</label>
-          <div class="auth-input-wrap">
-            <i data-lucide="user"></i>
-            <input type="text" id="regName" placeholder="Seu nome completo" required autocomplete="name" />
-          </div>
-        </div>
-        <div class="auth-field">
-          <label for="regEmail">E-mail</label>
-          <div class="auth-input-wrap">
-            <i data-lucide="mail"></i>
-            <input type="email" id="regEmail" placeholder="seu@email.com" required autocomplete="email" />
-          </div>
-        </div>
-        <div class="auth-field">
-          <label for="regPassword">Senha</label>
-          <div class="auth-input-wrap">
-            <i data-lucide="lock"></i>
-            <input type="password" id="regPassword" placeholder="Crie uma senha" required minlength="6" autocomplete="new-password" />
-            <button type="button" class="auth-pw-toggle" id="regPwToggle" aria-label="Mostrar senha">
-              <i data-lucide="eye"></i>
-            </button>
-          </div>
-        </div>
-        <div class="auth-field">
-          <label for="regPasswordConfirm">Confirmar senha</label>
-          <div class="auth-input-wrap">
-            <i data-lucide="lock"></i>
-            <input type="password" id="regPasswordConfirm" placeholder="Repita a senha" required minlength="6" autocomplete="new-password" />
-          </div>
-        </div>
-        <button type="submit" class="auth-submit" id="registerSubmitBtn">
-          <span>Criar conta</span>
-          <i data-lucide="arrow-right"></i>
-        </button>
-        <div class="auth-error" id="registerError" hidden></div>
-      </form>
-
-      <!-- Footer toggle -->
-      <p class="auth-footer" id="authFooter">
-        Não tem uma conta? <a href="#" id="authToggleLink">Cadastre-se</a>
-      </p>
-
       <!-- Forgot password form -->
       <form class="auth-form" id="forgotForm" style="display:none">
         <div class="auth-field">
@@ -1293,50 +1248,140 @@
             </table>
           </div>
 
-          <!-- Modal: Novo Membro -->
+          <!-- Modal: Criar Novo Membro -->
           <div class="modal-overlay" id="adminMemberOverlay"></div>
-          <div class="modal" id="adminMemberModal" role="dialog" aria-labelledby="adminMemberTitle">
+          <div class="modal modal-lg" id="adminMemberModal" role="dialog" aria-labelledby="adminMemberTitle">
             <div class="modal-head">
               <div class="modal-head-left">
                 <div class="modal-avatar"><i data-lucide="user-plus"></i></div>
                 <div>
-                  <h2 id="adminMemberTitle">Novo Membro</h2>
-                  <p class="modal-meta">Adicione um novo membro à equipe</p>
+                  <h2 id="adminMemberTitle">Criar Novo Membro</h2>
+                  <p class="modal-meta">Adicione um novo funcionário ao sistema</p>
                 </div>
               </div>
               <button class="icon-btn small" data-action="close-admin-member" title="Fechar"><i data-lucide="x"></i></button>
             </div>
-            <div class="modal-body">
-              <div class="form-grid-2">
-                <div class="form-group full">
-                  <label>Nome completo <span class="req">*</span></label>
-                  <input type="text" id="adminMemberName" placeholder="Nome do membro" required />
-                </div>
-                <div class="form-group full">
-                  <label>E-mail <span class="req">*</span></label>
-                  <input type="email" id="adminMemberEmail" placeholder="email@blueeventos.com" required />
-                </div>
-                <div class="form-group">
-                  <label>Cargo</label>
-                  <select id="adminMemberRole">
-                    <option value="Administrador">Administrador</option>
-                    <option value="Marketing">Marketing</option>
-                    <option value="Atendimento">Atendimento</option>
-                    <option value="Contador">Contador</option>
-                    <option value="Auxiliar">Auxiliar</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label>Senha temporária</label>
-                  <input type="text" id="adminMemberPassword" placeholder="Senha provisória" />
+            <div class="modal-body admin-member-body">
+
+              <!-- Sessão 1: Dados de Acesso -->
+              <div class="admin-form-section">
+                <h3 class="admin-form-section-title">Dados de Acesso <span class="req">*</span></h3>
+                <div class="form-grid-2">
+                  <div class="form-group full">
+                    <label>Nome <span class="req">*</span></label>
+                    <input type="text" id="adminMemberName" placeholder="Nome completo" required />
+                  </div>
+                  <div class="form-group full">
+                    <label>E-mail <span class="req">*</span></label>
+                    <input type="email" id="adminMemberEmail" placeholder="email@blueeventos.com" required />
+                  </div>
+                  <div class="form-group">
+                    <label>Senha <span class="req">*</span></label>
+                    <div class="auth-input-wrap">
+                      <i data-lucide="lock"></i>
+                      <input type="password" id="adminMemberPassword" placeholder="Min. 6 caracteres" required minlength="6" />
+                      <button type="button" class="auth-pw-toggle" id="adminMemberPwToggle" aria-label="Mostrar senha">
+                        <i data-lucide="eye"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label>Cargo</label>
+                    <select id="adminMemberRole">
+                      <option value="">Selecione…</option>
+                      <option value="Administrador">Administrador</option>
+                      <option value="Marketing">Marketing</option>
+                      <option value="Atendimento">Atendimento</option>
+                      <option value="Contador">Contador</option>
+                      <option value="Auxiliar">Auxiliar</option>
+                    </select>
+                  </div>
+                  <div class="form-group full">
+                    <label>Equipe</label>
+                    <select id="adminMemberTeam">
+                      <option value="">Selecione…</option>
+                      <option value="Comercial">Comercial</option>
+                      <option value="Operações">Operações</option>
+                      <option value="Marketing">Marketing</option>
+                      <option value="Administrativo">Administrativo</option>
+                      <option value="TI">TI</option>
+                    </select>
+                  </div>
                 </div>
               </div>
+
+              <!-- Sessão 2: Dados Pessoais -->
+              <div class="admin-form-section">
+                <h3 class="admin-form-section-title">Dados Pessoais</h3>
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label>Pessoa</label>
+                    <select id="adminMemberPessoa">
+                      <option value="Pessoa Física">Pessoa Física</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>CPF</label>
+                    <input type="text" id="adminMemberCPF" placeholder="000.000.000-00" maxlength="14" inputmode="numeric" />
+                  </div>
+                  <div class="form-group">
+                    <label>Data de Aniversário</label>
+                    <div class="auth-input-wrap">
+                      <i data-lucide="calendar"></i>
+                      <input type="text" id="adminMemberBirth" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Sessão 3: Dados para Contato -->
+              <div class="admin-form-section">
+                <h3 class="admin-form-section-title">Dados para Contato</h3>
+                <div class="form-grid-2">
+                  <div class="form-group full">
+                    <label>Telefone / WhatsApp</label>
+                    <div class="auth-input-wrap">
+                      <i data-lucide="phone"></i>
+                      <input type="text" id="adminMemberPhone" placeholder="(00) 00000-0000" maxlength="15" inputmode="numeric" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Sessão 4: Notificações de Leads -->
+              <div class="admin-form-section">
+                <h3 class="admin-form-section-title">Notificações de Leads</h3>
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label>Via E-mail</label>
+                    <select id="adminMemberNotifEmail">
+                      <option value="Sim" selected>Sim</option>
+                      <option value="Não">Não</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Via WhatsApp</label>
+                    <select id="adminMemberNotifWhats">
+                      <option value="Sim" selected>Sim</option>
+                      <option value="Não">Não</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Sistema Blue (Som)</label>
+                    <select id="adminMemberNotifSound">
+                      <option value="Sim" selected>Sim</option>
+                      <option value="Não">Não</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
             </div>
-            <div class="modal-foot">
-              <div class="modal-foot-meta"></div>
+            <div class="modal-foot admin-member-foot">
+              <p class="admin-foot-note">O membro será criado com status aprovado. Sem necessidade de convite por e-mail.</p>
               <div class="modal-foot-actions">
                 <button class="btn-ghost" data-action="close-admin-member">Cancelar</button>
-                <button class="btn-primary" id="adminMemberSaveBtn"><i data-lucide="save"></i> Adicionar</button>
+                <button class="btn-primary" id="adminMemberSaveBtn"><i data-lucide="save"></i> Salvar Membro</button>
               </div>
             </div>
           </div>

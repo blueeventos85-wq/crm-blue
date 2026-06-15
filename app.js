@@ -91,47 +91,19 @@ async function initAuth() {
 
 function bindAuthForms() {
   const loginForm = document.getElementById('loginForm');
-  const registerForm = document.getElementById('registerForm');
   const forgotForm = document.getElementById('forgotForm');
-  const toggleLink = document.getElementById('authToggleLink');
   const backLink = document.getElementById('authBackToLogin');
   const forgotLink = document.getElementById('authForgotLink');
-  const footer = document.getElementById('authFooter');
   const forgotFooter = document.getElementById('forgotFooter');
   const tagline = document.getElementById('authTagline');
-
-  // Toggle login <-> register
-  if (toggleLink) {
-    toggleLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      const isLogin = loginForm.style.display !== 'none';
-      if (isLogin) {
-        loginForm.style.display = 'none';
-        registerForm.style.display = '';
-        footer.innerHTML = 'Já tem uma conta? <a href="#" id="authToggleLink">Entrar</a>';
-        tagline.textContent = 'Cadastre-se para acessar o CRM Blue Eventos.';
-      } else {
-        loginForm.style.display = '';
-        registerForm.style.display = 'none';
-        footer.innerHTML = 'Não tem uma conta? <a href="#" id="authToggleLink">Cadastre-se</a>';
-        tagline.textContent = 'Acesse sua conta para gerenciar o CRM.';
-      }
-      hideAuthError('loginError');
-      hideAuthError('registerError');
-      // Rebind toggle link after innerHTML change
-      const newToggle = document.getElementById('authToggleLink');
-      if (newToggle) newToggle.addEventListener('click', arguments.callee);
-    });
-  }
 
   // Forgot password
   if (forgotLink) {
     forgotLink.addEventListener('click', (e) => {
       e.preventDefault();
       loginForm.style.display = 'none';
-      footer.style.display = 'none';
       forgotForm.style.display = '';
-      forgotFooter.style.display = '';
+      if (forgotFooter) forgotFooter.style.display = '';
       tagline.textContent = 'Informe seu e-mail para recuperar a senha.';
     });
   }
@@ -139,9 +111,8 @@ function bindAuthForms() {
     backLink.addEventListener('click', (e) => {
       e.preventDefault();
       forgotForm.style.display = 'none';
-      forgotFooter.style.display = 'none';
+      if (forgotFooter) forgotFooter.style.display = 'none';
       loginForm.style.display = '';
-      footer.style.display = '';
       tagline.textContent = 'Acesse sua conta para gerenciar o CRM.';
       hideAuthError('forgotError');
       document.getElementById('forgotSuccess').hidden = true;
@@ -179,55 +150,6 @@ function bindAuthForms() {
         // Session will be handled by onAuthStateChange
       } catch (err) {
         showAuthError('loginError', err.message || 'Erro ao fazer login. Verifique suas credenciais.');
-      } finally {
-        setAuthLoading(btn, false);
-      }
-    });
-  }
-
-  // Register submit
-  if (registerForm) {
-    registerForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      hideAuthError('registerError');
-      const nome = document.getElementById('regName').value.trim();
-      const email = document.getElementById('regEmail').value.trim();
-      const password = document.getElementById('regPassword').value;
-      const confirm = document.getElementById('regPasswordConfirm').value;
-      const btn = document.getElementById('registerSubmitBtn');
-
-      if (!nome || !email || !password || !confirm) {
-        showAuthError('registerError', 'Preencha todos os campos.');
-        return;
-      }
-      if (password !== confirm) {
-        showAuthError('registerError', 'As senhas não coincidem.');
-        return;
-      }
-      if (password.length < 6) {
-        showAuthError('registerError', 'A senha deve ter pelo menos 6 caracteres.');
-        return;
-      }
-
-      setAuthLoading(btn, true);
-      try {
-        const { data, error } = await _supabase.auth.signUp({
-          email,
-          password,
-          options: { data: { nome } }
-        });
-        if (error) throw error;
-        if (data.user && !data.session) {
-          showAuthError('registerError', '');
-          document.getElementById('registerError').hidden = true;
-          const successEl = document.getElementById('registerError');
-          successEl.insertAdjacentHTML('afterend',
-            '<div class="auth-success">Conta criada! Verifique seu e-mail para confirmar o cadastro.</div>');
-          registerForm.reset();
-        }
-        // If session exists, onAuthStateChange will handle it
-      } catch (err) {
-        showAuthError('registerError', err.message || 'Erro ao criar conta.');
       } finally {
         setAuthLoading(btn, false);
       }
@@ -289,7 +211,6 @@ function onAuthReady() {
    ADMIN · Simplified init (no tabs)
    ============================================ */
 function initAdminView() {
-  // Bind "Novo Membro" button
   const addBtn = document.getElementById('adminNewMemberBtn');
   const overlay = document.getElementById('adminMemberOverlay');
   const modal = document.getElementById('adminMemberModal');
@@ -297,21 +218,25 @@ function initAdminView() {
   const saveBtn = document.getElementById('adminMemberSaveBtn');
   const searchInput = document.getElementById('adminSearchInput');
 
+  // Open modal
   if (addBtn && overlay && modal) {
     addBtn.addEventListener('click', () => {
       overlay.style.display = 'block';
       modal.style.display = 'flex';
       initIcons();
+      // Reset form
+      modal.querySelectorAll('input:not([type=hidden])').forEach(i => { i.value = ''; });
+      modal.querySelectorAll('select').forEach(s => { s.selectedIndex = 0; });
     });
   }
 
+  // Close modal
   closeBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       if (overlay) overlay.style.display = 'none';
       if (modal) modal.style.display = 'none';
     });
   });
-
   if (overlay) {
     overlay.addEventListener('click', () => {
       overlay.style.display = 'none';
@@ -319,36 +244,126 @@ function initAdminView() {
     });
   }
 
+  // Password toggle
+  const pwToggle = document.getElementById('adminMemberPwToggle');
+  if (pwToggle) {
+    pwToggle.addEventListener('click', () => {
+      const input = pwToggle.parentElement.querySelector('input');
+      if (!input) return;
+      const isPassword = input.type === 'password';
+      input.type = isPassword ? 'text' : 'password';
+      const icon = pwToggle.querySelector('i');
+      if (icon) icon.setAttribute('data-lucide', isPassword ? 'eye-off' : 'eye');
+      initIcons();
+    });
+  }
+
+  // Input masks
+  applyMask('adminMemberCPF', maskCPF);
+  applyMask('adminMemberBirth', maskDate);
+  applyMask('adminMemberPhone', maskPhone);
+
+  // Save member
   if (saveBtn) {
-    saveBtn.addEventListener('click', () => {
+    saveBtn.addEventListener('click', async () => {
       const name = document.getElementById('adminMemberName')?.value?.trim();
       const email = document.getElementById('adminMemberEmail')?.value?.trim();
+      const password = document.getElementById('adminMemberPassword')?.value;
       const role = document.getElementById('adminMemberRole')?.value;
-      if (!name || !email) { toast('Preencha nome e e-mail', 'error'); return; }
+      const team = document.getElementById('adminMemberTeam')?.value;
+      const pessoa = document.getElementById('adminMemberPessoa')?.value;
+      const cpf = document.getElementById('adminMemberCPF')?.value?.trim();
+      const birth = document.getElementById('adminMemberBirth')?.value?.trim();
+      const phone = document.getElementById('adminMemberPhone')?.value?.trim();
+      const notifEmail = document.getElementById('adminMemberNotifEmail')?.value;
+      const notifWhats = document.getElementById('adminMemberNotifWhats')?.value;
+      const notifSound = document.getElementById('adminMemberNotifSound')?.value;
 
-      const initials = name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
-      const tbody = document.getElementById('adminUsersBody');
-      if (tbody) {
-        const badgeClass = role === 'Administrador' ? 'admin-badge-admin' :
-                           role === 'Marketing' ? 'admin-badge-marketing' : 'admin-badge-attend';
-        const row = document.createElement('tr');
-        row.innerHTML = `
-          <td><div class="admin-user-cell"><span class="admin-avatar">${escapeHtml(initials)}</span> ${escapeHtml(name)}</div></td>
-          <td>${escapeHtml(email)}</td>
-          <td><span class="admin-badge ${badgeClass}">${escapeHtml(role)}</span></td>
-          <td><span class="admin-status admin-status-ativo">Ativo</span></td>
-          <td>${new Date().toLocaleDateString('pt-BR')}</td>
-          <td class="admin-actions-cell">
-            <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
-            <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
-          </td>`;
-        tbody.appendChild(row);
-        initIcons();
+      if (!name || !email || !password) {
+        toast('Preencha nome, e-mail e senha', 'error');
+        return;
+      }
+      if (password.length < 6) {
+        toast('A senha deve ter pelo menos 6 caracteres', 'error');
+        return;
       }
 
-      if (overlay) overlay.style.display = 'none';
-      if (modal) modal.style.display = 'none';
-      toast('Membro adicionado com sucesso');
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = '<span class="auth-spinner"></span>';
+
+      try {
+        // 1. Create user in Supabase Auth
+        const { data: authData, error: authError } = await _supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { nome: name, cargo: role, equipe: team },
+            emailRedirectTo: window.location.origin
+          }
+        });
+        if (authError) throw authError;
+
+        // 2. Insert member record in 'membros' table
+        const userId = authData?.user?.id || null;
+        const memberPayload = {
+          nome: name,
+          email: email,
+          cargo: role || '',
+          equipe: team || '',
+          pessoa: pessoa || 'Pessoa Física',
+          cpf: cpf || '',
+          data_aniversario: birth || '',
+          telefone: phone || '',
+          notificacao_email: notifEmail === 'Sim',
+          notificacao_whatsapp: notifWhats === 'Sim',
+          notificacao_som: notifSound === 'Sim',
+          status: 'Ativo',
+          auth_user_id: userId
+        };
+
+        const { error: dbError } = await _supabase.from('membros').insert([memberPayload]);
+        if (dbError) {
+          console.warn('[Admin] Erro ao inserir na tabela membros:', dbError.message);
+          // Continue even if table doesn't exist yet
+        }
+
+        // 3. Add row to the table UI
+        const initials = name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+        const tbody = document.getElementById('adminUsersBody');
+        if (tbody) {
+          const badgeClass = role === 'Administrador' ? 'admin-badge-admin' :
+                             role === 'Marketing' ? 'admin-badge-marketing' : 'admin-badge-attend';
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td><div class="admin-user-cell"><span class="admin-avatar">${escapeHtml(initials)}</span> ${escapeHtml(name)}</div></td>
+            <td>${escapeHtml(email)}</td>
+            <td><span class="admin-badge ${badgeClass}">${escapeHtml(role || '—')}</span></td>
+            <td><span class="admin-status admin-status-ativo">Ativo</span></td>
+            <td>${new Date().toLocaleDateString('pt-BR')}</td>
+            <td class="admin-actions-cell">
+              <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
+              <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
+            </td>`;
+          tbody.prepend(row);
+          initIcons();
+        }
+
+        // 4. Close modal and show success
+        if (overlay) overlay.style.display = 'none';
+        if (modal) modal.style.display = 'none';
+        toast('Membro criado com sucesso!');
+
+        // Audit
+        registrarAuditoria({ acao: 'Inclusões', caminho_url: '/administrador', modulo: 'Administrador' });
+
+      } catch (err) {
+        console.error('[Admin] Erro ao criar membro:', err);
+        toast(err.message || 'Erro ao criar membro', 'error');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i data-lucide="save"></i> Salvar Membro';
+        initIcons();
+      }
     });
   }
 
@@ -356,13 +371,79 @@ function initAdminView() {
   if (searchInput) {
     searchInput.addEventListener('input', () => {
       const q = searchInput.value.toLowerCase().trim();
-      const rows = document.querySelectorAll('#adminUsersBody tr');
-      rows.forEach(row => {
-        const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(q) ? '' : 'none';
+      document.querySelectorAll('#adminUsersBody tr').forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
       });
     });
   }
+
+  // Load existing members from Supabase
+  loadMembersFromSupabase();
+}
+
+async function loadMembersFromSupabase() {
+  if (!_supabase) return;
+  try {
+    const { data, error } = await _supabase.from('membros').select('*').order('created_at', { ascending: false });
+    if (error) { console.warn('[Admin] Tabela membros não encontrada:', error.message); return; }
+    if (!data || data.length === 0) return;
+
+    const tbody = document.getElementById('adminUsersBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    data.forEach(m => {
+      const initials = (m.nome || '').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+      const badgeClass = m.cargo === 'Administrador' ? 'admin-badge-admin' :
+                         m.cargo === 'Marketing' ? 'admin-badge-marketing' : 'admin-badge-attend';
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><div class="admin-user-cell"><span class="admin-avatar">${escapeHtml(initials)}</span> ${escapeHtml(m.nome || '')}</div></td>
+        <td>${escapeHtml(m.email || '')}</td>
+        <td><span class="admin-badge ${badgeClass}">${escapeHtml(m.cargo || '—')}</span></td>
+        <td><span class="admin-status admin-status-ativo">${escapeHtml(m.status || 'Ativo')}</span></td>
+        <td>${m.created_at ? new Date(m.created_at).toLocaleDateString('pt-BR') : '—'}</td>
+        <td class="admin-actions-cell">
+          <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
+          <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
+        </td>`;
+      tbody.appendChild(row);
+    });
+    initIcons();
+  } catch (err) {
+    console.error('[Admin] Erro ao carregar membros:', err);
+  }
+}
+
+/* ============================================
+   INPUT MASKS
+   ============================================ */
+function applyMask(id, maskFn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('input', () => { el.value = maskFn(el.value); });
+}
+
+function maskCPF(v) {
+  v = v.replace(/\D/g, '').slice(0, 11);
+  v = v.replace(/(\d{3})(\d)/, '$1.$2');
+  v = v.replace(/(\d{3})(\d)/, '$1.$2');
+  v = v.replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+  return v;
+}
+
+function maskDate(v) {
+  v = v.replace(/\D/g, '').slice(0, 8);
+  v = v.replace(/(\d{2})(\d)/, '$1/$2');
+  v = v.replace(/(\d{2})(\d)/, '$1/$2');
+  return v;
+}
+
+function maskPhone(v) {
+  v = v.replace(/\D/g, '').slice(0, 11);
+  v = v.replace(/^(\d{2})(\d)/g, '($1) $2');
+  v = v.replace(/(\d{5})(\d)/, '$1-$2');
+  return v;
 }
 
 function canEditEvent(event) {
