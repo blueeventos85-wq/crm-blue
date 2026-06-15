@@ -213,12 +213,12 @@ function onAuthReady() {
 let _adminEditingId = null;
 let _adminDeleteId = null;
 let _adminMembersCache = [];
-let _adminBound = false; // previne bind duplicado
+let _adminPermCache = [];
+let _adminBound = false;
 
 function initAdminView() {
   console.log('[Admin] initAdminView called, bound=', _adminBound);
 
-  // ── Bind uma única vez ──
   if (!_adminBound) {
     _adminBound = true;
 
@@ -232,10 +232,23 @@ function initAdminView() {
     const delCloseBtns = document.querySelectorAll('[data-action="close-admin-delete"]');
     const delConfirmBtn = document.getElementById('adminDeleteConfirmBtn');
 
+    // ── Tabs ──
+    document.querySelectorAll('.admin-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        const target = tab.dataset.adminTab;
+        const content = document.getElementById('adminTab' + target.charAt(0).toUpperCase() + target.slice(1));
+        if (content) content.classList.add('active');
+        if (target === 'permissoes') loadPermissionsFromSupabase();
+        initIcons();
+      });
+    });
+
     // ── Abrir modal: Criar novo ──
     if (addBtn) {
       addBtn.addEventListener('click', () => {
-        console.log('[Admin] Botão "+ Novo Membro" clicado');
         _adminEditingId = null;
         resetMemberForm();
         setMemberFormMode('create');
@@ -243,7 +256,7 @@ function initAdminView() {
       });
     }
 
-    // ── Fechar modal ──
+    // ── Fechar modal membro ──
     closeBtns.forEach(btn => btn.addEventListener('click', closeMemberModal));
     if (overlay) overlay.addEventListener('click', closeMemberModal);
 
@@ -265,12 +278,10 @@ function initAdminView() {
     applyMask('adminMemberBirth', maskDate);
     applyMask('adminMemberPhone', maskPhone);
 
-    // ── Salvar (criar ou editar) ──
-    if (saveBtn) {
-      saveBtn.addEventListener('click', handleMemberSave);
-    }
+    // ── Salvar membro ──
+    if (saveBtn) saveBtn.addEventListener('click', handleMemberSave);
 
-    // ── Busca ──
+    // ── Busca membros ──
     if (searchInput) {
       searchInput.addEventListener('input', () => {
         const q = searchInput.value.toLowerCase().trim();
@@ -284,9 +295,33 @@ function initAdminView() {
     delCloseBtns.forEach(btn => btn.addEventListener('click', closeDeleteModal));
     if (delOverlay) delOverlay.addEventListener('click', closeDeleteModal);
     if (delConfirmBtn) delConfirmBtn.addEventListener('click', handleMemberDelete);
+
+    // ── Modal de permissões ──
+    const permOverlay = document.getElementById('adminPermOverlay');
+    const permCloseBtns = document.querySelectorAll('[data-action="close-admin-perm"]');
+    const permSaveBtn = document.getElementById('adminPermSaveBtn');
+    permCloseBtns.forEach(btn => btn.addEventListener('click', closePermModal));
+    if (permOverlay) permOverlay.addEventListener('click', closePermModal);
+    if (permSaveBtn) permSaveBtn.addEventListener('click', handlePermSave);
+
+    // ── Busca permissões ──
+    const permSearch = document.getElementById('adminPermSearchInput');
+    if (permSearch) {
+      permSearch.addEventListener('input', () => {
+        const q = permSearch.value.toLowerCase().trim();
+        document.querySelectorAll('#adminPermBody tr').forEach(row => {
+          row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+        });
+      });
+    }
+
+    // ── Auto-fill perfil checkboxes ──
+    const perfilSel = document.getElementById('adminPermPerfil');
+    if (perfilSel) {
+      perfilSel.addEventListener('change', () => applyPerfilDefaults(perfilSel.value));
+    }
   }
 
-  // ── Sempre recarregar membros ──
   loadMembersFromSupabase();
 }
 
@@ -602,6 +637,204 @@ async function loadMembersFromSupabase() {
   } catch (err) {
     console.error('[Admin] Erro ao carregar membros:', err);
   }
+}
+
+/* ============================================
+   ADMIN · PERMISSÕES
+   ============================================ */
+
+/* ── Modal helpers permissões ── */
+function openPermModal() {
+  const overlay = document.getElementById('adminPermOverlay');
+  const modal = document.getElementById('adminPermModal');
+  if (overlay) overlay.classList.add('open');
+  if (modal) { modal.classList.add('open'); modal.scrollTop = 0; }
+  initIcons();
+}
+
+function closePermModal() {
+  const overlay = document.getElementById('adminPermOverlay');
+  const modal = document.getElementById('adminPermModal');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+}
+
+/* ── Perfil defaults ── */
+function applyPerfilDefaults(perfil) {
+  const presets = {
+    'Administrador': { crmView:true, crmEdit:true, crmDelete:true, calView:true, calEdit:true, clientsView:true, clientsEdit:true, auditView:true, adminMembers:true, adminPerms:true },
+    'Gestor':        { crmView:true, crmEdit:true, crmDelete:false, calView:true, calEdit:true, clientsView:true, clientsEdit:true, auditView:true, adminMembers:false, adminPerms:false },
+    'Atendimento':   { crmView:true, crmEdit:false, crmDelete:false, calView:true, calEdit:false, clientsView:true, clientsEdit:false, auditView:false, adminMembers:false, adminPerms:false },
+    'Financeiro':    { crmView:true, crmEdit:false, crmDelete:false, calView:true, calEdit:false, clientsView:true, clientsEdit:false, auditView:true, adminMembers:false, adminPerms:false },
+    'Somente leitura': { crmView:true, crmEdit:false, crmDelete:false, calView:true, calEdit:false, clientsView:true, clientsEdit:false, auditView:false, adminMembers:false, adminPerms:false }
+  };
+  const p = presets[perfil] || presets['Somente leitura'];
+  document.getElementById('permCrmView').checked = p.crmView;
+  document.getElementById('permCrmEdit').checked = p.crmEdit;
+  document.getElementById('permCrmDelete').checked = p.crmDelete;
+  document.getElementById('permCalView').checked = p.calView;
+  document.getElementById('permCalEdit').checked = p.calEdit;
+  document.getElementById('permClientsView').checked = p.clientsView;
+  document.getElementById('permClientsEdit').checked = p.clientsEdit;
+  document.getElementById('permAuditView').checked = p.auditView;
+  document.getElementById('permAdminMembers').checked = p.adminMembers;
+  document.getElementById('permAdminPerms').checked = p.adminPerms;
+}
+
+/* ── Render row de permissões ── */
+function renderPermRow(m, perm) {
+  const initials = (m.nome || '').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+  const badgeClass = m.cargo === 'Administrador' ? 'admin-badge-admin' :
+                     m.cargo === 'Marketing' ? 'admin-badge-marketing' : 'admin-badge-attend';
+  const perfil = perm ? perm.perfil : 'Sem permissão';
+  const perfilCls = perm ? ({
+    'Administrador': 'perm-badge-admin',
+    'Gestor': 'perm-badge-gestor',
+    'Atendimento': 'perm-badge-atend',
+    'Financeiro': 'perm-badge-fin'
+  })[perm.perfil] || 'perm-badge-readonly' : 'perm-badge-readonly';
+
+  const row = document.createElement('tr');
+  row.dataset.membroId = m.id;
+  row.innerHTML = `
+    <td><div class="admin-user-cell"><span class="admin-avatar">${escapeHtml(initials)}</span> ${escapeHtml(m.nome || '')}</div></td>
+    <td>${escapeHtml(m.email || '')}</td>
+    <td><span class="admin-badge ${badgeClass}">${escapeHtml(m.cargo || '—')}</span></td>
+    <td><span class="perm-badge ${perfilCls}">${escapeHtml(perfil)}</span></td>
+    <td class="admin-actions-cell">
+      <button class="btn-icon" title="Editar Permissões" data-perm-edit="${m.id}"><i data-lucide="pencil"></i></button>
+    </td>`;
+
+  const editBtn = row.querySelector('[data-perm-edit]');
+  if (editBtn) {
+    editBtn.addEventListener('click', () => openPermModalForMember(m, perm));
+  }
+  return row;
+}
+
+/* ── Abrir modal de permissões para um membro ── */
+function openPermModalForMember(member, perm) {
+  document.getElementById('adminPermMembroId').value = member.id;
+  document.getElementById('adminPermTitle').textContent = 'Editar Permissões – ' + member.nome;
+  document.getElementById('adminPermSubtitle').textContent = member.email;
+
+  if (perm) {
+    document.getElementById('adminPermPerfil').value = perm.perfil || 'Somente leitura';
+    document.getElementById('permCrmView').checked = !!perm.can_crm_view;
+    document.getElementById('permCrmEdit').checked = !!perm.can_crm_edit;
+    document.getElementById('permCrmDelete').checked = !!perm.can_crm_delete;
+    document.getElementById('permCalView').checked = !!perm.can_calendar_view;
+    document.getElementById('permCalEdit').checked = !!perm.can_calendar_edit;
+    document.getElementById('permClientsView').checked = !!perm.can_clients_view;
+    document.getElementById('permClientsEdit').checked = !!perm.can_clients_edit;
+    document.getElementById('permAuditView').checked = !!perm.can_audit_view;
+    document.getElementById('permAdminMembers').checked = !!perm.can_admin_manage_members;
+    document.getElementById('permAdminPerms').checked = !!perm.can_admin_manage_permissions;
+  } else {
+    applyPerfilDefaults('Somente leitura');
+  }
+
+  openPermModal();
+}
+
+/* ── Salvar permissões (upsert) ── */
+async function handlePermSave() {
+  const membroId = document.getElementById('adminPermMembroId').value;
+  if (!membroId) return;
+
+  const saveBtn = document.getElementById('adminPermSaveBtn');
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '<span class="auth-spinner"></span>';
+
+  const payload = {
+    membro_id: membroId,
+    perfil: document.getElementById('adminPermPerfil').value,
+    can_crm_view: document.getElementById('permCrmView').checked,
+    can_crm_edit: document.getElementById('permCrmEdit').checked,
+    can_crm_delete: document.getElementById('permCrmDelete').checked,
+    can_calendar_view: document.getElementById('permCalView').checked,
+    can_calendar_edit: document.getElementById('permCalEdit').checked,
+    can_clients_view: document.getElementById('permClientsView').checked,
+    can_clients_edit: document.getElementById('permClientsEdit').checked,
+    can_audit_view: document.getElementById('permAuditView').checked,
+    can_admin_manage_members: document.getElementById('permAdminMembers').checked,
+    can_admin_manage_permissions: document.getElementById('permAdminPerms').checked,
+    updated_at: new Date().toISOString()
+  };
+
+  try {
+    // Tenta buscar existente
+    const { data: existing } = await _supabase.from('membros_permissoes')
+      .select('id').eq('membro_id', membroId).maybeSingle();
+
+    let error;
+    if (existing) {
+      const res = await _supabase.from('membros_permissoes').update(payload).eq('id', existing.id);
+      error = res.error;
+    } else {
+      const res = await _supabase.from('membros_permissoes').insert([payload]);
+      error = res.error;
+    }
+
+    if (error) {
+      console.error('[Admin] Erro ao salvar permissões:', error.message, error.code, error.hint);
+      throw error;
+    }
+
+    toast('Permissões salvas com sucesso!');
+    if (typeof registrarAuditoria === 'function') registrarAuditoria({ acao: 'Atualizações', caminho_url: '/administrador', modulo: 'Administrador' });
+    closePermModal();
+    await loadPermissionsFromSupabase();
+
+  } catch (err) {
+    console.error('[Admin] Erro ao salvar permissões:', err);
+    toast(err.message || 'Erro ao salvar permissões', 'error');
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = '<i data-lucide="save"></i> Salvar Permissões';
+    initIcons();
+  }
+}
+
+/* ── Carregar permissões do Supabase ── */
+async function loadPermissionsFromSupabase() {
+  if (!_supabase) return;
+
+  // Garante que membros estão carregados
+  if (_adminMembersCache.length === 0) {
+    const { data } = await _supabase.from('membros').select('*').order('created_at', { ascending: false });
+    _adminMembersCache = data || [];
+  }
+
+  try {
+    const { data, error } = await _supabase.from('membros_permissoes').select('*');
+    if (error) {
+      console.warn('[Admin] Tabela membros_permissoes não encontrada:', error.message);
+      _adminPermCache = [];
+    } else {
+      _adminPermCache = data || [];
+    }
+  } catch (err) {
+    console.error('[Admin] Erro ao buscar permissões:', err);
+    _adminPermCache = [];
+  }
+
+  const permMap = {};
+  _adminPermCache.forEach(p => { permMap[p.membro_id] = p; });
+
+  const tbody = document.getElementById('adminPermBody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  if (_adminMembersCache.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted-text)">Nenhum membro cadastrado</td></tr>';
+    return;
+  }
+
+  _adminMembersCache.forEach(m => {
+    tbody.appendChild(renderPermRow(m, permMap[m.id] || null));
+  });
+  initIcons();
 }
 
 /* ============================================

@@ -1179,73 +1179,63 @@
             <button class="btn-primary" id="adminNewMemberBtn"><i data-lucide="plus"></i> Novo Membro</button>
           </div>
 
-          <!-- Usuários (única seção) -->
-          <div class="admin-section-header">
-            <p class="admin-section-text">Membros cadastrados na plataforma</p>
-            <div class="admin-search-wrap">
-              <i data-lucide="search"></i>
-              <input type="text" class="admin-input" placeholder="Buscar membro..." id="adminSearchInput" />
+          <!-- Tabs -->
+          <div class="admin-tabs" id="adminTabs">
+            <button class="admin-tab active" data-admin-tab="membros"><i data-lucide="users"></i> Membros</button>
+            <button class="admin-tab" data-admin-tab="permissoes"><i data-lucide="shield"></i> Permissões</button>
+          </div>
+
+          <!-- ══════ TAB: Membros ══════ -->
+          <div class="admin-tab-content active" id="adminTabMembros">
+            <div class="admin-section-header">
+              <p class="admin-section-text">Membros cadastrados na plataforma</p>
+              <div class="admin-search-wrap">
+                <i data-lucide="search"></i>
+                <input type="text" class="admin-input" placeholder="Buscar membro..." id="adminSearchInput" />
+              </div>
+            </div>
+            <div class="admin-table-wrap">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>E-mail</th>
+                    <th>Cargo</th>
+                    <th>Status</th>
+                    <th>Cadastro</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="adminUsersBody"></tbody>
+              </table>
             </div>
           </div>
-          <div class="admin-table-wrap">
-            <table class="admin-table">
-              <thead>
-                <tr>
-                  <th>Nome</th>
-                  <th>E-mail</th>
-                  <th>Cargo</th>
-                  <th>Status</th>
-                  <th>Cadastro</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody id="adminUsersBody">
-                <tr>
-                  <td><div class="admin-user-cell"><span class="admin-avatar">CS</span> Camila Souza</div></td>
-                  <td>camila@blueeventos.com</td>
-                  <td><span class="admin-badge admin-badge-admin">Administrador</span></td>
-                  <td><span class="admin-status admin-status-ativo">Ativo</span></td>
-                  <td>01/01/2026</td>
-                  <td class="admin-actions-cell">
-                    <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
-                    <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
-                  </td>
-                </tr>
-                <tr>
-                  <td><div class="admin-user-cell"><span class="admin-avatar">RF</span> Rafaela Ferreira</div></td>
-                  <td>rafaela@blueeventos.com</td>
-                  <td><span class="admin-badge admin-badge-admin">Administrador</span></td>
-                  <td><span class="admin-status admin-status-ativo">Ativo</span></td>
-                  <td>15/02/2026</td>
-                  <td class="admin-actions-cell">
-                    <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
-                    <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
-                  </td>
-                </tr>
-                <tr>
-                  <td><div class="admin-user-cell"><span class="admin-avatar">JP</span> João Pedro</div></td>
-                  <td>joao@blueeventos.com</td>
-                  <td><span class="admin-badge admin-badge-marketing">Marketing</span></td>
-                  <td><span class="admin-status admin-status-ativo">Ativo</span></td>
-                  <td>20/03/2026</td>
-                  <td class="admin-actions-cell">
-                    <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
-                    <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
-                  </td>
-                </tr>
-                <tr>
-                  <td><div class="admin-user-cell"><span class="admin-avatar">MA</span> Marina Alves</div></td>
-                  <td>marina@blueeventos.com</td>
-                  <td><span class="admin-badge admin-badge-attend">Atendimento</span></td>
-                  <td><span class="admin-status admin-status-ativo">Ativo</span></td>
-                  <td>10/04/2026</td>
-                  <td class="admin-actions-cell">
-                    <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
-                    <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+
+          <!-- ══════ TAB: Permissões ══════ -->
+          <div class="admin-tab-content" id="adminTabPermissoes">
+            <div class="admin-section-header">
+              <div>
+                <p class="admin-section-text" style="margin-bottom:2px">Configure o que cada membro pode acessar e fazer na plataforma.</p>
+              </div>
+              <div class="admin-search-wrap">
+                <i data-lucide="search"></i>
+                <input type="text" class="admin-input" placeholder="Buscar membro..." id="adminPermSearchInput" />
+              </div>
+            </div>
+            <div class="admin-table-wrap">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>E-mail</th>
+                    <th>Cargo</th>
+                    <th>Perfil de Permissão</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="adminPermBody"></tbody>
+              </table>
+            </div>
           </div>
 
           <!-- Modal: Criar/Editar Membro -->
@@ -1409,6 +1399,98 @@
               <div class="modal-foot-actions">
                 <button class="btn-ghost" data-action="close-admin-delete">Cancelar</button>
                 <button class="btn-primary" style="background:#E14C4C" id="adminDeleteConfirmBtn"><i data-lucide="trash-2"></i> Remover</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal: Editar Permissões -->
+          <div class="modal-overlay" id="adminPermOverlay"></div>
+          <div class="modal modal-lg" id="adminPermModal" role="dialog" aria-labelledby="adminPermTitle">
+            <div class="modal-head">
+              <div class="modal-head-left">
+                <div class="modal-avatar" style="background:var(--blue-50);color:var(--blue-600)"><i data-lucide="shield"></i></div>
+                <div>
+                  <h2 id="adminPermTitle">Editar Permissões</h2>
+                  <p class="modal-meta" id="adminPermSubtitle"></p>
+                </div>
+              </div>
+              <button class="icon-btn small" data-action="close-admin-perm" title="Fechar"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body admin-member-body">
+              <input type="hidden" id="adminPermMembroId" value="" />
+
+              <!-- Seção 1: Perfil -->
+              <div class="admin-form-section">
+                <h3 class="admin-form-section-title">Perfil de Permissão</h3>
+                <div class="form-grid-2">
+                  <div class="form-group full">
+                    <label>Perfil de acesso</label>
+                    <select id="adminPermPerfil">
+                      <option value="Administrador">Administrador</option>
+                      <option value="Gestor">Gestor</option>
+                      <option value="Atendimento">Atendimento</option>
+                      <option value="Financeiro">Financeiro</option>
+                      <option value="Somente leitura" selected>Somente leitura</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Seção 2: Permissões detalhadas -->
+              <div class="admin-form-section">
+                <h3 class="admin-form-section-title">Permissões por Módulo</h3>
+
+                <!-- CRM -->
+                <div class="perm-module">
+                  <h4 class="perm-module-title"><i data-lucide="kanban-square"></i> CRM</h4>
+                  <div class="perm-checks">
+                    <label class="perm-check"><input type="checkbox" id="permCrmView" /> Ver Leads</label>
+                    <label class="perm-check"><input type="checkbox" id="permCrmEdit" /> Editar Leads</label>
+                    <label class="perm-check"><input type="checkbox" id="permCrmDelete" /> Excluir Leads</label>
+                  </div>
+                </div>
+
+                <!-- Calendário -->
+                <div class="perm-module">
+                  <h4 class="perm-module-title"><i data-lucide="calendar-days"></i> Calendário</h4>
+                  <div class="perm-checks">
+                    <label class="perm-check"><input type="checkbox" id="permCalView" /> Ver eventos</label>
+                    <label class="perm-check"><input type="checkbox" id="permCalEdit" /> Criar/editar eventos</label>
+                  </div>
+                </div>
+
+                <!-- Cliente da Base -->
+                <div class="perm-module">
+                  <h4 class="perm-module-title"><i data-lucide="users"></i> Cliente da Base</h4>
+                  <div class="perm-checks">
+                    <label class="perm-check"><input type="checkbox" id="permClientsView" /> Ver clientes</label>
+                    <label class="perm-check"><input type="checkbox" id="permClientsEdit" /> Editar dados de clientes</label>
+                  </div>
+                </div>
+
+                <!-- Auditoria -->
+                <div class="perm-module">
+                  <h4 class="perm-module-title"><i data-lucide="shield"></i> Auditoria</h4>
+                  <div class="perm-checks">
+                    <label class="perm-check"><input type="checkbox" id="permAuditView" /> Ver logs de auditoria</label>
+                  </div>
+                </div>
+
+                <!-- Administrador -->
+                <div class="perm-module">
+                  <h4 class="perm-module-title"><i data-lucide="shield-check"></i> Administrador</h4>
+                  <div class="perm-checks">
+                    <label class="perm-check"><input type="checkbox" id="permAdminMembers" /> Gerenciar membros</label>
+                    <label class="perm-check"><input type="checkbox" id="permAdminPerms" /> Gerenciar permissões</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="modal-foot admin-member-foot">
+              <p class="admin-foot-note">As permissões são salvas no Supabase e aplicadas imediatamente.</p>
+              <div class="modal-foot-actions">
+                <button class="btn-ghost" data-action="close-admin-perm">Cancelar</button>
+                <button class="btn-primary" id="adminPermSaveBtn"><i data-lucide="save"></i> Salvar Permissões</button>
               </div>
             </div>
           </div>
