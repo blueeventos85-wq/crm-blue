@@ -20,6 +20,351 @@ let currentUser = {
   role: 'admin' // padrão: acesso total (trocar para 'viewer' ou 'editor' para testar)
 };
 
+/* ============================================
+   AUTH · Supabase Authentication
+   ============================================ */
+let _authUser = null;
+
+function showAuthOverlay() {
+  const overlay = document.getElementById('authOverlay');
+  if (overlay) overlay.classList.remove('hidden');
+}
+
+function hideAuthOverlay() {
+  const overlay = document.getElementById('authOverlay');
+  if (overlay) overlay.classList.add('hidden');
+}
+
+function setAuthLoading(btn, loading) {
+  if (!btn) return;
+  if (loading) {
+    btn.disabled = true;
+    btn.dataset.originalHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="auth-spinner"></span>';
+  } else {
+    btn.disabled = false;
+    if (btn.dataset.originalHtml) btn.innerHTML = btn.dataset.originalHtml;
+  }
+}
+
+function showAuthError(id, msg) {
+  const el = document.getElementById(id);
+  if (el) { el.textContent = msg; el.hidden = false; }
+}
+function hideAuthError(id) {
+  const el = document.getElementById(id);
+  if (el) el.hidden = true;
+}
+function showAuthSuccess(id, msg) {
+  const el = document.getElementById(id);
+  if (el) { el.textContent = msg; el.hidden = false; }
+}
+
+async function initAuth() {
+  if (!_supabase) { showAuthOverlay(); return; }
+
+  const { data: { session } } = await _supabase.auth.getSession();
+  if (session && session.user) {
+    _authUser = session.user;
+    currentUser.id = session.user.id;
+    currentUser.nome = session.user.user_metadata?.nome || session.user.email?.split('@')[0] || 'Usuário';
+    hideAuthOverlay();
+    onAuthReady();
+  } else {
+    showAuthOverlay();
+  }
+
+  _supabase.auth.onAuthStateChange((event, session) => {
+    if (session && session.user) {
+      _authUser = session.user;
+      currentUser.id = session.user.id;
+      currentUser.nome = session.user.user_metadata?.nome || session.user.email?.split('@')[0] || 'Usuário';
+      hideAuthOverlay();
+    } else {
+      _authUser = null;
+      currentUser.id = null;
+      currentUser.nome = 'Usuário';
+      showAuthOverlay();
+    }
+  });
+}
+
+function bindAuthForms() {
+  const loginForm = document.getElementById('loginForm');
+  const registerForm = document.getElementById('registerForm');
+  const forgotForm = document.getElementById('forgotForm');
+  const toggleLink = document.getElementById('authToggleLink');
+  const backLink = document.getElementById('authBackToLogin');
+  const forgotLink = document.getElementById('authForgotLink');
+  const footer = document.getElementById('authFooter');
+  const forgotFooter = document.getElementById('forgotFooter');
+  const tagline = document.getElementById('authTagline');
+
+  // Toggle login <-> register
+  if (toggleLink) {
+    toggleLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      const isLogin = loginForm.style.display !== 'none';
+      if (isLogin) {
+        loginForm.style.display = 'none';
+        registerForm.style.display = '';
+        footer.innerHTML = 'Já tem uma conta? <a href="#" id="authToggleLink">Entrar</a>';
+        tagline.textContent = 'Cadastre-se para acessar o CRM Blue Eventos.';
+      } else {
+        loginForm.style.display = '';
+        registerForm.style.display = 'none';
+        footer.innerHTML = 'Não tem uma conta? <a href="#" id="authToggleLink">Cadastre-se</a>';
+        tagline.textContent = 'Acesse sua conta para gerenciar o CRM.';
+      }
+      hideAuthError('loginError');
+      hideAuthError('registerError');
+      // Rebind toggle link after innerHTML change
+      const newToggle = document.getElementById('authToggleLink');
+      if (newToggle) newToggle.addEventListener('click', arguments.callee);
+    });
+  }
+
+  // Forgot password
+  if (forgotLink) {
+    forgotLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      loginForm.style.display = 'none';
+      footer.style.display = 'none';
+      forgotForm.style.display = '';
+      forgotFooter.style.display = '';
+      tagline.textContent = 'Informe seu e-mail para recuperar a senha.';
+    });
+  }
+  if (backLink) {
+    backLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      forgotForm.style.display = 'none';
+      forgotFooter.style.display = 'none';
+      loginForm.style.display = '';
+      footer.style.display = '';
+      tagline.textContent = 'Acesse sua conta para gerenciar o CRM.';
+      hideAuthError('forgotError');
+      document.getElementById('forgotSuccess').hidden = true;
+    });
+  }
+
+  // Password visibility toggles
+  document.querySelectorAll('.auth-pw-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const input = btn.parentElement.querySelector('input');
+      if (!input) return;
+      const isPassword = input.type === 'password';
+      input.type = isPassword ? 'text' : 'password';
+      const icon = btn.querySelector('i');
+      if (icon) icon.setAttribute('data-lucide', isPassword ? 'eye-off' : 'eye');
+      initIcons();
+    });
+  });
+
+  // Login submit
+  if (loginForm) {
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideAuthError('loginError');
+      const email = document.getElementById('loginEmail').value.trim();
+      const password = document.getElementById('loginPassword').value;
+      const btn = document.getElementById('loginSubmitBtn');
+
+      if (!email || !password) { showAuthError('loginError', 'Preencha todos os campos.'); return; }
+
+      setAuthLoading(btn, true);
+      try {
+        const { data, error } = await _supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        // Session will be handled by onAuthStateChange
+      } catch (err) {
+        showAuthError('loginError', err.message || 'Erro ao fazer login. Verifique suas credenciais.');
+      } finally {
+        setAuthLoading(btn, false);
+      }
+    });
+  }
+
+  // Register submit
+  if (registerForm) {
+    registerForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideAuthError('registerError');
+      const nome = document.getElementById('regName').value.trim();
+      const email = document.getElementById('regEmail').value.trim();
+      const password = document.getElementById('regPassword').value;
+      const confirm = document.getElementById('regPasswordConfirm').value;
+      const btn = document.getElementById('registerSubmitBtn');
+
+      if (!nome || !email || !password || !confirm) {
+        showAuthError('registerError', 'Preencha todos os campos.');
+        return;
+      }
+      if (password !== confirm) {
+        showAuthError('registerError', 'As senhas não coincidem.');
+        return;
+      }
+      if (password.length < 6) {
+        showAuthError('registerError', 'A senha deve ter pelo menos 6 caracteres.');
+        return;
+      }
+
+      setAuthLoading(btn, true);
+      try {
+        const { data, error } = await _supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { nome } }
+        });
+        if (error) throw error;
+        if (data.user && !data.session) {
+          showAuthError('registerError', '');
+          document.getElementById('registerError').hidden = true;
+          const successEl = document.getElementById('registerError');
+          successEl.insertAdjacentHTML('afterend',
+            '<div class="auth-success">Conta criada! Verifique seu e-mail para confirmar o cadastro.</div>');
+          registerForm.reset();
+        }
+        // If session exists, onAuthStateChange will handle it
+      } catch (err) {
+        showAuthError('registerError', err.message || 'Erro ao criar conta.');
+      } finally {
+        setAuthLoading(btn, false);
+      }
+    });
+  }
+
+  // Forgot password submit
+  if (forgotForm) {
+    forgotForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideAuthError('forgotError');
+      document.getElementById('forgotSuccess').hidden = true;
+      const email = document.getElementById('forgotEmail').value.trim();
+      if (!email) { showAuthError('forgotError', 'Informe seu e-mail.'); return; }
+
+      try {
+        const { error } = await _supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin
+        });
+        if (error) throw error;
+        showAuthSuccess('forgotSuccess', 'Link de recuperação enviado! Verifique sua caixa de entrada.');
+        forgotForm.reset();
+      } catch (err) {
+        showAuthError('forgotError', err.message || 'Erro ao enviar link de recuperação.');
+      }
+    });
+  }
+}
+
+function onAuthReady() {
+  // Update user display in sidebar
+  const userNameEl = document.querySelector('.user-name');
+  const userRoleEl = document.querySelector('.user-role');
+  const userAvatarEl = document.querySelector('.user-card .user-avatar');
+  const pageTitle = document.getElementById('pageTitle');
+  const pageSubtitle = document.getElementById('pageSubtitle');
+
+  if (userNameEl) userNameEl.textContent = currentUser.nome;
+  if (userAvatarEl) {
+    const initials = currentUser.nome.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+    userAvatarEl.textContent = initials;
+  }
+  if (pageSubtitle) pageSubtitle.textContent = `Bem-vindo de volta, ${currentUser.nome.split(' ')[0]} ✨`;
+
+  // Logout button
+  const logoutBtn = document.querySelector('.user-action');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', async () => {
+      if (_supabase) await _supabase.auth.signOut();
+    });
+  }
+
+  // Initialize the app
+  initIcons();
+  renderHomeModules();
+}
+
+/* ============================================
+   ADMIN · Simplified init (no tabs)
+   ============================================ */
+function initAdminView() {
+  // Bind "Novo Membro" button
+  const addBtn = document.getElementById('adminNewMemberBtn');
+  const overlay = document.getElementById('adminMemberOverlay');
+  const modal = document.getElementById('adminMemberModal');
+  const closeBtns = document.querySelectorAll('[data-action="close-admin-member"]');
+  const saveBtn = document.getElementById('adminMemberSaveBtn');
+  const searchInput = document.getElementById('adminSearchInput');
+
+  if (addBtn && overlay && modal) {
+    addBtn.addEventListener('click', () => {
+      overlay.style.display = 'block';
+      modal.style.display = 'flex';
+      initIcons();
+    });
+  }
+
+  closeBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (overlay) overlay.style.display = 'none';
+      if (modal) modal.style.display = 'none';
+    });
+  });
+
+  if (overlay) {
+    overlay.addEventListener('click', () => {
+      overlay.style.display = 'none';
+      if (modal) modal.style.display = 'none';
+    });
+  }
+
+  if (saveBtn) {
+    saveBtn.addEventListener('click', () => {
+      const name = document.getElementById('adminMemberName')?.value?.trim();
+      const email = document.getElementById('adminMemberEmail')?.value?.trim();
+      const role = document.getElementById('adminMemberRole')?.value;
+      if (!name || !email) { toast('Preencha nome e e-mail', 'error'); return; }
+
+      const initials = name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+      const tbody = document.getElementById('adminUsersBody');
+      if (tbody) {
+        const badgeClass = role === 'Administrador' ? 'admin-badge-admin' :
+                           role === 'Marketing' ? 'admin-badge-marketing' : 'admin-badge-attend';
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td><div class="admin-user-cell"><span class="admin-avatar">${escapeHtml(initials)}</span> ${escapeHtml(name)}</div></td>
+          <td>${escapeHtml(email)}</td>
+          <td><span class="admin-badge ${badgeClass}">${escapeHtml(role)}</span></td>
+          <td><span class="admin-status admin-status-ativo">Ativo</span></td>
+          <td>${new Date().toLocaleDateString('pt-BR')}</td>
+          <td class="admin-actions-cell">
+            <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
+            <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
+          </td>`;
+        tbody.appendChild(row);
+        initIcons();
+      }
+
+      if (overlay) overlay.style.display = 'none';
+      if (modal) modal.style.display = 'none';
+      toast('Membro adicionado com sucesso');
+    });
+  }
+
+  // Search filter
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.toLowerCase().trim();
+      const rows = document.querySelectorAll('#adminUsersBody tr');
+      rows.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(q) ? '' : 'none';
+      });
+    });
+  }
+}
+
 function canEditEvent(event) {
   if (currentUser.role === 'admin') return true;
   if (currentUser.role === 'editor') return event.leadId === currentUser.id || !event.leadId;
@@ -4524,49 +4869,6 @@ function renderAdminPermsTable() {
   });
 }
 
-function initAdminView() {
-  document.querySelectorAll('[data-admin-tab]').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('[data-admin-tab]').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('[data-admin-tab-content]').forEach(c => c.classList.remove('active'));
-      tab.classList.add('active');
-      const target = tab.dataset.adminTab;
-      const content = document.querySelector(`[data-admin-tab-content="${target}"]`);
-      if (content) content.classList.add('active');
-      if (target === 'permissoes') renderAdminPermsTable();
-    });
-  });
-
-  const addPerfilBtn = document.getElementById('adminAddPerfilBtn');
-  if (addPerfilBtn) {
-    addPerfilBtn.addEventListener('click', () => {
-      const input = document.getElementById('adminNovoPerfilInput');
-      if (!input || !input.value.trim()) return;
-      const novaChave = input.value.trim().toLowerCase().replace(/\s+/g, '_');
-      if (adminPermissoes[novaChave]) { toast('Perfil já existe'); return; }
-      adminPermissoes[novaChave] = {};
-      adminModulos.forEach(m => { adminPermissoes[novaChave][m.chave] = false; });
-      const thead = document.querySelector('.admin-table-perms thead tr');
-      if (thead) {
-        const th = document.createElement('th');
-        th.className = 'perm-col-role';
-        th.textContent = input.value.trim();
-        thead.appendChild(th);
-      }
-      renderAdminPermsTable();
-      input.value = '';
-      toast('Perfil adicionado');
-    });
-  }
-
-  const saveBtn = document.getElementById('adminSavePermsBtn');
-  if (saveBtn) {
-    saveBtn.addEventListener('click', () => {
-      toast('Permissões salvas com sucesso');
-    });
-  }
-}
-
 /* ============================================
    ROTINA BLUE · DASHBOARD PESSOAL
    ============================================ */
@@ -5860,6 +6162,10 @@ function bindAuditFilters() {
    BOOT
    ============================================ */
 document.addEventListener('DOMContentLoaded', async () => {
+  // Auth first - shows login screen or hides it
+  bindAuthForms();
+  await initAuth();
+
   initTheme();
   initIcons();
   initInteractions();

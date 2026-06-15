@@ -13,6 +13,119 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+  <!-- ============ AUTH OVERLAY (Login / Cadastro) ============ -->
+  <div class="auth-overlay" id="authOverlay">
+    <div class="auth-bg"></div>
+    <div class="auth-card" id="authCard">
+      <!-- Logo -->
+      <div class="auth-logo">
+        <div class="auth-logo-icon">
+          <i data-lucide="bar-chart-3"></i>
+        </div>
+        <h1 class="auth-brand">CRM Blue Eventos</h1>
+        <p class="auth-tagline" id="authTagline">Acesse sua conta para gerenciar o CRM.</p>
+      </div>
+
+      <!-- Login Form -->
+      <form class="auth-form" id="loginForm" autocomplete="on">
+        <div class="auth-field">
+          <label for="loginEmail">E-mail</label>
+          <div class="auth-input-wrap">
+            <i data-lucide="mail"></i>
+            <input type="email" id="loginEmail" placeholder="seu@email.com" required autocomplete="email" />
+          </div>
+        </div>
+        <div class="auth-field">
+          <label for="loginPassword">Senha</label>
+          <div class="auth-input-wrap">
+            <i data-lucide="lock"></i>
+            <input type="password" id="loginPassword" placeholder="Sua senha" required autocomplete="current-password" />
+            <button type="button" class="auth-pw-toggle" id="loginPwToggle" aria-label="Mostrar senha">
+              <i data-lucide="eye"></i>
+            </button>
+          </div>
+        </div>
+        <div class="auth-options">
+          <label class="auth-check">
+            <input type="checkbox" id="loginRemember" />
+            <span>Lembrar de mim</span>
+          </label>
+          <a href="#" class="auth-forgot" id="authForgotLink">Esqueceu a senha?</a>
+        </div>
+        <button type="submit" class="auth-submit" id="loginSubmitBtn">
+          <span>Entrar</span>
+          <i data-lucide="arrow-right"></i>
+        </button>
+        <div class="auth-error" id="loginError" hidden></div>
+      </form>
+
+      <!-- Register Form -->
+      <form class="auth-form" id="registerForm" style="display:none" autocomplete="on">
+        <div class="auth-field">
+          <label for="regName">Nome completo</label>
+          <div class="auth-input-wrap">
+            <i data-lucide="user"></i>
+            <input type="text" id="regName" placeholder="Seu nome completo" required autocomplete="name" />
+          </div>
+        </div>
+        <div class="auth-field">
+          <label for="regEmail">E-mail</label>
+          <div class="auth-input-wrap">
+            <i data-lucide="mail"></i>
+            <input type="email" id="regEmail" placeholder="seu@email.com" required autocomplete="email" />
+          </div>
+        </div>
+        <div class="auth-field">
+          <label for="regPassword">Senha</label>
+          <div class="auth-input-wrap">
+            <i data-lucide="lock"></i>
+            <input type="password" id="regPassword" placeholder="Crie uma senha" required minlength="6" autocomplete="new-password" />
+            <button type="button" class="auth-pw-toggle" id="regPwToggle" aria-label="Mostrar senha">
+              <i data-lucide="eye"></i>
+            </button>
+          </div>
+        </div>
+        <div class="auth-field">
+          <label for="regPasswordConfirm">Confirmar senha</label>
+          <div class="auth-input-wrap">
+            <i data-lucide="lock"></i>
+            <input type="password" id="regPasswordConfirm" placeholder="Repita a senha" required minlength="6" autocomplete="new-password" />
+          </div>
+        </div>
+        <button type="submit" class="auth-submit" id="registerSubmitBtn">
+          <span>Criar conta</span>
+          <i data-lucide="arrow-right"></i>
+        </button>
+        <div class="auth-error" id="registerError" hidden></div>
+      </form>
+
+      <!-- Footer toggle -->
+      <p class="auth-footer" id="authFooter">
+        Não tem uma conta? <a href="#" id="authToggleLink">Cadastre-se</a>
+      </p>
+
+      <!-- Forgot password form -->
+      <form class="auth-form" id="forgotForm" style="display:none">
+        <div class="auth-field">
+          <label for="forgotEmail">E-mail</label>
+          <div class="auth-input-wrap">
+            <i data-lucide="mail"></i>
+            <input type="email" id="forgotEmail" placeholder="seu@email.com" required autocomplete="email" />
+          </div>
+        </div>
+        <button type="submit" class="auth-submit">
+          <span>Enviar link de recuperação</span>
+          <i data-lucide="send"></i>
+        </button>
+        <div class="auth-error" id="forgotError" hidden></div>
+        <div class="auth-success" id="forgotSuccess" hidden></div>
+      </form>
+      <p class="auth-footer" id="forgotFooter" style="display:none">
+        <a href="#" id="authBackToLogin">Voltar ao login</a>
+      </p>
+    </div>
+  </div>
+
   <div class="app">
     <!-- ============ SIDEBAR ============ -->
     <aside class="sidebar">
@@ -1106,171 +1219,124 @@
           <div class="admin-header">
             <div>
               <h2 class="admin-title"><i data-lucide="shield-check"></i> Administrador</h2>
-              <p class="admin-subtitle">Gerencie membros, permissões e convites</p>
+              <p class="admin-subtitle">Gerencie membros e permissões do sistema</p>
             </div>
             <button class="btn-primary" id="adminNewMemberBtn"><i data-lucide="plus"></i> Novo Membro</button>
           </div>
 
-          <!-- Tabs -->
-          <div class="admin-tabs">
-            <button class="admin-tab active" data-admin-tab="pendentes"><i data-lucide="key"></i> Pendentes</button>
-            <button class="admin-tab" data-admin-tab="usuarios"><i data-lucide="users"></i> Usuários</button>
-            <button class="admin-tab" data-admin-tab="permissoes"><i data-lucide="lock"></i> Permissões</button>
-            <button class="admin-tab" data-admin-tab="desenvolvimento"><i data-lucide="graduation-cap"></i> Desenvolvimento</button>
-          </div>
-
-          <!-- Tab: Pendentes -->
-          <div class="admin-tab-content active" data-admin-tab-content="pendentes">
-            <div class="admin-section-header">
-              <p class="admin-section-text">Convites pendentes de aprovação</p>
-            </div>
-            <div class="admin-table-wrap">
-              <table class="admin-table">
-                <thead>
-                  <tr>
-                    <th>Nome</th>
-                    <th>Email</th>
-                    <th>Data do Convite</th>
-                    <th>Convidado por</th>
-                    <th>Ações</th>
-                  </tr>
-                </thead>
-                <tbody id="adminPendentesBody">
-                  <tr>
-                    <td>Fernanda Lima</td>
-                    <td>fernanda@blueeventos.com</td>
-                    <td>10/06/2026</td>
-                    <td>Camila Souza</td>
-                    <td class="admin-actions-cell">
-                      <button class="btn-sm btn-primary">Aprovar</button>
-                      <button class="btn-sm btn-outline">Rejeitar</button>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Ricardo Santos</td>
-                    <td>ricardo@blueeventos.com</td>
-                    <td>09/06/2026</td>
-                    <td>Rafaela Ferreira</td>
-                    <td class="admin-actions-cell">
-                      <button class="btn-sm btn-primary">Aprovar</button>
-                      <button class="btn-sm btn-outline">Rejeitar</button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+          <!-- Usuários (única seção) -->
+          <div class="admin-section-header">
+            <p class="admin-section-text">Membros cadastrados na plataforma</p>
+            <div class="admin-search-wrap">
+              <i data-lucide="search"></i>
+              <input type="text" class="admin-input" placeholder="Buscar membro..." id="adminSearchInput" />
             </div>
           </div>
-
-          <!-- Tab: Usuários -->
-          <div class="admin-tab-content" data-admin-tab-content="usuarios">
-            <div class="admin-section-header">
-              <p class="admin-section-text">Membros cadastrados na plataforma</p>
-            </div>
-            <div class="admin-table-wrap">
-              <table class="admin-table">
-                <thead>
-                  <tr>
-                    <th>Nome</th>
-                    <th>Email</th>
-                    <th>Cargo</th>
-                    <th>Status</th>
-                    <th>Cadastro</th>
-                    <th>Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td><div class="admin-user-cell"><span class="admin-avatar">CS</span> Camila Souza</div></td>
-                    <td>camila@blueeventos.com</td>
-                    <td><span class="admin-badge admin-badge-admin">Administrador</span></td>
-                    <td><span class="admin-status admin-status-ativo">Ativo</span></td>
-                    <td>01/01/2026</td>
-                    <td class="admin-actions-cell">
-                      <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
-                      <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td><div class="admin-user-cell"><span class="admin-avatar">RF</span> Rafaela Ferreira</div></td>
-                    <td>rafaela@blueeventos.com</td>
-                    <td><span class="admin-badge admin-badge-admin">Administrador</span></td>
-                    <td><span class="admin-status admin-status-ativo">Ativo</span></td>
-                    <td>15/02/2026</td>
-                    <td class="admin-actions-cell">
-                      <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
-                      <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td><div class="admin-user-cell"><span class="admin-avatar">JP</span> João Pedro</div></td>
-                    <td>joao@blueeventos.com</td>
-                    <td><span class="admin-badge admin-badge-marketing">Marketing</span></td>
-                    <td><span class="admin-status admin-status-ativo">Ativo</span></td>
-                    <td>20/03/2026</td>
-                    <td class="admin-actions-cell">
-                      <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
-                      <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+          <div class="admin-table-wrap">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>E-mail</th>
+                  <th>Cargo</th>
+                  <th>Status</th>
+                  <th>Cadastro</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="adminUsersBody">
+                <tr>
+                  <td><div class="admin-user-cell"><span class="admin-avatar">CS</span> Camila Souza</div></td>
+                  <td>camila@blueeventos.com</td>
+                  <td><span class="admin-badge admin-badge-admin">Administrador</span></td>
+                  <td><span class="admin-status admin-status-ativo">Ativo</span></td>
+                  <td>01/01/2026</td>
+                  <td class="admin-actions-cell">
+                    <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
+                    <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
+                  </td>
+                </tr>
+                <tr>
+                  <td><div class="admin-user-cell"><span class="admin-avatar">RF</span> Rafaela Ferreira</div></td>
+                  <td>rafaela@blueeventos.com</td>
+                  <td><span class="admin-badge admin-badge-admin">Administrador</span></td>
+                  <td><span class="admin-status admin-status-ativo">Ativo</span></td>
+                  <td>15/02/2026</td>
+                  <td class="admin-actions-cell">
+                    <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
+                    <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
+                  </td>
+                </tr>
+                <tr>
+                  <td><div class="admin-user-cell"><span class="admin-avatar">JP</span> João Pedro</div></td>
+                  <td>joao@blueeventos.com</td>
+                  <td><span class="admin-badge admin-badge-marketing">Marketing</span></td>
+                  <td><span class="admin-status admin-status-ativo">Ativo</span></td>
+                  <td>20/03/2026</td>
+                  <td class="admin-actions-cell">
+                    <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
+                    <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
+                  </td>
+                </tr>
+                <tr>
+                  <td><div class="admin-user-cell"><span class="admin-avatar">MA</span> Marina Alves</div></td>
+                  <td>marina@blueeventos.com</td>
+                  <td><span class="admin-badge admin-badge-attend">Atendimento</span></td>
+                  <td><span class="admin-status admin-status-ativo">Ativo</span></td>
+                  <td>10/04/2026</td>
+                  <td class="admin-actions-cell">
+                    <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
+                    <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
-          <!-- Tab: Permissões -->
-          <div class="admin-tab-content" data-admin-tab-content="permissoes">
-            <div class="admin-section-header">
-              <p class="admin-section-text">Defina quais módulos cada perfil pode acessar</p>
-              <div class="admin-section-actions">
-                <input type="text" class="admin-input" placeholder="Novo perfil…" id="adminNovoPerfilInput" />
-                <button class="btn-outline" id="adminAddPerfilBtn"><i data-lucide="plus"></i> Adicionar Perfil</button>
-                <button class="btn-primary" id="adminSavePermsBtn"><i data-lucide="save"></i> Salvar Permissões</button>
+          <!-- Modal: Novo Membro -->
+          <div class="modal-overlay" id="adminMemberOverlay"></div>
+          <div class="modal" id="adminMemberModal" role="dialog" aria-labelledby="adminMemberTitle">
+            <div class="modal-head">
+              <div class="modal-head-left">
+                <div class="modal-avatar"><i data-lucide="user-plus"></i></div>
+                <div>
+                  <h2 id="adminMemberTitle">Novo Membro</h2>
+                  <p class="modal-meta">Adicione um novo membro à equipe</p>
+                </div>
+              </div>
+              <button class="icon-btn small" data-action="close-admin-member" title="Fechar"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+              <div class="form-grid-2">
+                <div class="form-group full">
+                  <label>Nome completo <span class="req">*</span></label>
+                  <input type="text" id="adminMemberName" placeholder="Nome do membro" required />
+                </div>
+                <div class="form-group full">
+                  <label>E-mail <span class="req">*</span></label>
+                  <input type="email" id="adminMemberEmail" placeholder="email@blueeventos.com" required />
+                </div>
+                <div class="form-group">
+                  <label>Cargo</label>
+                  <select id="adminMemberRole">
+                    <option value="Administrador">Administrador</option>
+                    <option value="Marketing">Marketing</option>
+                    <option value="Atendimento">Atendimento</option>
+                    <option value="Contador">Contador</option>
+                    <option value="Auxiliar">Auxiliar</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Senha temporária</label>
+                  <input type="text" id="adminMemberPassword" placeholder="Senha provisória" />
+                </div>
               </div>
             </div>
-            <div class="admin-table-wrap">
-              <table class="admin-table admin-table-perms">
-                <thead>
-                  <tr>
-                    <th class="perm-col-action">Módulo / Ação</th>
-                    <th class="perm-col-role">Administrador</th>
-                    <th class="perm-col-role">Marketing</th>
-                  </tr>
-                </thead>
-                <tbody id="adminPermsBody">
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Tab: Desenvolvimento -->
-          <div class="admin-tab-content" data-admin-tab-content="desenvolvimento">
-            <div class="admin-section-header">
-              <p class="admin-section-text">Configurações avançadas e ferramentas de desenvolvimento</p>
-            </div>
-            <div class="admin-dev-grid">
-              <div class="admin-dev-card">
-                <div class="admin-dev-icon blue"><i data-lucide="database"></i></div>
-                <h4>Banco de Dados</h4>
-                <p>Gerenciar tabelas e migrações do Supabase.</p>
-                <button class="btn-outline btn-sm">Abrir Console</button>
-              </div>
-              <div class="admin-dev-card">
-                <div class="admin-dev-icon green"><i data-lucide="terminal"></i></div>
-                <h4>Logs do Sistema</h4>
-                <p>Visualizar logs de erro e depuração.</p>
-                <button class="btn-outline btn-sm">Ver Logs</button>
-              </div>
-              <div class="admin-dev-card">
-                <div class="admin-dev-icon purple"><i data-lucide="plug"></i></div>
-                <h4>Integrações</h4>
-                <p>Gerenciar chaves de API e webhooks.</p>
-                <button class="btn-outline btn-sm">Configurar</button>
-              </div>
-              <div class="admin-dev-card">
-                <div class="admin-dev-icon orange"><i data-lucide="hard-drive"></i></div>
-                <h4>Backup & Restore</h4>
-                <p>Exportar ou importar dados do sistema.</p>
-                <button class="btn-outline btn-sm">Gerenciar</button>
+            <div class="modal-foot">
+              <div class="modal-foot-meta"></div>
+              <div class="modal-foot-actions">
+                <button class="btn-ghost" data-action="close-admin-member">Cancelar</button>
+                <button class="btn-primary" id="adminMemberSaveBtn"><i data-lucide="save"></i> Adicionar</button>
               </div>
             </div>
           </div>
