@@ -210,75 +210,83 @@ function onAuthReady() {
 /* ============================================
    ADMIN · CRUD completo de membros
    ============================================ */
-let _adminEditingId = null;   // null = criar, string = editando
-let _adminDeleteId = null;    // id do membro a excluir
-let _adminMembersCache = [];  // cache local dos membros
+let _adminEditingId = null;
+let _adminDeleteId = null;
+let _adminMembersCache = [];
+let _adminBound = false; // previne bind duplicado
 
 function initAdminView() {
-  const addBtn = document.getElementById('adminNewMemberBtn');
-  const overlay = document.getElementById('adminMemberOverlay');
-  const modal = document.getElementById('adminMemberModal');
-  const closeBtns = document.querySelectorAll('[data-action="close-admin-member"]');
-  const saveBtn = document.getElementById('adminMemberSaveBtn');
-  const searchInput = document.getElementById('adminSearchInput');
+  console.log('[Admin] initAdminView called, bound=', _adminBound);
 
-  // ── Abrir modal: Criar novo ──
-  if (addBtn) {
-    addBtn.addEventListener('click', () => {
-      _adminEditingId = null;
-      resetMemberForm();
-      setMemberFormMode('create');
-      openMemberModal();
-    });
-  }
+  // ── Bind uma única vez ──
+  if (!_adminBound) {
+    _adminBound = true;
 
-  // ── Fechar modal ──
-  closeBtns.forEach(btn => btn.addEventListener('click', closeMemberModal));
-  if (overlay) overlay.addEventListener('click', closeMemberModal);
+    const addBtn = document.getElementById('adminNewMemberBtn');
+    const overlay = document.getElementById('adminMemberOverlay');
+    const closeBtns = document.querySelectorAll('[data-action="close-admin-member"]');
+    const saveBtn = document.getElementById('adminMemberSaveBtn');
+    const searchInput = document.getElementById('adminSearchInput');
+    const pwToggle = document.getElementById('adminMemberPwToggle');
+    const delOverlay = document.getElementById('adminDeleteOverlay');
+    const delCloseBtns = document.querySelectorAll('[data-action="close-admin-delete"]');
+    const delConfirmBtn = document.getElementById('adminDeleteConfirmBtn');
 
-  // ── Toggle senha ──
-  const pwToggle = document.getElementById('adminMemberPwToggle');
-  if (pwToggle) {
-    pwToggle.addEventListener('click', () => {
-      const input = pwToggle.parentElement.querySelector('input');
-      if (!input) return;
-      const isPw = input.type === 'password';
-      input.type = isPw ? 'text' : 'password';
-      const icon = pwToggle.querySelector('i');
-      if (icon) icon.setAttribute('data-lucide', isPw ? 'eye-off' : 'eye');
-      initIcons();
-    });
-  }
-
-  // ── Máscaras ──
-  applyMask('adminMemberCPF', maskCPF);
-  applyMask('adminMemberBirth', maskDate);
-  applyMask('adminMemberPhone', maskPhone);
-
-  // ── Salvar (criar ou editar) ──
-  if (saveBtn) {
-    saveBtn.addEventListener('click', handleMemberSave);
-  }
-
-  // ── Busca ──
-  if (searchInput) {
-    searchInput.addEventListener('input', () => {
-      const q = searchInput.value.toLowerCase().trim();
-      document.querySelectorAll('#adminUsersBody tr').forEach(row => {
-        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    // ── Abrir modal: Criar novo ──
+    if (addBtn) {
+      addBtn.addEventListener('click', () => {
+        console.log('[Admin] Botão "+ Novo Membro" clicado');
+        _adminEditingId = null;
+        resetMemberForm();
+        setMemberFormMode('create');
+        openMemberModal();
       });
-    });
+    }
+
+    // ── Fechar modal ──
+    closeBtns.forEach(btn => btn.addEventListener('click', closeMemberModal));
+    if (overlay) overlay.addEventListener('click', closeMemberModal);
+
+    // ── Toggle senha ──
+    if (pwToggle) {
+      pwToggle.addEventListener('click', () => {
+        const input = pwToggle.parentElement.querySelector('input');
+        if (!input) return;
+        const isPw = input.type === 'password';
+        input.type = isPw ? 'text' : 'password';
+        const icon = pwToggle.querySelector('i');
+        if (icon) icon.setAttribute('data-lucide', isPw ? 'eye-off' : 'eye');
+        initIcons();
+      });
+    }
+
+    // ── Máscaras ──
+    applyMask('adminMemberCPF', maskCPF);
+    applyMask('adminMemberBirth', maskDate);
+    applyMask('adminMemberPhone', maskPhone);
+
+    // ── Salvar (criar ou editar) ──
+    if (saveBtn) {
+      saveBtn.addEventListener('click', handleMemberSave);
+    }
+
+    // ── Busca ──
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        const q = searchInput.value.toLowerCase().trim();
+        document.querySelectorAll('#adminUsersBody tr').forEach(row => {
+          row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+        });
+      });
+    }
+
+    // ── Modal de exclusão ──
+    delCloseBtns.forEach(btn => btn.addEventListener('click', closeDeleteModal));
+    if (delOverlay) delOverlay.addEventListener('click', closeDeleteModal);
+    if (delConfirmBtn) delConfirmBtn.addEventListener('click', handleMemberDelete);
   }
 
-  // ── Modal de exclusão ──
-  const delOverlay = document.getElementById('adminDeleteOverlay');
-  const delCloseBtns = document.querySelectorAll('[data-action="close-admin-delete"]');
-  const delConfirmBtn = document.getElementById('adminDeleteConfirmBtn');
-  delCloseBtns.forEach(btn => btn.addEventListener('click', closeDeleteModal));
-  if (delOverlay) delOverlay.addEventListener('click', closeDeleteModal);
-  if (delConfirmBtn) delConfirmBtn.addEventListener('click', handleMemberDelete);
-
-  // ── Carregar membros ──
+  // ── Sempre recarregar membros ──
   loadMembersFromSupabase();
 }
 
@@ -382,6 +390,8 @@ function setSelectValue(id, val) {
 
 /* ── Save handler (criar ou editar) ── */
 async function handleMemberSave() {
+  console.log('[Admin] handleMemberSave called, editingId=', _adminEditingId);
+
   const name = document.getElementById('adminMemberName')?.value?.trim();
   const email = document.getElementById('adminMemberEmail')?.value?.trim();
   const password = document.getElementById('adminMemberPassword')?.value;
@@ -395,6 +405,8 @@ async function handleMemberSave() {
   const notifWhats = document.getElementById('adminMemberNotifWhats')?.value;
   const notifSound = document.getElementById('adminMemberNotifSound')?.value;
 
+  console.log('[Admin] Dados do form:', { name, email, role, team });
+
   // Validação
   if (!name || !email) { toast('Preencha nome e e-mail', 'error'); return; }
   if (!_adminEditingId && !password) { toast('Preencha a senha', 'error'); return; }
@@ -407,6 +419,7 @@ async function handleMemberSave() {
   try {
     if (_adminEditingId) {
       // ═══ EDITAR ═══
+      console.log('[Admin] Editando membro:', _adminEditingId);
       const payload = {
         nome: name, email, cargo: role || '', equipe: team || '',
         pessoa: pessoa || 'Pessoa Física', cpf: cpf || '',
@@ -416,24 +429,38 @@ async function handleMemberSave() {
         notificacao_som: notifSound === 'Sim'
       };
 
-      const { error } = await _supabase.from('membros').update(payload).eq('id', _adminEditingId);
-      if (error) throw error;
+      const { data, error } = await _supabase.from('membros').update(payload).eq('id', _adminEditingId).select();
+      if (error) {
+        console.error('[Admin] Erro ao atualizar:', error.message, error.code, error.details, error.hint);
+        throw error;
+      }
 
+      console.log('[Admin] Membro atualizado:', data);
       toast('Membro atualizado com sucesso!');
       if (typeof registrarAuditoria === 'function') registrarAuditoria({ acao: 'Atualizações', caminho_url: '/administrador', modulo: 'Administrador' });
 
     } else {
       // ═══ CRIAR ═══
-      // 1. Supabase Auth
-      let userId = null;
-      const { data: authData, error: authError } = await _supabase.auth.signUp({
-        email, password,
-        options: { data: { nome: name, cargo: role, equipe: team }, emailRedirectTo: window.location.origin }
-      });
-      if (authError) throw authError;
-      userId = authData?.user?.id || null;
+      console.log('[Admin] Criando novo membro...');
 
-      // 2. Tabela membros
+      // 1. Criar usuário no Supabase Auth (ignorar erro se email já existir)
+      let userId = null;
+      try {
+        const { data: authData, error: authError } = await _supabase.auth.signUp({
+          email, password,
+          options: { data: { nome: name, cargo: role, equipe: team }, emailRedirectTo: window.location.origin }
+        });
+        if (authError) {
+          console.warn('[Admin] Auth signUp falhou (continuando sem auth_user_id):', authError.message);
+        } else {
+          userId = authData?.user?.id || null;
+          console.log('[Admin] Auth user criado:', userId);
+        }
+      } catch (authErr) {
+        console.warn('[Admin] Auth signUp exception (continuando):', authErr.message);
+      }
+
+      // 2. Inserir na tabela membros
       const memberPayload = {
         nome: name, email, cargo: role || '', equipe: team || '',
         pessoa: pessoa || 'Pessoa Física', cpf: cpf || '',
@@ -444,9 +471,14 @@ async function handleMemberSave() {
         status: 'Ativo', auth_user_id: userId
       };
 
-      const { error: dbError } = await _supabase.from('membros').insert([memberPayload]);
-      if (dbError) throw dbError;
+      console.log('[Admin] Inserindo membro no Supabase:', memberPayload);
+      const { data: dbData, error: dbError } = await _supabase.from('membros').insert([memberPayload]).select();
+      if (dbError) {
+        console.error('[Admin] Erro ao inserir membro:', dbError.message, dbError.code, dbError.details, dbError.hint);
+        throw dbError;
+      }
 
+      console.log('[Admin] Membro inserido:', dbData);
       toast('Membro criado com sucesso!');
       if (typeof registrarAuditoria === 'function') registrarAuditoria({ acao: 'Inclusões', caminho_url: '/administrador', modulo: 'Administrador' });
     }
@@ -456,7 +488,9 @@ async function handleMemberSave() {
 
   } catch (err) {
     console.error('[Admin] Erro ao salvar membro:', err);
-    toast(err.message || 'Erro ao salvar membro', 'error');
+    const msg = err.message || 'Erro ao salvar membro';
+    const hint = err.hint ? ` — ${err.hint}` : '';
+    toast(msg + hint, 'error');
   } finally {
     saveBtn.disabled = false;
     const txt = _adminEditingId ? 'Salvar Alterações' : 'Salvar Membro';
@@ -468,13 +502,18 @@ async function handleMemberSave() {
 /* ── Delete handler ── */
 async function handleMemberDelete() {
   if (!_adminDeleteId) return;
+  console.log('[Admin] Excluindo membro:', _adminDeleteId);
+
   const delBtn = document.getElementById('adminDeleteConfirmBtn');
   delBtn.disabled = true;
   delBtn.innerHTML = '<span class="auth-spinner"></span>';
 
   try {
     const { error } = await _supabase.from('membros').delete().eq('id', _adminDeleteId);
-    if (error) throw error;
+    if (error) {
+      console.error('[Admin] Erro ao excluir:', error.message, error.code, error.details, error.hint);
+      throw error;
+    }
 
     toast('Membro removido com sucesso!');
     if (typeof registrarAuditoria === 'function') registrarAuditoria({ acao: 'Exclusões', caminho_url: '/administrador', modulo: 'Administrador' });
@@ -538,14 +577,19 @@ function renderMemberRow(m) {
 
 /* ── Carregar membros do Supabase ── */
 async function loadMembersFromSupabase() {
-  if (!_supabase) return;
+  console.log('[Admin] loadMembersFromSupabase called');
+  if (!_supabase) { console.error('[Admin] _supabase é null!'); return; }
   try {
     const { data, error } = await _supabase.from('membros').select('*').order('created_at', { ascending: false });
-    if (error) { console.warn('[Admin] Tabela membros não encontrada:', error.message); return; }
+    if (error) {
+      console.error('[Admin] Erro ao buscar membros:', error.message, error.code, error.details, error.hint);
+      return;
+    }
 
+    console.log('[Admin] Membros encontrados:', data?.length || 0, data);
     _adminMembersCache = data || [];
     const tbody = document.getElementById('adminUsersBody');
-    if (!tbody) return;
+    if (!tbody) { console.error('[Admin] adminUsersBody não encontrado'); return; }
     tbody.innerHTML = '';
 
     if (_adminMembersCache.length === 0) {
