@@ -1248,7 +1248,7 @@
             </table>
           </div>
 
-          <!-- Modal: Criar Novo Membro -->
+          <!-- Modal: Criar/Editar Membro -->
           <div class="modal-overlay" id="adminMemberOverlay"></div>
           <div class="modal modal-lg" id="adminMemberModal" role="dialog" aria-labelledby="adminMemberTitle">
             <div class="modal-head">
@@ -1256,12 +1256,13 @@
                 <div class="modal-avatar"><i data-lucide="user-plus"></i></div>
                 <div>
                   <h2 id="adminMemberTitle">Criar Novo Membro</h2>
-                  <p class="modal-meta">Adicione um novo funcionário ao sistema</p>
+                  <p class="modal-meta" id="adminMemberSubtitle">Adicione um novo funcionário ao sistema</p>
                 </div>
               </div>
               <button class="icon-btn small" data-action="close-admin-member" title="Fechar"><i data-lucide="x"></i></button>
             </div>
             <div class="modal-body admin-member-body">
+              <input type="hidden" id="adminMemberId" value="" />
 
               <!-- Sessão 1: Dados de Acesso -->
               <div class="admin-form-section">
@@ -1276,14 +1277,15 @@
                     <input type="email" id="adminMemberEmail" placeholder="email@blueeventos.com" required />
                   </div>
                   <div class="form-group">
-                    <label>Senha <span class="req">*</span></label>
+                    <label>Senha <span class="req" id="adminPwReq">*</span></label>
                     <div class="auth-input-wrap">
                       <i data-lucide="lock"></i>
-                      <input type="password" id="adminMemberPassword" placeholder="Min. 6 caracteres" required minlength="6" />
+                      <input type="password" id="adminMemberPassword" placeholder="Min. 6 caracteres" minlength="6" />
                       <button type="button" class="auth-pw-toggle" id="adminMemberPwToggle" aria-label="Mostrar senha">
                         <i data-lucide="eye"></i>
                       </button>
                     </div>
+                    <small class="admin-pw-hint" id="adminPwHint"></small>
                   </div>
                   <div class="form-group">
                     <label>Cargo</label>
@@ -1378,10 +1380,35 @@
 
             </div>
             <div class="modal-foot admin-member-foot">
-              <p class="admin-foot-note">O membro será criado com status aprovado. Sem necessidade de convite por e-mail.</p>
+              <p class="admin-foot-note" id="adminFootNote">O membro será criado com status aprovado. Sem necessidade de convite por e-mail.</p>
               <div class="modal-foot-actions">
                 <button class="btn-ghost" data-action="close-admin-member">Cancelar</button>
-                <button class="btn-primary" id="adminMemberSaveBtn"><i data-lucide="save"></i> Salvar Membro</button>
+                <button class="btn-primary" id="adminMemberSaveBtn"><i data-lucide="save"></i> <span id="adminSaveBtnText">Salvar Membro</span></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal: Confirmar Exclusão -->
+          <div class="modal-overlay" id="adminDeleteOverlay"></div>
+          <div class="modal modal-sm" id="adminDeleteModal" role="dialog" aria-labelledby="adminDeleteTitle">
+            <div class="modal-head">
+              <div class="modal-head-left">
+                <div class="modal-avatar" style="background:#FDECEC;color:#E14C4C"><i data-lucide="alert-triangle"></i></div>
+                <div>
+                  <h2 id="adminDeleteTitle">Remover Membro</h2>
+                  <p class="modal-meta">Essa ação não poderá ser desfeita</p>
+                </div>
+              </div>
+              <button class="icon-btn small" data-action="close-admin-delete" title="Fechar"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+              <p class="admin-delete-text" id="adminDeleteText">Tem certeza que deseja remover este membro?</p>
+            </div>
+            <div class="modal-foot admin-member-foot">
+              <div></div>
+              <div class="modal-foot-actions">
+                <button class="btn-ghost" data-action="close-admin-delete">Cancelar</button>
+                <button class="btn-primary" style="background:#E14C4C" id="adminDeleteConfirmBtn"><i data-lucide="trash-2"></i> Remover</button>
               </div>
             </div>
           </div>

@@ -208,8 +208,12 @@ function onAuthReady() {
 }
 
 /* ============================================
-   ADMIN · Simplified init (no tabs)
+   ADMIN · CRUD completo de membros
    ============================================ */
+let _adminEditingId = null;   // null = criar, string = editando
+let _adminDeleteId = null;    // id do membro a excluir
+let _adminMembersCache = [];  // cache local dos membros
+
 function initAdminView() {
   const addBtn = document.getElementById('adminNewMemberBtn');
   const overlay = document.getElementById('adminMemberOverlay');
@@ -218,156 +222,45 @@ function initAdminView() {
   const saveBtn = document.getElementById('adminMemberSaveBtn');
   const searchInput = document.getElementById('adminSearchInput');
 
-  // Open modal
-  if (addBtn && overlay && modal) {
+  // ── Abrir modal: Criar novo ──
+  if (addBtn) {
     addBtn.addEventListener('click', () => {
-      overlay.style.display = 'block';
-      modal.style.display = 'flex';
-      initIcons();
-      // Reset form
-      modal.querySelectorAll('input:not([type=hidden])').forEach(i => { i.value = ''; });
-      modal.querySelectorAll('select').forEach(s => { s.selectedIndex = 0; });
+      _adminEditingId = null;
+      resetMemberForm();
+      setMemberFormMode('create');
+      openMemberModal();
     });
   }
 
-  // Close modal
-  closeBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (overlay) overlay.style.display = 'none';
-      if (modal) modal.style.display = 'none';
-    });
-  });
-  if (overlay) {
-    overlay.addEventListener('click', () => {
-      overlay.style.display = 'none';
-      if (modal) modal.style.display = 'none';
-    });
-  }
+  // ── Fechar modal ──
+  closeBtns.forEach(btn => btn.addEventListener('click', closeMemberModal));
+  if (overlay) overlay.addEventListener('click', closeMemberModal);
 
-  // Password toggle
+  // ── Toggle senha ──
   const pwToggle = document.getElementById('adminMemberPwToggle');
   if (pwToggle) {
     pwToggle.addEventListener('click', () => {
       const input = pwToggle.parentElement.querySelector('input');
       if (!input) return;
-      const isPassword = input.type === 'password';
-      input.type = isPassword ? 'text' : 'password';
+      const isPw = input.type === 'password';
+      input.type = isPw ? 'text' : 'password';
       const icon = pwToggle.querySelector('i');
-      if (icon) icon.setAttribute('data-lucide', isPassword ? 'eye-off' : 'eye');
+      if (icon) icon.setAttribute('data-lucide', isPw ? 'eye-off' : 'eye');
       initIcons();
     });
   }
 
-  // Input masks
+  // ── Máscaras ──
   applyMask('adminMemberCPF', maskCPF);
   applyMask('adminMemberBirth', maskDate);
   applyMask('adminMemberPhone', maskPhone);
 
-  // Save member
+  // ── Salvar (criar ou editar) ──
   if (saveBtn) {
-    saveBtn.addEventListener('click', async () => {
-      const name = document.getElementById('adminMemberName')?.value?.trim();
-      const email = document.getElementById('adminMemberEmail')?.value?.trim();
-      const password = document.getElementById('adminMemberPassword')?.value;
-      const role = document.getElementById('adminMemberRole')?.value;
-      const team = document.getElementById('adminMemberTeam')?.value;
-      const pessoa = document.getElementById('adminMemberPessoa')?.value;
-      const cpf = document.getElementById('adminMemberCPF')?.value?.trim();
-      const birth = document.getElementById('adminMemberBirth')?.value?.trim();
-      const phone = document.getElementById('adminMemberPhone')?.value?.trim();
-      const notifEmail = document.getElementById('adminMemberNotifEmail')?.value;
-      const notifWhats = document.getElementById('adminMemberNotifWhats')?.value;
-      const notifSound = document.getElementById('adminMemberNotifSound')?.value;
-
-      if (!name || !email || !password) {
-        toast('Preencha nome, e-mail e senha', 'error');
-        return;
-      }
-      if (password.length < 6) {
-        toast('A senha deve ter pelo menos 6 caracteres', 'error');
-        return;
-      }
-
-      saveBtn.disabled = true;
-      saveBtn.innerHTML = '<span class="auth-spinner"></span>';
-
-      try {
-        // 1. Create user in Supabase Auth
-        const { data: authData, error: authError } = await _supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: { nome: name, cargo: role, equipe: team },
-            emailRedirectTo: window.location.origin
-          }
-        });
-        if (authError) throw authError;
-
-        // 2. Insert member record in 'membros' table
-        const userId = authData?.user?.id || null;
-        const memberPayload = {
-          nome: name,
-          email: email,
-          cargo: role || '',
-          equipe: team || '',
-          pessoa: pessoa || 'Pessoa Física',
-          cpf: cpf || '',
-          data_aniversario: birth || '',
-          telefone: phone || '',
-          notificacao_email: notifEmail === 'Sim',
-          notificacao_whatsapp: notifWhats === 'Sim',
-          notificacao_som: notifSound === 'Sim',
-          status: 'Ativo',
-          auth_user_id: userId
-        };
-
-        const { error: dbError } = await _supabase.from('membros').insert([memberPayload]);
-        if (dbError) {
-          console.warn('[Admin] Erro ao inserir na tabela membros:', dbError.message);
-          // Continue even if table doesn't exist yet
-        }
-
-        // 3. Add row to the table UI
-        const initials = name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
-        const tbody = document.getElementById('adminUsersBody');
-        if (tbody) {
-          const badgeClass = role === 'Administrador' ? 'admin-badge-admin' :
-                             role === 'Marketing' ? 'admin-badge-marketing' : 'admin-badge-attend';
-          const row = document.createElement('tr');
-          row.innerHTML = `
-            <td><div class="admin-user-cell"><span class="admin-avatar">${escapeHtml(initials)}</span> ${escapeHtml(name)}</div></td>
-            <td>${escapeHtml(email)}</td>
-            <td><span class="admin-badge ${badgeClass}">${escapeHtml(role || '—')}</span></td>
-            <td><span class="admin-status admin-status-ativo">Ativo</span></td>
-            <td>${new Date().toLocaleDateString('pt-BR')}</td>
-            <td class="admin-actions-cell">
-              <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
-              <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
-            </td>`;
-          tbody.prepend(row);
-          initIcons();
-        }
-
-        // 4. Close modal and show success
-        if (overlay) overlay.style.display = 'none';
-        if (modal) modal.style.display = 'none';
-        toast('Membro criado com sucesso!');
-
-        // Audit
-        registrarAuditoria({ acao: 'Inclusões', caminho_url: '/administrador', modulo: 'Administrador' });
-
-      } catch (err) {
-        console.error('[Admin] Erro ao criar membro:', err);
-        toast(err.message || 'Erro ao criar membro', 'error');
-      } finally {
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = '<i data-lucide="save"></i> Salvar Membro';
-        initIcons();
-      }
-    });
+    saveBtn.addEventListener('click', handleMemberSave);
   }
 
-  // Search filter
+  // ── Busca ──
   if (searchInput) {
     searchInput.addEventListener('input', () => {
       const q = searchInput.value.toLowerCase().trim();
@@ -377,38 +270,290 @@ function initAdminView() {
     });
   }
 
-  // Load existing members from Supabase
+  // ── Modal de exclusão ──
+  const delOverlay = document.getElementById('adminDeleteOverlay');
+  const delCloseBtns = document.querySelectorAll('[data-action="close-admin-delete"]');
+  const delConfirmBtn = document.getElementById('adminDeleteConfirmBtn');
+  delCloseBtns.forEach(btn => btn.addEventListener('click', closeDeleteModal));
+  if (delOverlay) delOverlay.addEventListener('click', closeDeleteModal);
+  if (delConfirmBtn) delConfirmBtn.addEventListener('click', handleMemberDelete);
+
+  // ── Carregar membros ──
   loadMembersFromSupabase();
 }
 
+/* ── Modal helpers ── */
+function openMemberModal() {
+  const overlay = document.getElementById('adminMemberOverlay');
+  const modal = document.getElementById('adminMemberModal');
+  if (overlay) overlay.style.display = 'block';
+  if (modal) { modal.style.display = 'flex'; modal.scrollTop = 0; }
+  initIcons();
+}
+
+function closeMemberModal() {
+  const overlay = document.getElementById('adminMemberOverlay');
+  const modal = document.getElementById('adminMemberModal');
+  if (overlay) overlay.style.display = 'none';
+  if (modal) modal.style.display = 'none';
+  _adminEditingId = null;
+}
+
+function openDeleteModal() {
+  const overlay = document.getElementById('adminDeleteOverlay');
+  const modal = document.getElementById('adminDeleteModal');
+  if (overlay) overlay.style.display = 'block';
+  if (modal) modal.style.display = 'flex';
+  initIcons();
+}
+
+function closeDeleteModal() {
+  const overlay = document.getElementById('adminDeleteOverlay');
+  const modal = document.getElementById('adminDeleteModal');
+  if (overlay) overlay.style.display = 'none';
+  if (modal) modal.style.display = 'none';
+  _adminDeleteId = null;
+}
+
+/* ── Form helpers ── */
+function resetMemberForm() {
+  const ids = ['adminMemberId','adminMemberName','adminMemberEmail','adminMemberPassword','adminMemberCPF','adminMemberBirth','adminMemberPhone'];
+  ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const selects = ['adminMemberRole','adminMemberTeam'];
+  selects.forEach(id => { const el = document.getElementById(id); if (el) el.selectedIndex = 0; });
+  document.getElementById('adminMemberPessoa').value = 'Pessoa Física';
+  ['adminMemberNotifEmail','adminMemberNotifWhats','adminMemberNotifSound'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = 'Sim';
+  });
+}
+
+function setMemberFormMode(mode) {
+  const title = document.getElementById('adminMemberTitle');
+  const subtitle = document.getElementById('adminMemberSubtitle');
+  const saveText = document.getElementById('adminSaveBtnText');
+  const pwReq = document.getElementById('adminPwReq');
+  const pwHint = document.getElementById('adminPwHint');
+  const pwInput = document.getElementById('adminMemberPassword');
+  const footNote = document.getElementById('adminFootNote');
+
+  if (mode === 'edit') {
+    if (title) title.textContent = 'Editar Membro';
+    if (subtitle) subtitle.textContent = 'Altere os dados do funcionário';
+    if (saveText) saveText.textContent = 'Salvar Alterações';
+    if (pwReq) pwReq.style.display = 'none';
+    if (pwHint) pwHint.textContent = 'Deixe em branco para manter a senha atual';
+    if (pwInput) { pwInput.required = false; pwInput.placeholder = 'Nova senha (opcional)'; }
+    if (footNote) footNote.textContent = 'Os dados serão atualizados no sistema.';
+  } else {
+    if (title) title.textContent = 'Criar Novo Membro';
+    if (subtitle) subtitle.textContent = 'Adicione um novo funcionário ao sistema';
+    if (saveText) saveText.textContent = 'Salvar Membro';
+    if (pwReq) pwReq.style.display = '';
+    if (pwHint) pwHint.textContent = '';
+    if (pwInput) { pwInput.required = true; pwInput.placeholder = 'Min. 6 caracteres'; }
+    if (footNote) footNote.textContent = 'O membro será criado com status aprovado. Sem necessidade de convite por e-mail.';
+  }
+}
+
+function fillMemberForm(member) {
+  document.getElementById('adminMemberId').value = member.id || '';
+  document.getElementById('adminMemberName').value = member.nome || '';
+  document.getElementById('adminMemberEmail').value = member.email || '';
+  document.getElementById('adminMemberPassword').value = '';
+  setSelectValue('adminMemberRole', member.cargo);
+  setSelectValue('adminMemberTeam', member.equipe);
+  document.getElementById('adminMemberPessoa').value = member.pessoa || 'Pessoa Física';
+  document.getElementById('adminMemberCPF').value = member.cpf || '';
+  document.getElementById('adminMemberBirth').value = member.data_aniversario || '';
+  document.getElementById('adminMemberPhone').value = member.telefone || '';
+  setSelectValue('adminMemberNotifEmail', member.notificacao_email !== false ? 'Sim' : 'Não');
+  setSelectValue('adminMemberNotifWhats', member.notificacao_whatsapp !== false ? 'Sim' : 'Não');
+  setSelectValue('adminMemberNotifSound', member.notificacao_som !== false ? 'Sim' : 'Não');
+}
+
+function setSelectValue(id, val) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  for (let i = 0; i < el.options.length; i++) {
+    if (el.options[i].value === val) { el.selectedIndex = i; return; }
+  }
+  el.selectedIndex = 0;
+}
+
+/* ── Save handler (criar ou editar) ── */
+async function handleMemberSave() {
+  const name = document.getElementById('adminMemberName')?.value?.trim();
+  const email = document.getElementById('adminMemberEmail')?.value?.trim();
+  const password = document.getElementById('adminMemberPassword')?.value;
+  const role = document.getElementById('adminMemberRole')?.value;
+  const team = document.getElementById('adminMemberTeam')?.value;
+  const pessoa = document.getElementById('adminMemberPessoa')?.value;
+  const cpf = document.getElementById('adminMemberCPF')?.value?.trim();
+  const birth = document.getElementById('adminMemberBirth')?.value?.trim();
+  const phone = document.getElementById('adminMemberPhone')?.value?.trim();
+  const notifEmail = document.getElementById('adminMemberNotifEmail')?.value;
+  const notifWhats = document.getElementById('adminMemberNotifWhats')?.value;
+  const notifSound = document.getElementById('adminMemberNotifSound')?.value;
+
+  // Validação
+  if (!name || !email) { toast('Preencha nome e e-mail', 'error'); return; }
+  if (!_adminEditingId && !password) { toast('Preencha a senha', 'error'); return; }
+  if (password && password.length < 6) { toast('A senha deve ter pelo menos 6 caracteres', 'error'); return; }
+
+  const saveBtn = document.getElementById('adminMemberSaveBtn');
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '<span class="auth-spinner"></span>';
+
+  try {
+    if (_adminEditingId) {
+      // ═══ EDITAR ═══
+      const payload = {
+        nome: name, email, cargo: role || '', equipe: team || '',
+        pessoa: pessoa || 'Pessoa Física', cpf: cpf || '',
+        data_aniversario: birth || '', telefone: phone || '',
+        notificacao_email: notifEmail === 'Sim',
+        notificacao_whatsapp: notifWhats === 'Sim',
+        notificacao_som: notifSound === 'Sim'
+      };
+
+      const { error } = await _supabase.from('membros').update(payload).eq('id', _adminEditingId);
+      if (error) throw error;
+
+      toast('Membro atualizado com sucesso!');
+      registrarAuditoria({ acao: 'Atualizações', caminho_url: '/administrador', modulo: 'Administrador' });
+
+    } else {
+      // ═══ CRIAR ═══
+      // 1. Supabase Auth
+      let userId = null;
+      const { data: authData, error: authError } = await _supabase.auth.signUp({
+        email, password,
+        options: { data: { nome: name, cargo: role, equipe: team }, emailRedirectTo: window.location.origin }
+      });
+      if (authError) throw authError;
+      userId = authData?.user?.id || null;
+
+      // 2. Tabela membros
+      const memberPayload = {
+        nome: name, email, cargo: role || '', equipe: team || '',
+        pessoa: pessoa || 'Pessoa Física', cpf: cpf || '',
+        data_aniversario: birth || '', telefone: phone || '',
+        notificacao_email: notifEmail === 'Sim',
+        notificacao_whatsapp: notifWhats === 'Sim',
+        notificacao_som: notifSound === 'Sim',
+        status: 'Ativo', auth_user_id: userId
+      };
+
+      const { error: dbError } = await _supabase.from('membros').insert([memberPayload]);
+      if (dbError) throw dbError;
+
+      toast('Membro criado com sucesso!');
+      registrarAuditoria({ acao: 'Inclusões', caminho_url: '/administrador', modulo: 'Administrador' });
+    }
+
+    closeMemberModal();
+    await loadMembersFromSupabase();
+
+  } catch (err) {
+    console.error('[Admin] Erro ao salvar membro:', err);
+    toast(err.message || 'Erro ao salvar membro', 'error');
+  } finally {
+    saveBtn.disabled = false;
+    const txt = _adminEditingId ? 'Salvar Alterações' : 'Salvar Membro';
+    saveBtn.innerHTML = `<i data-lucide="save"></i> <span id="adminSaveBtnText">${txt}</span>`;
+    initIcons();
+  }
+}
+
+/* ── Delete handler ── */
+async function handleMemberDelete() {
+  if (!_adminDeleteId) return;
+  const delBtn = document.getElementById('adminDeleteConfirmBtn');
+  delBtn.disabled = true;
+  delBtn.innerHTML = '<span class="auth-spinner"></span>';
+
+  try {
+    const { error } = await _supabase.from('membros').delete().eq('id', _adminDeleteId);
+    if (error) throw error;
+
+    toast('Membro removido com sucesso!');
+    registrarAuditoria({ acao: 'Exclusões', caminho_url: '/administrador', modulo: 'Administrador' });
+    closeDeleteModal();
+    await loadMembersFromSupabase();
+
+  } catch (err) {
+    console.error('[Admin] Erro ao excluir:', err);
+    toast(err.message || 'Erro ao excluir membro', 'error');
+  } finally {
+    delBtn.disabled = false;
+    delBtn.innerHTML = '<i data-lucide="trash-2"></i> Remover';
+    initIcons();
+  }
+}
+
+/* ── Bind ações (lápis / lixeira) em uma row ── */
+function bindRowActions(row, member) {
+  const editBtn = row.querySelector('.btn-icon[title="Editar"]');
+  const delBtn = row.querySelector('.btn-icon-danger');
+
+  if (editBtn) {
+    editBtn.addEventListener('click', () => {
+      _adminEditingId = member.id;
+      fillMemberForm(member);
+      setMemberFormMode('edit');
+      openMemberModal();
+    });
+  }
+
+  if (delBtn) {
+    delBtn.addEventListener('click', () => {
+      _adminDeleteId = member.id;
+      const text = document.getElementById('adminDeleteText');
+      if (text) text.textContent = `Tem certeza que deseja remover o membro ${member.nome}? Essa ação não poderá ser desfeita.`;
+      openDeleteModal();
+    });
+  }
+}
+
+/* ── Renderizar row ── */
+function renderMemberRow(m) {
+  const initials = (m.nome || '').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+  const badgeClass = m.cargo === 'Administrador' ? 'admin-badge-admin' :
+                     m.cargo === 'Marketing' ? 'admin-badge-marketing' : 'admin-badge-attend';
+  const row = document.createElement('tr');
+  row.dataset.memberId = m.id;
+  row.innerHTML = `
+    <td><div class="admin-user-cell"><span class="admin-avatar">${escapeHtml(initials)}</span> ${escapeHtml(m.nome || '')}</div></td>
+    <td>${escapeHtml(m.email || '')}</td>
+    <td><span class="admin-badge ${badgeClass}">${escapeHtml(m.cargo || '—')}</span></td>
+    <td><span class="admin-status admin-status-ativo">${escapeHtml(m.status || 'Ativo')}</span></td>
+    <td>${m.created_at ? new Date(m.created_at).toLocaleDateString('pt-BR') : '—'}</td>
+    <td class="admin-actions-cell">
+      <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
+      <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
+    </td>`;
+  bindRowActions(row, m);
+  return row;
+}
+
+/* ── Carregar membros do Supabase ── */
 async function loadMembersFromSupabase() {
   if (!_supabase) return;
   try {
     const { data, error } = await _supabase.from('membros').select('*').order('created_at', { ascending: false });
     if (error) { console.warn('[Admin] Tabela membros não encontrada:', error.message); return; }
-    if (!data || data.length === 0) return;
 
+    _adminMembersCache = data || [];
     const tbody = document.getElementById('adminUsersBody');
     if (!tbody) return;
     tbody.innerHTML = '';
 
-    data.forEach(m => {
-      const initials = (m.nome || '').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
-      const badgeClass = m.cargo === 'Administrador' ? 'admin-badge-admin' :
-                         m.cargo === 'Marketing' ? 'admin-badge-marketing' : 'admin-badge-attend';
-      const row = document.createElement('tr');
-      row.innerHTML = `
-        <td><div class="admin-user-cell"><span class="admin-avatar">${escapeHtml(initials)}</span> ${escapeHtml(m.nome || '')}</div></td>
-        <td>${escapeHtml(m.email || '')}</td>
-        <td><span class="admin-badge ${badgeClass}">${escapeHtml(m.cargo || '—')}</span></td>
-        <td><span class="admin-status admin-status-ativo">${escapeHtml(m.status || 'Ativo')}</span></td>
-        <td>${m.created_at ? new Date(m.created_at).toLocaleDateString('pt-BR') : '—'}</td>
-        <td class="admin-actions-cell">
-          <button class="btn-icon" title="Editar"><i data-lucide="pencil"></i></button>
-          <button class="btn-icon btn-icon-danger" title="Remover"><i data-lucide="trash-2"></i></button>
-        </td>`;
-      tbody.appendChild(row);
-    });
+    if (_adminMembersCache.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted-text)">Nenhum membro cadastrado</td></tr>';
+      return;
+    }
+
+    _adminMembersCache.forEach(m => tbody.appendChild(renderMemberRow(m)));
     initIcons();
   } catch (err) {
     console.error('[Admin] Erro ao carregar membros:', err);
