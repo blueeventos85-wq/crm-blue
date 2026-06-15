@@ -2954,6 +2954,8 @@ svg.lucide.lg { width: 22px; height: 22px; }
 
 .modal.modal-lg { max-width: 900px; }
 
+.modal.modal-sm { max-width: 480px; }
+
 .modal.open {
   display: flex;
   opacity: 1;
@@ -6562,18 +6564,26 @@ textarea:focus-visible,
    MODAL: CRIAR NOVO MEMBRO
    ============================================ */
 #adminMemberOverlay {
-  display: none; position: fixed; inset: 0; z-index: 1000;
+  position: fixed; inset: 0; z-index: 1000;
   background: rgba(15,23,42,0.45); backdrop-filter: blur(4px);
+  opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
 }
+#adminMemberOverlay.open { opacity: 1; pointer-events: auto; }
+
 #adminMemberModal {
-  display: none; flex-direction: column;
+  flex-direction: column;
   max-width: 620px; width: 92%;
   max-height: 90vh; overflow: hidden;
   position: fixed; top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, calc(-50% + 12px));
   z-index: 1001;
   background: #fff; border-radius: 16px;
   box-shadow: 0 25px 60px rgba(0,0,0,0.18);
+  opacity: 0; pointer-events: none; transition: opacity 0.2s ease, transform 0.2s ease;
+}
+#adminMemberModal.open {
+  opacity: 1; pointer-events: auto;
+  transform: translate(-50%, -50%);
 }
 #adminMemberModal .modal-head {
   display: flex; justify-content: space-between; align-items: flex-start;
@@ -6686,17 +6696,25 @@ textarea:focus-visible,
 
 /* Delete confirmation modal */
 #adminDeleteOverlay {
-  display: none; position: fixed; inset: 0; z-index: 1002;
+  position: fixed; inset: 0; z-index: 1002;
   background: rgba(15,23,42,0.45); backdrop-filter: blur(4px);
+  opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
 }
+#adminDeleteOverlay.open { opacity: 1; pointer-events: auto; }
+
 #adminDeleteModal {
-  display: none; flex-direction: column;
+  flex-direction: column;
   max-width: 440px; width: 90%;
   position: fixed; top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, calc(-50% + 12px));
   z-index: 1003;
   background: #fff; border-radius: 16px;
   box-shadow: 0 25px 60px rgba(0,0,0,0.18);
+  opacity: 0; pointer-events: none; transition: opacity 0.2s ease, transform 0.2s ease;
+}
+#adminDeleteModal.open {
+  opacity: 1; pointer-events: auto;
+  transform: translate(-50%, -50%);
 }
 #adminDeleteModal .modal-head {
   display: flex; justify-content: space-between; align-items: flex-start;

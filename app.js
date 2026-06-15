@@ -286,32 +286,32 @@ function initAdminView() {
 function openMemberModal() {
   const overlay = document.getElementById('adminMemberOverlay');
   const modal = document.getElementById('adminMemberModal');
-  if (overlay) overlay.style.display = 'block';
-  if (modal) { modal.style.display = 'flex'; modal.scrollTop = 0; }
+  if (overlay) overlay.classList.add('open');
+  if (modal) { modal.classList.add('open'); modal.scrollTop = 0; }
   initIcons();
 }
 
 function closeMemberModal() {
   const overlay = document.getElementById('adminMemberOverlay');
   const modal = document.getElementById('adminMemberModal');
-  if (overlay) overlay.style.display = 'none';
-  if (modal) modal.style.display = 'none';
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
   _adminEditingId = null;
 }
 
 function openDeleteModal() {
   const overlay = document.getElementById('adminDeleteOverlay');
   const modal = document.getElementById('adminDeleteModal');
-  if (overlay) overlay.style.display = 'block';
-  if (modal) modal.style.display = 'flex';
+  if (overlay) overlay.classList.add('open');
+  if (modal) modal.classList.add('open');
   initIcons();
 }
 
 function closeDeleteModal() {
   const overlay = document.getElementById('adminDeleteOverlay');
   const modal = document.getElementById('adminDeleteModal');
-  if (overlay) overlay.style.display = 'none';
-  if (modal) modal.style.display = 'none';
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
   _adminDeleteId = null;
 }
 
@@ -420,7 +420,7 @@ async function handleMemberSave() {
       if (error) throw error;
 
       toast('Membro atualizado com sucesso!');
-      registrarAuditoria({ acao: 'Atualizações', caminho_url: '/administrador', modulo: 'Administrador' });
+      if (typeof registrarAuditoria === 'function') registrarAuditoria({ acao: 'Atualizações', caminho_url: '/administrador', modulo: 'Administrador' });
 
     } else {
       // ═══ CRIAR ═══
@@ -448,7 +448,7 @@ async function handleMemberSave() {
       if (dbError) throw dbError;
 
       toast('Membro criado com sucesso!');
-      registrarAuditoria({ acao: 'Inclusões', caminho_url: '/administrador', modulo: 'Administrador' });
+      if (typeof registrarAuditoria === 'function') registrarAuditoria({ acao: 'Inclusões', caminho_url: '/administrador', modulo: 'Administrador' });
     }
 
     closeMemberModal();
@@ -477,7 +477,7 @@ async function handleMemberDelete() {
     if (error) throw error;
 
     toast('Membro removido com sucesso!');
-    registrarAuditoria({ acao: 'Exclusões', caminho_url: '/administrador', modulo: 'Administrador' });
+    if (typeof registrarAuditoria === 'function') registrarAuditoria({ acao: 'Exclusões', caminho_url: '/administrador', modulo: 'Administrador' });
     closeDeleteModal();
     await loadMembersFromSupabase();
 
