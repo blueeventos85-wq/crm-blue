@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS membros (
   equipe        TEXT DEFAULT '',
   pessoa        TEXT DEFAULT 'Pessoa Física',
   cpf           TEXT DEFAULT '',
-  data_aniversario TEXT DEFAULT '',
+  data_aniversario DATE DEFAULT NULL,
   telefone      TEXT DEFAULT '',
   notificacao_email  BOOLEAN DEFAULT true,
   notificacao_whatsapp BOOLEAN DEFAULT true,

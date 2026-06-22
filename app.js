@@ -181,21 +181,20 @@ function bindAuthForms() {
 
 function onAuthReady() {
   // Update user display in sidebar
-  const userNameEl = document.querySelector('.user-name');
-  const userRoleEl = document.querySelector('.user-role');
-  const userAvatarEl = document.querySelector('.user-card .user-avatar');
+  const userNameEl = document.getElementById('sidebarUserName');
+  const userAvatarEl = document.getElementById('sidebarUserAvatar');
   const pageTitle = document.getElementById('pageTitle');
   const pageSubtitle = document.getElementById('pageSubtitle');
 
-  if (userNameEl) userNameEl.textContent = currentUser.nome;
+  if (userNameEl) userNameEl.textContent = currentUser.nome || 'Usuário';
   if (userAvatarEl) {
-    const initials = currentUser.nome.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+    const initials = (currentUser.nome || 'Usuário').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
     userAvatarEl.textContent = initials;
   }
-  if (pageSubtitle) pageSubtitle.textContent = `Bem-vindo de volta, ${currentUser.nome.split(' ')[0]} ✨`;
+  if (pageSubtitle) pageSubtitle.textContent = `Bem-vindo de volta, ${(currentUser.nome || 'Usuário').split(' ')[0]} ✨`;
 
   // Logout button
-  const logoutBtn = document.querySelector('.user-action');
+  const logoutBtn = document.getElementById('sidebarLogoutBtn');
   if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {
       if (_supabase) await _supabase.auth.signOut();
@@ -204,6 +203,12 @@ function onAuthReady() {
 
   // Initialize the app
   initIcons();
+  loadUserPermissions().then(perm => {
+    if (perm) {
+      applySidebarPermissions(perm);
+    }
+    // Sem registro de permissões: manter sidebar completa (acesso total por padrão)
+  });
   renderHomeModules();
 }
 
@@ -275,7 +280,6 @@ function initAdminView() {
 
     // ── Máscaras ──
     applyMask('adminMemberCPF', maskCPF);
-    applyMask('adminMemberBirth', maskDate);
     applyMask('adminMemberPhone', maskPhone);
 
     // ── Salvar membro ──
@@ -407,7 +411,13 @@ function fillMemberForm(member) {
   setSelectValue('adminMemberTeam', member.equipe);
   document.getElementById('adminMemberPessoa').value = member.pessoa || 'Pessoa Física';
   document.getElementById('adminMemberCPF').value = member.cpf || '';
-  document.getElementById('adminMemberBirth').value = member.data_aniversario || '';
+  // Converter dd/mm/aaaa para YYYY-MM-DD se necessário (dados antigos)
+  let birthVal = member.data_aniversario || '';
+  if (birthVal && /^\d{2}\/\d{2}\/\d{4}$/.test(birthVal)) {
+    const [d, m, y] = birthVal.split('/');
+    birthVal = `${y}-${m}-${d}`;
+  }
+  document.getElementById('adminMemberBirth').value = birthVal;
   document.getElementById('adminMemberPhone').value = member.telefone || '';
   setSelectValue('adminMemberNotifEmail', member.notificacao_email !== false ? 'Sim' : 'Não');
   setSelectValue('adminMemberNotifWhats', member.notificacao_whatsapp !== false ? 'Sim' : 'Não');
@@ -434,7 +444,8 @@ async function handleMemberSave() {
   const team = document.getElementById('adminMemberTeam')?.value;
   const pessoa = document.getElementById('adminMemberPessoa')?.value;
   const cpf = document.getElementById('adminMemberCPF')?.value?.trim();
-  const birth = document.getElementById('adminMemberBirth')?.value?.trim();
+  const birthRaw = document.getElementById('adminMemberBirth')?.value?.trim();
+  const birth = birthRaw || null;
   const phone = document.getElementById('adminMemberPhone')?.value?.trim();
   const notifEmail = document.getElementById('adminMemberNotifEmail')?.value;
   const notifWhats = document.getElementById('adminMemberNotifWhats')?.value;
@@ -458,7 +469,7 @@ async function handleMemberSave() {
       const payload = {
         nome: name, email, cargo: role || '', equipe: team || '',
         pessoa: pessoa || 'Pessoa Física', cpf: cpf || '',
-        data_aniversario: birth || '', telefone: phone || '',
+        data_aniversario: birth, telefone: phone || '',
         notificacao_email: notifEmail === 'Sim',
         notificacao_whatsapp: notifWhats === 'Sim',
         notificacao_som: notifSound === 'Sim'
@@ -499,7 +510,7 @@ async function handleMemberSave() {
       const memberPayload = {
         nome: name, email, cargo: role || '', equipe: team || '',
         pessoa: pessoa || 'Pessoa Física', cpf: cpf || '',
-        data_aniversario: birth || '', telefone: phone || '',
+        data_aniversario: birth, telefone: phone || '',
         notificacao_email: notifEmail === 'Sim',
         notificacao_whatsapp: notifWhats === 'Sim',
         notificacao_som: notifSound === 'Sim',
@@ -661,24 +672,55 @@ function closePermModal() {
 
 /* ── Perfil defaults ── */
 function applyPerfilDefaults(perfil) {
+  const allModules = [
+    'permHome','permDashboard','permCrm','permClienteBase','permCalendario',
+    'permRotinaBlue','permPomodoro','permConversas','permConfiguracoes',
+    'permAuditoria','permAdministrador','permObrigacoes','permDocumentos','permSuporte'
+  ];
   const presets = {
-    'Administrador': { crmView:true, crmEdit:true, crmDelete:true, calView:true, calEdit:true, clientsView:true, clientsEdit:true, auditView:true, adminMembers:true, adminPerms:true },
-    'Gestor':        { crmView:true, crmEdit:true, crmDelete:false, calView:true, calEdit:true, clientsView:true, clientsEdit:true, auditView:true, adminMembers:false, adminPerms:false },
-    'Atendimento':   { crmView:true, crmEdit:false, crmDelete:false, calView:true, calEdit:false, clientsView:true, clientsEdit:false, auditView:false, adminMembers:false, adminPerms:false },
-    'Financeiro':    { crmView:true, crmEdit:false, crmDelete:false, calView:true, calEdit:false, clientsView:true, clientsEdit:false, auditView:true, adminMembers:false, adminPerms:false },
-    'Somente leitura': { crmView:true, crmEdit:false, crmDelete:false, calView:true, calEdit:false, clientsView:true, clientsEdit:false, auditView:false, adminMembers:false, adminPerms:false }
+    'Administrador': {
+      home:true, dashboard:true, crm:true, cliente_base:true, calendario:true,
+      rotina_blue:true, pomodoro:true, conversas:true, configuracoes:true,
+      auditoria:true, administrador:true,
+      calibragem: true,
+      delete_telefone: true
+    },
+    'Gestor': {
+      home:true, dashboard:true, crm:true, cliente_base:true, calendario:true,
+      rotina_blue:false, pomodoro:false, conversas:false, configuracoes:true,
+      auditoria:true, administrador:false,
+      calibragem: true,
+      delete_telefone: true
+    },
+    'Operacional': {
+      home:false, dashboard:false, crm:true, cliente_base:true, calendario:true,
+      rotina_blue:true, pomodoro:true, conversas:true, configuracoes:false,
+      auditoria:false, administrador:false,
+      calibragem: false,
+      delete_telefone: false
+    },
+    'Somente leitura': {
+      home:true, dashboard:true, crm:true, cliente_base:true, calendario:false,
+      rotina_blue:false, pomodoro:false, conversas:false, configuracoes:false,
+      auditoria:false, administrador:false,
+      calibragem: false,
+      delete_telefone: false
+    }
   };
   const p = presets[perfil] || presets['Somente leitura'];
-  document.getElementById('permCrmView').checked = p.crmView;
-  document.getElementById('permCrmEdit').checked = p.crmEdit;
-  document.getElementById('permCrmDelete').checked = p.crmDelete;
-  document.getElementById('permCalView').checked = p.calView;
-  document.getElementById('permCalEdit').checked = p.calEdit;
-  document.getElementById('permClientsView').checked = p.clientsView;
-  document.getElementById('permClientsEdit').checked = p.clientsEdit;
-  document.getElementById('permAuditView').checked = p.auditView;
-  document.getElementById('permAdminMembers').checked = p.adminMembers;
-  document.getElementById('permAdminPerms').checked = p.adminPerms;
+  document.getElementById('permHome').checked = p.home;
+  document.getElementById('permDashboard').checked = p.dashboard;
+  document.getElementById('permCrm').checked = p.crm;
+  document.getElementById('permClienteBase').checked = p.cliente_base;
+  document.getElementById('permCalendario').checked = p.calendario;
+  document.getElementById('permRotinaBlue').checked = p.rotina_blue;
+  document.getElementById('permPomodoro').checked = p.pomodoro;
+  document.getElementById('permConversas').checked = p.conversas;
+  document.getElementById('permConfiguracoes').checked = p.configuracoes;
+  document.getElementById('permAuditoria').checked = p.auditoria;
+  document.getElementById('permAdministrador').checked = p.administrador;
+  document.getElementById('permDeleteTelefone').checked = p.delete_telefone;
+  document.getElementById('permCalibragem').checked = !!p.calibragem;
 }
 
 /* ── Render row de permissões ── */
@@ -690,8 +732,8 @@ function renderPermRow(m, perm) {
   const perfilCls = perm ? ({
     'Administrador': 'perm-badge-admin',
     'Gestor': 'perm-badge-gestor',
-    'Atendimento': 'perm-badge-atend',
-    'Financeiro': 'perm-badge-fin'
+    'Operacional': 'perm-badge-atend',
+    'Somente leitura': 'perm-badge-readonly'
   })[perm.perfil] || 'perm-badge-readonly' : 'perm-badge-readonly';
 
   const row = document.createElement('tr');
@@ -715,21 +757,24 @@ function renderPermRow(m, perm) {
 /* ── Abrir modal de permissões para um membro ── */
 function openPermModalForMember(member, perm) {
   document.getElementById('adminPermMembroId').value = member.id;
-  document.getElementById('adminPermTitle').textContent = 'Editar Permissões – ' + member.nome;
+  document.getElementById('adminPermTitle').textContent = 'Permissões – ' + member.nome;
   document.getElementById('adminPermSubtitle').textContent = member.email;
 
   if (perm) {
     document.getElementById('adminPermPerfil').value = perm.perfil || 'Somente leitura';
-    document.getElementById('permCrmView').checked = !!perm.can_crm_view;
-    document.getElementById('permCrmEdit').checked = !!perm.can_crm_edit;
-    document.getElementById('permCrmDelete').checked = !!perm.can_crm_delete;
-    document.getElementById('permCalView').checked = !!perm.can_calendar_view;
-    document.getElementById('permCalEdit').checked = !!perm.can_calendar_edit;
-    document.getElementById('permClientsView').checked = !!perm.can_clients_view;
-    document.getElementById('permClientsEdit').checked = !!perm.can_clients_edit;
-    document.getElementById('permAuditView').checked = !!perm.can_audit_view;
-    document.getElementById('permAdminMembers').checked = !!perm.can_admin_manage_members;
-    document.getElementById('permAdminPerms').checked = !!perm.can_admin_manage_permissions;
+    document.getElementById('permHome').checked = !!perm.can_home;
+    document.getElementById('permDashboard').checked = !!perm.can_dashboard;
+    document.getElementById('permCrm').checked = !!perm.can_crm;
+    document.getElementById('permClienteBase').checked = !!perm.can_cliente_base;
+    document.getElementById('permCalendario').checked = !!perm.can_calendario;
+    document.getElementById('permRotinaBlue').checked = !!perm.can_rotina_blue;
+    document.getElementById('permPomodoro').checked = !!perm.can_pomodoro;
+    document.getElementById('permConversas').checked = !!perm.can_conversas;
+    document.getElementById('permConfiguracoes').checked = !!perm.can_configuracoes;
+    document.getElementById('permAuditoria').checked = !!perm.can_auditoria;
+    document.getElementById('permAdministrador').checked = !!perm.can_administrador;
+    document.getElementById('permDeleteTelefone').checked = !!perm.can_delete_cliente_telefone;
+    document.getElementById('permCalibragem').checked = !!perm.can_calibragem;
   } else {
     applyPerfilDefaults('Somente leitura');
   }
@@ -749,21 +794,26 @@ async function handlePermSave() {
   const payload = {
     membro_id: membroId,
     perfil: document.getElementById('adminPermPerfil').value,
-    can_crm_view: document.getElementById('permCrmView').checked,
-    can_crm_edit: document.getElementById('permCrmEdit').checked,
-    can_crm_delete: document.getElementById('permCrmDelete').checked,
-    can_calendar_view: document.getElementById('permCalView').checked,
-    can_calendar_edit: document.getElementById('permCalEdit').checked,
-    can_clients_view: document.getElementById('permClientsView').checked,
-    can_clients_edit: document.getElementById('permClientsEdit').checked,
-    can_audit_view: document.getElementById('permAuditView').checked,
-    can_admin_manage_members: document.getElementById('permAdminMembers').checked,
-    can_admin_manage_permissions: document.getElementById('permAdminPerms').checked,
+    can_home: document.getElementById('permHome').checked,
+    can_dashboard: document.getElementById('permDashboard').checked,
+    can_crm: document.getElementById('permCrm').checked,
+    can_cliente_base: document.getElementById('permClienteBase').checked,
+    can_calendario: document.getElementById('permCalendario').checked,
+    can_rotina_blue: document.getElementById('permRotinaBlue').checked,
+    can_pomodoro: document.getElementById('permPomodoro').checked,
+    can_conversas: document.getElementById('permConversas').checked,
+    can_configuracoes: document.getElementById('permConfiguracoes').checked,
+    can_auditoria: document.getElementById('permAuditoria').checked,
+    can_administrador: document.getElementById('permAdministrador').checked,
+    can_obrigacoes: document.getElementById('permObrigacoes').checked,
+    can_documentos: document.getElementById('permDocumentos').checked,
+    can_suporte: document.getElementById('permSuporte').checked,
+    can_calibragem: document.getElementById('permCalibragem').checked,
+    can_delete_cliente_telefone: document.getElementById('permDeleteTelefone').checked,
     updated_at: new Date().toISOString()
   };
 
   try {
-    // Tenta buscar existente
     const { data: existing } = await _supabase.from('membros_permissoes')
       .select('id').eq('membro_id', membroId).maybeSingle();
 
@@ -800,7 +850,6 @@ async function handlePermSave() {
 async function loadPermissionsFromSupabase() {
   if (!_supabase) return;
 
-  // Garante que membros estão carregados
   if (_adminMembersCache.length === 0) {
     const { data } = await _supabase.from('membros').select('*').order('created_at', { ascending: false });
     _adminMembersCache = data || [];
@@ -835,6 +884,55 @@ async function loadPermissionsFromSupabase() {
     tbody.appendChild(renderPermRow(m, permMap[m.id] || null));
   });
   initIcons();
+}
+
+/* ============================================
+   SIDEBAR · APLICAÇÃO DE PERMISSÕES
+   ============================================ */
+let _userPermCache = null;
+
+async function loadUserPermissions() {
+  if (!_supabase || !currentUser.id) return null;
+  try {
+    const { data, error } = await _supabase.from('membros_permissoes')
+      .select('*').eq('membro_id', currentUser.id).maybeSingle();
+    if (error || !data) return null;
+    _userPermCache = data;
+    return data;
+  } catch { return null; }
+}
+
+function applySidebarPermissions(perm) {
+  if (!perm) return;
+  const pageMap = {
+    home: perm.can_home,
+    dashboard: perm.can_dashboard,
+    crm: perm.can_crm,
+    clientes: perm.can_cliente_base,
+    calendario: perm.can_calendario,
+    rotina: perm.can_rotina_blue,
+    pomodoro: perm.can_pomodoro,
+    conversas: perm.can_conversas,
+    configuracoes: perm.can_configuracoes,
+    auditoria: perm.can_auditoria,
+    administrador: perm.can_administrador,
+    obrigacoes: perm.can_obrigacoes,
+    documentos: perm.can_documentos,
+    suporte: perm.can_suporte,
+    calibragem: perm.can_calibragem
+  };
+  document.querySelectorAll('.sidebar .nav-item[data-page]').forEach(item => {
+    const page = item.dataset.page;
+    if (pageMap[page] === false) {
+      const li = item.closest('li');
+      if (li) li.style.display = 'none';
+    }
+  });
+}
+
+function canDeleteClienteTelefone() {
+  if (!_userPermCache) return true;
+  return !!_userPermCache.can_delete_cliente_telefone;
 }
 
 /* ============================================
@@ -919,9 +1017,25 @@ function renderHomeModules(filter = '') {
   }
 
   const q = filter.toLowerCase().trim();
-  const filtered = q
-    ? homeModules.filter(m => m.title.toLowerCase().includes(q) || m.desc.toLowerCase().includes(q))
+  const permMap = _userPermCache ? {
+    home: _userPermCache.can_home,
+    dashboard: _userPermCache.can_dashboard,
+    crm: _userPermCache.can_crm,
+    clientes: _userPermCache.can_cliente_base,
+    calendario: _userPermCache.can_calendario,
+    configuracoes: _userPermCache.can_configuracoes,
+    rotina: _userPermCache.can_rotina_blue,
+    pomodoro: _userPermCache.can_pomodoro,
+    conversas: _userPermCache.can_conversas,
+    auditoria: _userPermCache.can_auditoria,
+    calibragem: _userPermCache.can_calibragem
+  } : null;
+  const permFiltered = permMap
+    ? homeModules.filter(m => permMap[m.id] !== false)
     : homeModules;
+  const filtered = q
+    ? permFiltered.filter(m => m.title.toLowerCase().includes(q) || m.desc.toLowerCase().includes(q))
+    : permFiltered;
   const sections = {};
   filtered.forEach(m => {
     if (!sections[m.section]) sections[m.section] = [];
@@ -1045,7 +1159,7 @@ const homeModules = [
   { id: 'auditoria',     title: 'Auditoria',      desc: 'Rastreamento completo de ações e histórico do sistema.', icon: 'shield',           route: '/auditoria',      section: 'Ferramentas' }
 ];
 
-const knownPages = new Set(['home','dashboard','crm','clientes','calendario','configuracoes','rotina','pomodoro','conversas','auditoria','administrador']);
+const knownPages = new Set(['home','dashboard','crm','clientes','calendario','configuracoes','rotina','pomodoro','conversas','auditoria','administrador','obrigacoes','documentos','suporte','calibragem']);
 
 const pageConfig = {
   home: {
@@ -1113,6 +1227,30 @@ const pageConfig = {
     subtitle: 'Gerencie membros, permissões e convites',
     primary: '',
     primaryIcon: 'shield-check'
+  },
+  obrigacoes: {
+    title: 'Obrigações',
+    subtitle: 'Obrigações contábeis e prazos',
+    primary: '',
+    primaryIcon: 'file-text'
+  },
+  documentos: {
+    title: 'Documentos',
+    subtitle: 'Documentos e arquivos do sistema',
+    primary: '',
+    primaryIcon: 'inbox'
+  },
+  suporte: {
+    title: 'Suporte',
+    subtitle: 'Central de ajuda e suporte',
+    primary: '',
+    primaryIcon: 'life-buoy'
+  },
+  calibragem: {
+    title: 'Calibragem',
+    subtitle: 'Análise de performance da equipe',
+    primary: '',
+    primaryIcon: 'gauge'
   }
 };
 
@@ -1120,6 +1258,25 @@ let activePage = 'home';
 
 function setActivePage(page) {
   const prevPage = activePage;
+
+  // Verificação de permissão: bloquear acesso a módulos sem permissão
+  if (_userPermCache) {
+    const permPageMap = {
+      home: 'can_home', dashboard: 'can_dashboard', crm: 'can_crm',
+      clientes: 'can_cliente_base', calendario: 'can_calendario',
+      rotina: 'can_rotina_blue', pomodoro: 'can_pomodoro',
+      conversas: 'can_conversas', configuracoes: 'can_configuracoes',
+      auditoria: 'can_auditoria', administrador: 'can_administrador',
+      obrigacoes: 'can_obrigacoes', documentos: 'can_documentos',
+      suporte: 'can_suporte', calibragem: 'can_calibragem'
+    };
+    const permKey = permPageMap[page];
+    if (permKey && _userPermCache[permKey] === false) {
+      toast('Você não tem permissão para acessar esta página.', 'error');
+      return;
+    }
+  }
+
   activePage = page;
 
   // Auditoria: registrar acesso à página
@@ -1128,7 +1285,9 @@ function setActivePage(page) {
       home: 'Home', dashboard: 'Dashboard', crm: 'CRM', clientes: 'Cliente da Base',
       calendario: 'Calendário', configuracoes: 'Configurações', rotina: 'Rotina Blue',
       pomodoro: 'Pomodoro', conversas: 'Conversas', auditoria: 'Auditoria',
-      administrador: 'Administrador'
+      administrador: 'Administrador', obrigacoes: 'Obrigações',
+      documentos: 'Documentos', suporte: 'Suporte',
+      calibragem: 'Calibragem'
     };
     registrarAuditoria({
       acao: 'Acessos',
@@ -1218,6 +1377,9 @@ function setActivePage(page) {
   }
   if (page === 'administrador') {
     initAdminView();
+  }
+  if (page === 'calibragem') {
+    initCalibragem();
   }
 }
 
@@ -1989,10 +2151,8 @@ function initInteractions() {
     });
   });
 
-  // Menu toggle (mobile)
-  $('.menu-toggle')?.addEventListener('click', () => {
-    $('.sidebar').classList.toggle('open');
-  });
+  // Menu toggle (mobile) + swipe gestures
+  initSidebarSwipe();
 
   // Time Tracker controls
   initTimeTracker();
@@ -2000,6 +2160,145 @@ function initInteractions() {
   // Dark mode toggle
   const themeBtn = document.getElementById('themeToggle');
   if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
+}
+
+/* ============================================
+   SIDEBAR · SWIPE (mobile)
+   ============================================ */
+function initSidebarSwipe() {
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('sidebarOverlay');
+  if (!sidebar) return;
+
+  const menuToggle = document.querySelector('.menu-toggle');
+
+  function isMobile() { return window.innerWidth <= 1024; }
+  function isOpen() { return sidebar.classList.contains('open'); }
+
+  function openSidebar() {
+    sidebar.classList.add('open');
+    overlay?.classList.add('open');
+  }
+  function closeSidebar() {
+    sidebar.classList.remove('open');
+    overlay?.classList.remove('open');
+  }
+
+  // Menu hamburger abre/fecha
+  menuToggle?.addEventListener('click', () => {
+    if (isOpen()) closeSidebar(); else openSidebar();
+  });
+
+  // Clique no overlay fecha
+  overlay?.addEventListener('click', closeSidebar);
+
+  // ── Swipe ──
+  let dragging = false;
+  let startX = 0;
+  let currentX = 0;
+  let sidebarWidth = 0;
+  let wasOpen = false;
+
+  sidebar.addEventListener('touchstart', (e) => {
+    if (!isMobile()) return;
+    const touch = e.touches[0];
+    const x = touch.clientX;
+    sidebarWidth = sidebar.offsetWidth || 260;
+    wasOpen = isOpen();
+
+    // Abrir: toque na borda esquerda (sidebar fechada)
+    if (!wasOpen && x <= 20) {
+      dragging = true;
+      startX = x;
+      currentX = x;
+      sidebar.classList.add('sidebar--dragging');
+      return;
+    }
+    // Fechar: arrastar na sidebar (quando aberta)
+    if (wasOpen) {
+      dragging = true;
+      startX = x;
+      currentX = x;
+      sidebar.classList.add('sidebar--dragging');
+    }
+  }, { passive: true });
+
+  sidebar.addEventListener('touchmove', (e) => {
+    if (!dragging || !isMobile()) return;
+    const touch = e.touches[0];
+    currentX = touch.clientX;
+    const deltaX = currentX - startX;
+    let tx;
+
+    if (!wasOpen) {
+      // Abrindo: de -100% até 0%
+      const progress = Math.max(0, Math.min(1, deltaX / sidebarWidth));
+      tx = (progress - 1) * sidebarWidth;
+      sidebar.style.transform = `translateX(${tx}px)`;
+      // Overlay acompanha
+      if (overlay) overlay.style.opacity = progress * 0.45;
+    } else {
+      // Fechando: de 0 até -sidebarWidth
+      const progress = Math.max(-1, Math.min(0, deltaX / sidebarWidth));
+      tx = progress * sidebarWidth;
+      sidebar.style.transform = `translateX(${tx}px)`;
+      if (overlay) overlay.style.opacity = (1 + progress) * 0.45;
+    }
+  }, { passive: true });
+
+  sidebar.addEventListener('touchend', () => {
+    if (!dragging || !isMobile()) return;
+    dragging = false;
+    sidebar.classList.remove('sidebar--dragging');
+
+    const deltaX = currentX - startX;
+    const threshold = sidebarWidth * 0.3;
+
+    if (!wasOpen) {
+      if (deltaX > threshold) openSidebar(); else closeSidebar();
+    } else {
+      if (deltaX < -threshold) closeSidebar(); else openSidebar();
+    }
+
+    // Limpar inline styles
+    sidebar.style.transform = '';
+    if (overlay) overlay.style.opacity = '';
+  });
+
+  // Overlay: swipe para fechar (quando aberto, arrastar na overlay fecha)
+  overlay?.addEventListener('touchstart', (e) => {
+    if (!isMobile() || !isOpen()) return;
+    const touch = e.touches[0];
+    sidebarWidth = sidebar.offsetWidth || 260;
+    dragging = true;
+    wasOpen = true;
+    startX = touch.clientX;
+    currentX = startX;
+    sidebar.classList.add('sidebar--dragging');
+  }, { passive: true });
+
+  overlay?.addEventListener('touchmove', (e) => {
+    if (!dragging || !isMobile()) return;
+    const touch = e.touches[0];
+    currentX = touch.clientX;
+    const deltaX = currentX - startX;
+    if (deltaX < 0) {
+      const progress = Math.max(-1, Math.min(0, deltaX / sidebarWidth));
+      sidebar.style.transform = `translateX(${progress * sidebarWidth}px)`;
+      if (overlay) overlay.style.opacity = (1 + progress) * 0.45;
+    }
+  }, { passive: true });
+
+  overlay?.addEventListener('touchend', () => {
+    if (!dragging || !isMobile()) return;
+    dragging = false;
+    sidebar.classList.remove('sidebar--dragging');
+    const deltaX = currentX - startX;
+    const threshold = sidebarWidth * 0.3;
+    if (deltaX < -threshold) closeSidebar(); else openSidebar();
+    sidebar.style.transform = '';
+    if (overlay) overlay.style.opacity = '';
+  });
 }
 
 /* ============================================
@@ -2667,6 +2966,22 @@ function openLeadModal(id) {
     }
   });
 
+  // Desabilitar campo telefone se não tem permissão de exclusão
+  const telField = $('#leadModal [name="telefone"]');
+  if (telField) {
+    if (!canDeleteClienteTelefone()) {
+      telField.readOnly = true;
+      telField.title = 'Você não tem permissão para alterar o telefone deste cliente.';
+      telField.style.opacity = '0.6';
+      telField.style.cursor = 'not-allowed';
+    } else {
+      telField.readOnly = false;
+      telField.title = '';
+      telField.style.opacity = '';
+      telField.style.cursor = '';
+    }
+  }
+
   // Bind thermal select → update header tag
   const thermalSel = $('#leadThermal');
   if (thermalSel) {
@@ -2987,6 +3302,11 @@ if (typeof registrarAuditoria === 'function') {
       toast('Erro ao salvar no Supabase: ' + errMsg, 'error');
     }
   } else {
+    // Proteção: não apagar telefone sem permissão
+    if (!fields.telefone && lead.telefone && !canDeleteClienteTelefone()) {
+      fields.telefone = lead.telefone;
+      toast('Você não tem permissão para apagar o telefone do cliente.', 'error');
+    }
     Object.assign(lead, fields);
     lead.lastTouch = today;
     if (!lead.history) lead.history = [];
@@ -4312,6 +4632,7 @@ function openCalEventModal(isoDate, meetingId) {
     $$('#calEventModal [name]').forEach(el => {
       if (el.type === 'checkbox' || el.type === 'radio') el.checked = false;
       else if (el.name === 'calTimeStart') el.value = '09:00';
+      else if (el.name === 'calDate') el.value = dateStr;
       else el.value = '';
     });
     $$('#calEventServices .chip-toggle').forEach(c => c.classList.remove('active'));
@@ -4546,6 +4867,22 @@ function openLeadEditPopup(meetingId) {
   $('#calLeadPopupHon').value = lead.honorarios ? lead.honorarios.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '';
   $('#calLeadPopupObs').value = '';
 
+  // Desabilitar campo telefone se não tem permissão de exclusão
+  const calTelField = $('#calLeadPopupTelefone');
+  if (calTelField) {
+    if (!canDeleteClienteTelefone()) {
+      calTelField.readOnly = true;
+      calTelField.title = 'Você não tem permissão para alterar o telefone deste cliente.';
+      calTelField.style.opacity = '0.6';
+      calTelField.style.cursor = 'not-allowed';
+    } else {
+      calTelField.readOnly = false;
+      calTelField.title = '';
+      calTelField.style.opacity = '';
+      calTelField.style.cursor = '';
+    }
+  }
+
   popup.hidden = false;
   popup.dataset.meetingId = meetingId;
   popup.dataset.leadId = m.leadId;
@@ -4580,7 +4917,13 @@ function saveLeadFromCalendar() {
   const obs = $('#calLeadPopupObs').value.trim();
 
   lead.empresa = nome || lead.empresa;
-  lead.telefone = telefone;
+  // Proteção: não apagar telefone sem permissão
+  if (!telefone && lead.telefone && !canDeleteClienteTelefone()) {
+    lead.telefone = lead.telefone;
+    toast('Você não tem permissão para apagar o telefone do cliente.', 'error');
+  } else {
+    lead.telefone = telefone;
+  }
   lead.dataEvento = endereco;
   lead.thermal = temperatura || lead.thermal;
   lead.honorarios = honorarios;
@@ -6662,6 +7005,230 @@ function bindAuditFilters() {
 }
 
 /* ============================================
+   CALIBRAGEM · Performance dos funcionários
+   ============================================ */
+let _calibSelectedMember = null;
+let _calibMembersCache = [];
+
+function initCalibragem() {
+  loadCalibragemMembers();
+  bindCalibragemTabs();
+  bindCalibragemReport();
+}
+
+async function loadCalibragemMembers() {
+  if (!_supabase) return;
+  try {
+    const { data, error } = await _supabase.from('membros').select('*').order('nome');
+    if (error) throw error;
+    _calibMembersCache = data || [];
+    renderCalibMemberTabs();
+    if (_calibMembersCache.length > 0) {
+      selectCalibMember(_calibMembersCache[0].id);
+    }
+  } catch (err) {
+    console.error('[Calibragem] Erro ao carregar membros:', err);
+  }
+}
+
+function renderCalibMemberTabs() {
+  const wrap = document.getElementById('calibMemberTabs');
+  if (!wrap) return;
+  wrap.innerHTML = _calibMembersCache.map(m => {
+    const initials = (m.nome || '').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+    return `<button class="calib-member-tab" data-member-id="${m.id}"><span class="calib-member-avatar">${escapeHtml(initials)}</span> ${escapeHtml(m.nome || '')}</button>`;
+  }).join('');
+
+  wrap.querySelectorAll('.calib-member-tab').forEach(btn => {
+    btn.addEventListener('click', () => selectCalibMember(btn.dataset.memberId));
+  });
+}
+
+async function selectCalibMember(memberId) {
+  _calibSelectedMember = _calibMembersCache.find(m => String(m.id) === String(memberId));
+  if (!_calibSelectedMember) return;
+
+  document.querySelectorAll('.calib-member-tab').forEach(t => t.classList.remove('active'));
+  const activeTab = document.querySelector(`.calib-member-tab[data-member-id="${memberId}"]`);
+  if (activeTab) activeTab.classList.add('active');
+
+  const initials = (_calibSelectedMember.nome || '').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+  document.getElementById('calibProfileAvatar').textContent = initials;
+  document.getElementById('calibProfileName').textContent = _calibSelectedMember.nome || '—';
+  document.getElementById('calibProfileRole').textContent = _calibSelectedMember.cargo || '—';
+
+  document.getElementById('calibLastUpdate').textContent = new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  await loadCalibragemData(memberId);
+}
+
+async function loadCalibragemData(memberId) {
+  const member = _calibMembersCache.find(m => String(m.id) === String(memberId));
+  const memberName = member ? member.nome : '';
+
+  const allLeads = leads.filter(l => {
+    if (!memberName) return true;
+    return (l.responsavel || '').toLowerCase() === memberName.toLowerCase();
+  });
+
+  const total = allLeads.length;
+  const quentes = allLeads.filter(l => (l.thermal || '').toLowerCase() === 'quente').length;
+  const mornos = allLeads.filter(l => (l.thermal || '').toLowerCase() === 'morno').length;
+  const frios = allLeads.filter(l => (l.thermal || '').toLowerCase() === 'frio').length;
+  const finalizados = allLeads.filter(l => {
+    const cad = (l.status || '').toLowerCase();
+    return cad.includes('fechado') || cad.includes('contrato');
+  }).length;
+  const semAtendimento = allLeads.filter(l => {
+    const cad = (l.status || '').toLowerCase();
+    return cad.includes('frio') || cad.includes('geladeira');
+  }).length;
+  const conversao = total > 0 ? Math.round((finalizados / total) * 100) : 0;
+
+    document.getElementById('calibLeadsTotal').textContent = total;
+    document.getElementById('calibLeadsQuentes').textContent = quentes;
+    document.getElementById('calibTempoResposta').textContent = total > 0 ? '—' : '—';
+    document.getElementById('calibSemAtendimento').textContent = semAtendimento;
+    document.getElementById('calibVisitas').textContent = finalizados;
+    document.getElementById('calibConversao').textContent = conversao + '%';
+
+    document.getElementById('calibQtdQuente').textContent = quentes;
+    document.getElementById('calibQtdMorno').textContent = mornos;
+    document.getElementById('calibQtdFrio').textContent = frios;
+    const pctQ = total > 0 ? Math.round((quentes / total) * 100) : 0;
+    const pctM = total > 0 ? Math.round((mornos / total) * 100) : 0;
+    const pctF = total > 0 ? Math.round((frios / total) * 100) : 0;
+    document.getElementById('calibPctQuente').textContent = pctQ + '%';
+    document.getElementById('calibPctMorno').textContent = pctM + '%';
+    document.getElementById('calibPctFrio').textContent = pctF + '%';
+
+    drawCalibDonut(quentes, mornos, frios);
+
+    document.getElementById('calibPerfTotal').textContent = total;
+    document.getElementById('calibPerfFinalizados').textContent = finalizados;
+    document.getElementById('calibPerfAndamento').textContent = total - finalizados - semAtendimento;
+    document.getElementById('calibPerfPendentes').textContent = semAtendimento;
+
+    let status, statusCls, pontosFortes, pontosMelhorar;
+    if (conversao >= 30) {
+      status = 'EXCELENTE'; statusCls = 'calib-status-excellent';
+      pontosFortes = 'Alta taxa de conversão e boa qualificação de leads.';
+      pontosMelhorar = 'Manter consistência e buscar novos canais de captação.';
+    } else if (conversao >= 15) {
+      status = 'BOM'; statusCls = 'calib-status-good';
+      pontosFortes = 'Performance acima da média com bons resultados.';
+      pontosMelhorar = 'Focar na qualificação de leads para aumentar conversão.';
+    } else if (conversao >= 5) {
+      status = 'REGULAR'; statusCls = 'calib-status-regular';
+      pontosFortes = 'Participação ativa na equipe.';
+      pontosMelhorar = 'Melhorar tempo de resposta e follow-up com leads.';
+    } else {
+      status = 'CRÍTICO'; statusCls = 'calib-status-critical';
+      pontosFortes = 'Presença na equipe.';
+      pontosMelhorar = 'Necessário revisão de abordagem e aumento da atividade comercial.';
+    }
+
+    const statusBadge = document.getElementById('calibStatusBadge');
+    statusBadge.textContent = status;
+    statusBadge.className = 'calib-status-badge ' + statusCls;
+    document.getElementById('calibRanking').textContent = '#—';
+    document.getElementById('calibEvolucao').textContent = conversao > 0 ? '+' + conversao + '%' : '—';
+    document.getElementById('calibDiagStatus').textContent = status;
+    document.getElementById('calibDiagStatus').className = 'calib-diag-status ' + statusCls;
+    document.getElementById('calibDiagPontosFortes').textContent = pontosFortes;
+    document.getElementById('calibDiagPontosMelhorar').textContent = pontosMelhorar;
+
+    const baseEmpty = document.getElementById('calibBaseEmpty');
+    if (total === 0 && baseEmpty) {
+      baseEmpty.innerHTML = '<i data-lucide="inbox"></i><p>Nenhum dado no período</p>';
+      initIcons();
+    }
+}
+
+function setCalibragemPlaceholders() {
+  ['calibLeadsTotal','calibLeadsQuentes','calibTempoResposta','calibSemAtendimento','calibVisitas','calibConversao'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = id === 'calibConversao' ? '0%' : '0';
+  });
+  ['calibQtdQuente','calibQtdMorno','calibQtdFrio'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '0';
+  });
+  ['calibPctQuente','calibPctMorno','calibPctFrio'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '0%';
+  });
+  drawCalibDonut(0, 0, 0);
+}
+
+function drawCalibDonut(quente, morno, frio) {
+  const canvas = document.getElementById('calibDonutCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const total = quente + morno + frio;
+  const cx = 100, cy = 100, r = 80, lw = 24;
+  ctx.clearRect(0, 0, 200, 200);
+
+  if (total === 0) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = '#E5E7EB';
+    ctx.lineWidth = lw;
+    ctx.stroke();
+    return;
+  }
+
+  const colors = ['#EF4444', '#F59E0B', '#3B82F6'];
+  const values = [quente, morno, frio];
+  let start = -Math.PI / 2;
+  values.forEach((val, i) => {
+    if (val === 0) return;
+    const slice = (val / total) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, start, start + slice);
+    ctx.strokeStyle = colors[i];
+    ctx.lineWidth = lw;
+    ctx.stroke();
+    start += slice;
+  });
+}
+
+function bindCalibragemTabs() {
+  document.querySelectorAll('.calib-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.calib-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.calib-tab-content').forEach(c => c.classList.remove('active'));
+      tab.classList.add('active');
+      const target = tab.dataset.calibTab;
+      const map = {
+        'base-clientes': 'calibTabBaseClientes',
+        'performance': 'calibTabPerformance',
+        'educacao': 'calibTabEducacao',
+        'diagnostico': 'calibTabDiagnostico'
+      };
+      const content = document.getElementById(map[target]);
+      if (content) content.classList.add('active');
+      initIcons();
+    });
+  });
+}
+
+function bindCalibragemReport() {
+  const btn = document.getElementById('calibReportBtn');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      toast('Relatório PDF será implementado em breve.', 'info');
+    });
+  }
+  const viewAllBtn = document.getElementById('calibViewAllLeads');
+  if (viewAllBtn) {
+    viewAllBtn.addEventListener('click', () => {
+      setActivePage('crm');
+    });
+  }
+}
+
+/* ============================================
    BOOT
    ============================================ */
 document.addEventListener('DOMContentLoaded', async () => {
@@ -6678,6 +7245,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderCalUpcoming();
   renderDashRemindersWidget();
   renderReunRespChips();
+  initCalibragem();
 
   // Carregar serviços primeiro (necessário para mapear leads)
   try {

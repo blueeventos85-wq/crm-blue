@@ -2,21 +2,29 @@
 -- TABELA: membros_permissoes
 -- ============================================
 CREATE TABLE IF NOT EXISTS membros_permissoes (
-  id                      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  membro_id               UUID NOT NULL REFERENCES membros(id) ON DELETE CASCADE UNIQUE,
-  perfil                  TEXT DEFAULT 'Somente leitura',
-  can_crm_view            BOOLEAN DEFAULT false,
-  can_crm_edit            BOOLEAN DEFAULT false,
-  can_crm_delete          BOOLEAN DEFAULT false,
-  can_calendar_view       BOOLEAN DEFAULT false,
-  can_calendar_edit       BOOLEAN DEFAULT false,
-  can_clients_view        BOOLEAN DEFAULT false,
-  can_clients_edit        BOOLEAN DEFAULT false,
-  can_audit_view          BOOLEAN DEFAULT false,
-  can_admin_manage_members BOOLEAN DEFAULT false,
-  can_admin_manage_permissions BOOLEAN DEFAULT false,
-  created_at              TIMESTAMPTZ DEFAULT now(),
-  updated_at              TIMESTAMPTZ DEFAULT now()
+  id                        UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  membro_id                 UUID NOT NULL REFERENCES membros(id) ON DELETE CASCADE UNIQUE,
+  perfil                    TEXT DEFAULT 'Somente leitura',
+  -- Módulos da sidebar
+  can_home                  BOOLEAN DEFAULT false,
+  can_dashboard             BOOLEAN DEFAULT false,
+  can_crm                   BOOLEAN DEFAULT false,
+  can_cliente_base          BOOLEAN DEFAULT false,
+  can_calendario            BOOLEAN DEFAULT false,
+  can_rotina_blue           BOOLEAN DEFAULT false,
+  can_pomodoro              BOOLEAN DEFAULT false,
+  can_conversas             BOOLEAN DEFAULT false,
+  can_configuracoes         BOOLEAN DEFAULT false,
+  can_auditoria             BOOLEAN DEFAULT false,
+  can_administrador         BOOLEAN DEFAULT false,
+  can_obrigacoes            BOOLEAN DEFAULT false,
+  can_documentos            BOOLEAN DEFAULT false,
+  can_suporte               BOOLEAN DEFAULT false,
+  can_calibragem            BOOLEAN DEFAULT false,
+  -- Dados sensíveis
+  can_delete_cliente_telefone BOOLEAN DEFAULT false,
+  created_at                TIMESTAMPTZ DEFAULT now(),
+  updated_at                TIMESTAMPTZ DEFAULT now()
 );
 
 -- RLS

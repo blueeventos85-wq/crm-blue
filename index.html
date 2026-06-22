@@ -4,6 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Blue Eventos · CRM</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/blue-eventos-logo.png" />
+  <link rel="icon" type="image/png" sizes="64x64" href="assets/blue-eventos-logo.png" />
+  <link rel="shortcut icon" href="assets/blue-eventos-logo.png" />
+  <link rel="apple-touch-icon" href="assets/blue-eventos-logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -19,10 +23,7 @@
     <div class="auth-card" id="authCard">
       <!-- Logo -->
       <div class="auth-logo">
-        <div class="auth-logo-icon">
-          <i data-lucide="bar-chart-3"></i>
-        </div>
-        <h1 class="auth-brand">CRM Blue Eventos</h1>
+        <img src="assets/blue-eventos-logo.png" alt="Blue Eventos" class="auth-brand-img" />
         <p class="auth-tagline" id="authTagline">Acesse sua conta para gerenciar o CRM.</p>
       </div>
 
@@ -85,13 +86,7 @@
     <!-- ============ SIDEBAR ============ -->
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <div class="brand-logo">
-          <i data-lucide="bar-chart-3"></i>
-        </div>
-        <div class="brand-text">
-          <span class="brand-name">Blue</span>
-          <span class="brand-sub">Eventos</span>
-        </div>
+        <img src="assets/blue-eventos-logo.png" alt="Blue Eventos" class="brand-img" />
       </div>
 
       <nav class="sidebar-nav">
@@ -168,22 +163,9 @@
         <p class="nav-label">Atalhos</p>
         <ul>
           <li>
-            <a href="#" class="nav-item">
-              <i data-lucide="file-text"></i>
-              <span>Obrigações</span>
-              <span class="nav-badge">12</span>
-            </a>
-          </li>
-          <li>
-            <a href="#" class="nav-item">
-              <i data-lucide="inbox"></i>
-              <span>Documentos</span>
-            </a>
-          </li>
-          <li>
-            <a href="#" class="nav-item">
-              <i data-lucide="life-buoy"></i>
-              <span>Suporte</span>
+            <a href="#" class="nav-item" data-page="calibragem">
+              <i data-lucide="gauge"></i>
+              <span>Calibragem</span>
             </a>
           </li>
         </ul>
@@ -191,17 +173,17 @@
 
       <div class="sidebar-footer">
         <div class="user-card">
-          <div class="user-avatar">CS</div>
+          <div class="user-avatar" id="sidebarUserAvatar">CS</div>
           <div class="user-info">
-            <p class="user-name">Camila Souza</p>
-            <p class="user-role">Contadora Sênior</p>
+            <p class="user-name" id="sidebarUserName">Usuário</p>
           </div>
-          <button class="user-action" title="Sair">
+          <button class="user-action" id="sidebarLogoutBtn" title="Sair">
             <i data-lucide="log-out"></i>
           </button>
         </div>
       </div>
     </aside>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
     <!-- ============ MAIN ============ -->
     <main class="main">
@@ -1317,11 +1299,8 @@
                     <input type="text" id="adminMemberCPF" placeholder="000.000.000-00" maxlength="14" inputmode="numeric" />
                   </div>
                   <div class="form-group">
-                    <label>Data de Aniversário</label>
-                    <div class="auth-input-wrap">
-                      <i data-lucide="calendar"></i>
-                      <input type="text" id="adminMemberBirth" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" />
-                    </div>
+                    <label>Data de Aniversário (Ano/Mês/Dia)</label>
+                    <input type="date" id="adminMemberBirth" />
                   </div>
                 </div>
               </div>
@@ -1428,63 +1407,53 @@
                     <select id="adminPermPerfil">
                       <option value="Administrador">Administrador</option>
                       <option value="Gestor">Gestor</option>
-                      <option value="Atendimento">Atendimento</option>
-                      <option value="Financeiro">Financeiro</option>
+                      <option value="Operacional">Operacional</option>
                       <option value="Somente leitura" selected>Somente leitura</option>
                     </select>
                   </div>
                 </div>
               </div>
 
-              <!-- Seção 2: Permissões detalhadas -->
+              <!-- Seção 2: Módulos da Sidebar -->
               <div class="admin-form-section">
-                <h3 class="admin-form-section-title">Permissões por Módulo</h3>
+                <h3 class="admin-form-section-title">Módulos da Sidebar</h3>
 
-                <!-- CRM -->
-                <div class="perm-module">
-                  <h4 class="perm-module-title"><i data-lucide="kanban-square"></i> CRM</h4>
-                  <div class="perm-checks">
-                    <label class="perm-check"><input type="checkbox" id="permCrmView" /> Ver Leads</label>
-                    <label class="perm-check"><input type="checkbox" id="permCrmEdit" /> Editar Leads</label>
-                    <label class="perm-check"><input type="checkbox" id="permCrmDelete" /> Excluir Leads</label>
-                  </div>
+                <p class="perm-group-label">Menu Principal</p>
+                <div class="perm-checks-grid">
+                  <label class="perm-check"><input type="checkbox" id="permHome" /> Home</label>
+                  <label class="perm-check"><input type="checkbox" id="permDashboard" /> Dashboard</label>
+                  <label class="perm-check"><input type="checkbox" id="permCrm" /> CRM</label>
+                  <label class="perm-check"><input type="checkbox" id="permClienteBase" /> Cliente da Base</label>
+                  <label class="perm-check"><input type="checkbox" id="permCalendario" /> Calendário</label>
+                  <label class="perm-check"><input type="checkbox" id="permRotinaBlue" /> Rotina Blue</label>
+                  <label class="perm-check"><input type="checkbox" id="permPomodoro" /> Pomodoro</label>
+                  <label class="perm-check"><input type="checkbox" id="permConversas" /> Conversas</label>
+                  <label class="perm-check"><input type="checkbox" id="permConfiguracoes" /> Configurações</label>
+                  <label class="perm-check"><input type="checkbox" id="permAuditoria" /> Auditoria</label>
+                  <label class="perm-check"><input type="checkbox" id="permAdministrador" /> Administrador</label>
+                  <label class="perm-check"><input type="checkbox" id="permObrigacoes" /> Obrigações</label>
+                  <label class="perm-check"><input type="checkbox" id="permDocumentos" /> Documentos</label>
+                  <label class="perm-check"><input type="checkbox" id="permSuporte" /> Suporte</label>
                 </div>
 
-                <!-- Calendário -->
-                <div class="perm-module">
-                  <h4 class="perm-module-title"><i data-lucide="calendar-days"></i> Calendário</h4>
-                  <div class="perm-checks">
-                    <label class="perm-check"><input type="checkbox" id="permCalView" /> Ver eventos</label>
-                    <label class="perm-check"><input type="checkbox" id="permCalEdit" /> Criar/editar eventos</label>
-                  </div>
-                </div>
-
-                <!-- Cliente da Base -->
-                <div class="perm-module">
-                  <h4 class="perm-module-title"><i data-lucide="users"></i> Cliente da Base</h4>
-                  <div class="perm-checks">
-                    <label class="perm-check"><input type="checkbox" id="permClientsView" /> Ver clientes</label>
-                    <label class="perm-check"><input type="checkbox" id="permClientsEdit" /> Editar dados de clientes</label>
-                  </div>
-                </div>
-
-                <!-- Auditoria -->
-                <div class="perm-module">
-                  <h4 class="perm-module-title"><i data-lucide="shield"></i> Auditoria</h4>
-                  <div class="perm-checks">
-                    <label class="perm-check"><input type="checkbox" id="permAuditView" /> Ver logs de auditoria</label>
-                  </div>
-                </div>
-
-                <!-- Administrador -->
-                <div class="perm-module">
-                  <h4 class="perm-module-title"><i data-lucide="shield-check"></i> Administrador</h4>
-                  <div class="perm-checks">
-                    <label class="perm-check"><input type="checkbox" id="permAdminMembers" /> Gerenciar membros</label>
-                    <label class="perm-check"><input type="checkbox" id="permAdminPerms" /> Gerenciar permissões</label>
-                  </div>
+                <p class="perm-group-label">Atalhos</p>
+                <div class="perm-checks-grid">
+                  <label class="perm-check"><input type="checkbox" id="permCalibragem" /> Calibragem</label>
                 </div>
               </div>
+
+              <!-- Seção 3: Dados sensíveis -->
+              <div class="admin-form-section">
+                <h3 class="admin-form-section-title">Dados sensíveis</h3>
+                <div class="perm-checks-grid">
+                  <label class="perm-check">
+                    <input type="checkbox" id="permDeleteTelefone" />
+                    Pode apagar número de telefone do cliente
+                  </label>
+                </div>
+                <small class="perm-hint">Se desmarcado, este usuário não pode remover o telefone dos clientes.</small>
+              </div>
+
             </div>
             <div class="modal-foot admin-member-foot">
               <p class="admin-foot-note">As permissões são salvas no Supabase e aplicadas imediatamente.</p>
@@ -1495,6 +1464,195 @@
             </div>
           </div>
         </section>
+
+        <!-- ============ CALIBRAGEM ============ -->
+        <section class="page" id="page-calibragem">
+          <!-- Header -->
+          <div class="calib-header">
+            <div>
+              <h2 class="calib-title"><i data-lucide="gauge"></i> Calibragem – Alta Performance</h2>
+              <p class="calib-subtitle">Análise de performance da equipe</p>
+              <p class="calib-meta">Última calibragem: <span id="calibLastUpdate">—</span></p>
+            </div>
+            <div class="calib-header-actions">
+              <button class="btn-ghost" id="calibReportBtn"><i data-lucide="file-text"></i> Gerar relatório PDF</button>
+            </div>
+          </div>
+
+          <!-- Seletor de funcionário -->
+          <div class="calib-member-tabs" id="calibMemberTabs">
+            <!-- preenchido via JS -->
+          </div>
+
+          <!-- Cards de métricas -->
+          <div class="calib-metrics" id="calibMetrics">
+            <div class="calib-card">
+              <div class="calib-card-icon" style="background:var(--blue-50);color:var(--blue-600)"><i data-lucide="users"></i></div>
+              <div class="calib-card-body">
+                <p class="calib-card-label">Leads na base</p>
+                <p class="calib-card-value" id="calibLeadsTotal">0</p>
+              </div>
+            </div>
+            <div class="calib-card">
+              <div class="calib-card-icon" style="background:#FEE2E2;color:#DC2626"><i data-lucide="flame"></i></div>
+              <div class="calib-card-body">
+                <p class="calib-card-label">Leads quentes</p>
+                <p class="calib-card-value" id="calibLeadsQuentes">0</p>
+              </div>
+            </div>
+            <div class="calib-card">
+              <div class="calib-card-icon" style="background:#FEF3C7;color:#D97706"><i data-lucide="clock"></i></div>
+              <div class="calib-card-body">
+                <p class="calib-card-label">Tempo resposta</p>
+                <p class="calib-card-value" id="calibTempoResposta">—</p>
+              </div>
+            </div>
+            <div class="calib-card">
+              <div class="calib-card-icon" style="background:#E0E7FF;color:#4F46E5"><i data-lucide="user-x"></i></div>
+              <div class="calib-card-body">
+                <p class="calib-card-label">Sem atendimento</p>
+                <p class="calib-card-value" id="calibSemAtendimento">0</p>
+              </div>
+            </div>
+            <div class="calib-card">
+              <div class="calib-card-icon" style="background:#D1FAE5;color:#059669"><i data-lucide="map-pin"></i></div>
+              <div class="calib-card-body">
+                <p class="calib-card-label">Visitas</p>
+                <p class="calib-card-value" id="calibVisitas">0</p>
+              </div>
+            </div>
+            <div class="calib-card">
+              <div class="calib-card-icon" style="background:#F3E8FF;color:#7C3AED"><i data-lucide="trending-up"></i></div>
+              <div class="calib-card-body">
+                <p class="calib-card-label">Conversão</p>
+                <p class="calib-card-value" id="calibConversao">0%</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bloco de perfil do funcionário -->
+          <div class="calib-profile-card" id="calibProfileCard">
+            <div class="calib-profile-left">
+              <div class="calib-profile-avatar" id="calibProfileAvatar">—</div>
+              <div class="calib-profile-info">
+                <h3 class="calib-profile-name" id="calibProfileName">Selecione um funcionário</h3>
+                <p class="calib-profile-role" id="calibProfileRole">—</p>
+              </div>
+            </div>
+            <div class="calib-profile-stats">
+              <div class="calib-stat">
+                <span class="calib-stat-label">Ranking</span>
+                <span class="calib-stat-value" id="calibRanking">#—</span>
+              </div>
+              <div class="calib-stat">
+                <span class="calib-stat-label">Evolução</span>
+                <span class="calib-stat-value calib-stat-positive" id="calibEvolucao">—</span>
+              </div>
+              <div class="calib-stat">
+                <span class="calib-stat-label">Status</span>
+                <span class="calib-status-badge" id="calibStatusBadge">—</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Abas internas -->
+          <div class="calib-tabs" id="calibTabs">
+            <button class="calib-tab active" data-calib-tab="base-clientes"><i data-lucide="users"></i> Base de Clientes</button>
+            <button class="calib-tab" data-calib-tab="performance"><i data-lucide="bar-chart-3"></i> Performance</button>
+            <button class="calib-tab" data-calib-tab="educacao"><i data-lucide="book-open"></i> Educação</button>
+            <button class="calib-tab" data-calib-tab="diagnostico"><i data-lucide="clipboard-check"></i> Diagnóstico Final</button>
+          </div>
+
+          <!-- Conteúdo das abas -->
+          <div class="calib-tab-content active" id="calibTabBaseClientes">
+            <div class="calib-grid-2">
+              <div class="calib-donut-wrap">
+                <h4 class="calib-section-title">Distribuição por temperatura</h4>
+                <div class="calib-donut" id="calibDonut">
+                  <canvas id="calibDonutCanvas" width="200" height="200"></canvas>
+                </div>
+                <div class="calib-donut-legend" id="calibDonutLegend">
+                  <div class="calib-legend-item"><span class="calib-dot" style="background:#EF4444"></span> Quente — <strong id="calibQtdQuente">0</strong> leads (<span id="calibPctQuente">0%</span>)</div>
+                  <div class="calib-legend-item"><span class="calib-dot" style="background:#F59E0B"></span> Morno — <strong id="calibQtdMorno">0</strong> leads (<span id="calibPctMorno">0%</span>)</div>
+                  <div class="calib-legend-item"><span class="calib-dot" style="background:#3B82F6"></span> Frio — <strong id="calibQtdFrio">0</strong> leads (<span id="calibPctFrio">0%</span>)</div>
+                </div>
+              </div>
+              <div class="calib-list-wrap">
+                <h4 class="calib-section-title">Resumo</h4>
+                <div class="calib-empty-state" id="calibBaseEmpty">
+                  <i data-lucide="inbox"></i>
+                  <p>Nenhum dado no período</p>
+                </div>
+              </div>
+            </div>
+            <button class="btn-ghost calib-view-all-btn" id="calibViewAllLeads"><i data-lucide="external-link"></i> Ver todos os leads do colaborador</button>
+          </div>
+
+          <div class="calib-tab-content" id="calibTabPerformance">
+            <div class="calib-grid-3">
+              <div class="calib-perf-card">
+                <p class="calib-perf-label">Total de leads</p>
+                <p class="calib-perf-value" id="calibPerfTotal">0</p>
+              </div>
+              <div class="calib-perf-card">
+                <p class="calib-perf-label">Finalizados</p>
+                <p class="calib-perf-value calib-perf-green" id="calibPerfFinalizados">0</p>
+              </div>
+              <div class="calib-perf-card">
+                <p class="calib-perf-label">Em andamento</p>
+                <p class="calib-perf-value calib-perf-blue" id="calibPerfAndamento">0</p>
+              </div>
+              <div class="calib-perf-card">
+                <p class="calib-perf-label">Pendentes</p>
+                <p class="calib-perf-value calib-perf-yellow" id="calibPerfPendentes">0</p>
+              </div>
+              <div class="calib-perf-card">
+                <p class="calib-perf-label">Funil por cadência</p>
+                <p class="calib-perf-value" id="calibPerfFunil">—</p>
+              </div>
+              <div class="calib-perf-card">
+                <p class="calib-perf-label">Origem dos leads</p>
+                <p class="calib-perf-value" id="calibPerfOrigem">—</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="calib-tab-content" id="calibTabEducacao">
+            <div class="calib-grid-3">
+              <div class="calib-perf-card">
+                <p class="calib-perf-label">Treinamentos realizados</p>
+                <p class="calib-perf-value" id="calibEduTreinamentos">0</p>
+              </div>
+              <div class="calib-perf-card">
+                <p class="calib-perf-label">Participação em reuniões</p>
+                <p class="calib-perf-value" id="calibEduReunioes">0</p>
+              </div>
+              <div class="calib-perf-card">
+                <p class="calib-perf-label">Horas de capacitação</p>
+                <p class="calib-perf-value" id="calibEduHoras">0h</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="calib-tab-content" id="calibTabDiagnostico">
+            <div class="calib-diagnostico-card">
+              <h4 class="calib-section-title">Resumo da calibragem</h4>
+              <div class="calib-diag-status" id="calibDiagStatus">—</div>
+              <div class="calib-diag-body">
+                <div class="calib-diag-block">
+                  <h5>Pontos fortes</h5>
+                  <p id="calibDiagPontosFortes">Selecione um funcionário para ver o diagnóstico.</p>
+                </div>
+                <div class="calib-diag-block">
+                  <h5>Pontos a melhorar</h5>
+                  <p id="calibDiagPontosMelhorar">Selecione um funcionário para ver o diagnóstico.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </section>
+
       </div>
     </main>
   </div>
