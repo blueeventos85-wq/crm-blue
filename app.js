@@ -16,8 +16,9 @@ const $$ = (s, ctx = document) => Array.from(ctx.querySelectorAll(s));
    ============================================ */
 let currentUser = {
   id: null,
+  authUserId: null,
   nome: 'Usuário',
-  role: 'admin' // padrão: acesso total (trocar para 'viewer' ou 'editor' para testar)
+  role: 'admin'
 };
 
 /* ============================================
@@ -60,32 +61,115 @@ function showAuthSuccess(id, msg) {
   if (el) { el.textContent = msg; el.hidden = false; }
 }
 
+function resetAuthState() {
+  _authUser = null;
+  _userPermCache = null;
+  _adminMembersCache = [];
+  _adminPermCache = [];
+  currentUser.id = null;
+  currentUser.authUserId = null;
+  currentUser.nome = 'Usuário';
+  currentUser.role = 'admin';
+  activePage = 'home';
+
+  // Reconstruir sidebar com todos os itens
+  _userPermCache = null;
+  renderSidebar();
+
+  // Limpar cache do admin
+  const permTbody = document.getElementById('adminPermBody');
+  if (permTbody) permTbody.innerHTML = '';
+  const usersTbody = document.getElementById('adminUsersBody');
+  if (usersTbody) usersTbody.innerHTML = '';
+}
+
+async function loadMemberFromAuth(authUserId, authEmail) {
+  if (!_supabase || !authUserId) return null;
+  try {
+    // Primary: lookup by auth_user_id
+    const { data, error } = await _supabase.from('membros')
+      .select('*').eq('auth_user_id', authUserId).maybeSingle();
+    if (data) return data;
+    if (error) console.warn('[Auth] loadMemberFromAuth lookup by auth_user_id failed:', error.message);
+
+    // Fallback: lookup by email (in case auth_user_id was never linked)
+    if (authEmail) {
+      const { data: byEmail, error: emailErr } = await _supabase.from('membros')
+        .select('*').eq('email', authEmail).maybeSingle();
+      if (byEmail) {
+        console.warn('[Auth] Member found by email fallback, linking auth_user_id...');
+        await _supabase.from('membros').update({ auth_user_id: authUserId }).eq('id', byEmail.id);
+        return byEmail;
+      }
+      if (emailErr) console.warn('[Auth] Email fallback also failed:', emailErr.message);
+    }
+
+    console.warn('[Auth] No member found for authUserId:', authUserId, 'email:', authEmail);
+    return null;
+  } catch (err) {
+    console.error('[Auth] loadMemberFromAuth exception:', err);
+    return null;
+  }
+}
+
 async function initAuth() {
   if (!_supabase) { showAuthOverlay(); return; }
 
   const { data: { session } } = await _supabase.auth.getSession();
   if (session && session.user) {
     _authUser = session.user;
-    currentUser.id = session.user.id;
-    currentUser.nome = session.user.user_metadata?.nome || session.user.email?.split('@')[0] || 'Usuário';
+    currentUser.authUserId = session.user.id;
+
+    const member = await loadMemberFromAuth(session.user.id, session.user.email);
+    if (member) {
+      currentUser.id = member.id;
+      currentUser.nome = member.nome || session.user.email?.split('@')[0] || 'Usuário';
+    } else {
+      // Don't overwrite currentUser.id if already set — loadUserPermissions will resolve it
+      if (!currentUser.id) {
+        currentUser.nome = session.user.user_metadata?.nome || session.user.email?.split('@')[0] || 'Usuário';
+      }
+      console.warn('[Auth] loadMemberFromAuth failed in initAuth, loadUserPermissions will attempt resolution');
+    }
+
     hideAuthOverlay();
-    onAuthReady();
+    await onAuthReady();
   } else {
     showAuthOverlay();
   }
 
-  _supabase.auth.onAuthStateChange((event, session) => {
-    if (session && session.user) {
-      _authUser = session.user;
-      currentUser.id = session.user.id;
-      currentUser.nome = session.user.user_metadata?.nome || session.user.email?.split('@')[0] || 'Usuário';
-      hideAuthOverlay();
-    } else {
-      _authUser = null;
-      currentUser.id = null;
-      currentUser.nome = 'Usuário';
+  _supabase.auth.onAuthStateChange(async (event, session) => {
+    console.log('[Auth] onAuthStateChange:', event, 'userId:', session?.user?.id);
+
+    if (event === 'SIGNED_OUT' || !session || !session.user) {
+      resetAuthState();
       showAuthOverlay();
+      return;
     }
+
+    // For SIGNED_IN or INITIAL_SESSION: only re-initialize if user actually changed
+    const newAuthUserId = session.user.id;
+    if (currentUser.authUserId === newAuthUserId && currentUser.id && _userPermCache) {
+      console.log('[Auth] Same user, permissions already loaded, skipping re-init');
+      return;
+    }
+
+    _authUser = session.user;
+    currentUser.authUserId = newAuthUserId;
+
+    const member = await loadMemberFromAuth(session.user.id, session.user.email);
+    if (member) {
+      currentUser.id = member.id;
+      currentUser.nome = member.nome || session.user.email?.split('@')[0] || 'Usuário';
+    } else if (!currentUser.id) {
+      // Only set nome if we can't resolve — loadUserPermissions will try to find member
+      currentUser.nome = session.user.user_metadata?.nome || session.user.email?.split('@')[0] || 'Usuário';
+      console.warn('[Auth] loadMemberFromAuth failed in onAuthStateChange, loadUserPermissions will attempt resolution');
+    }
+
+    _userPermCache = null;
+    hideAuthOverlay();
+    await onAuthReady();
   });
 }
 
@@ -179,11 +263,9 @@ function bindAuthForms() {
   }
 }
 
-function onAuthReady() {
-  // Update user display in sidebar
+async function onAuthReady() {
   const userNameEl = document.getElementById('sidebarUserName');
   const userAvatarEl = document.getElementById('sidebarUserAvatar');
-  const pageTitle = document.getElementById('pageTitle');
   const pageSubtitle = document.getElementById('pageSubtitle');
 
   if (userNameEl) userNameEl.textContent = currentUser.nome || 'Usuário';
@@ -196,19 +278,20 @@ function onAuthReady() {
   // Logout button
   const logoutBtn = document.getElementById('sidebarLogoutBtn');
   if (logoutBtn) {
-    logoutBtn.addEventListener('click', async () => {
+    logoutBtn.onclick = async () => {
+      resetAuthState();
       if (_supabase) await _supabase.auth.signOut();
-    });
+    };
   }
 
-  // Initialize the app
   initIcons();
-  loadUserPermissions().then(perm => {
-    if (perm) {
-      applySidebarPermissions(perm);
-    }
-    // Sem registro de permissões: manter sidebar completa (acesso total por padrão)
-  });
+
+  // Load permissions BEFORE rendering sidebar and home
+  await loadUserPermissions();
+  console.log('[Auth] onAuthReady: permissions loaded, _userPermCache =', _userPermCache ? 'YES' : 'NULL');
+  console.log('[Auth] onAuthReady: currentUser.id =', currentUser.id);
+
+  renderSidebar();
   renderHomeModules();
 }
 
@@ -487,44 +570,27 @@ async function handleMemberSave() {
 
     } else {
       // ═══ CRIAR ═══
-      console.log('[Admin] Criando novo membro...');
+      console.log('[Admin] Criando novo membro via Edge Function...');
 
-      // 1. Criar usuário no Supabase Auth (ignorar erro se email já existir)
-      let userId = null;
-      try {
-        const { data: authData, error: authError } = await _supabase.auth.signUp({
-          email, password,
-          options: { data: { nome: name, cargo: role, equipe: team }, emailRedirectTo: window.location.origin }
-        });
-        if (authError) {
-          console.warn('[Admin] Auth signUp falhou (continuando sem auth_user_id):', authError.message);
-        } else {
-          userId = authData?.user?.id || null;
-          console.log('[Admin] Auth user criado:', userId);
-        }
-      } catch (authErr) {
-        console.warn('[Admin] Auth signUp exception (continuando):', authErr.message);
-      }
-
-      // 2. Inserir na tabela membros
-      const memberPayload = {
-        nome: name, email, cargo: role || '', equipe: team || '',
-        pessoa: pessoa || 'Pessoa Física', cpf: cpf || '',
-        data_aniversario: birth, telefone: phone || '',
-        notificacao_email: notifEmail === 'Sim',
-        notificacao_whatsapp: notifWhats === 'Sim',
-        notificacao_som: notifSound === 'Sim',
-        status: 'Ativo', auth_user_id: userId
+      const payload = {
+        name, email, password, role, team, pessoa, cpf, birth, phone,
+        notifEmail, notifWhats, notifSound
       };
 
-      console.log('[Admin] Inserindo membro no Supabase:', memberPayload);
-      const { data: dbData, error: dbError } = await _supabase.from('membros').insert([memberPayload]).select();
-      if (dbError) {
-        console.error('[Admin] Erro ao inserir membro:', dbError.message, dbError.code, dbError.details, dbError.hint);
-        throw dbError;
+      const { data, error } = await _supabase.functions.invoke('create-member', {
+        body: payload
+      });
+
+      if (error) {
+        console.error('[Admin] Edge Function error:', error.message, error.context);
+        throw new Error(error.message || 'Erro ao criar membro');
       }
 
-      console.log('[Admin] Membro inserido:', dbData);
+      if (!data?.success) {
+        throw new Error(data?.error || 'Erro ao criar membro');
+      }
+
+      console.log('[Admin] Membro criado:', data.member);
       toast('Membro criado com sucesso!');
       if (typeof registrarAuditoria === 'function') registrarAuditoria({ acao: 'Inclusões', caminho_url: '/administrador', modulo: 'Administrador' });
     }
@@ -685,29 +751,22 @@ function applyPerfilDefaults(perfil) {
       calibragem: true,
       delete_telefone: true
     },
-    'Gestor': {
-      home:true, dashboard:true, crm:true, cliente_base:true, calendario:true,
-      rotina_blue:false, pomodoro:false, conversas:false, configuracoes:true,
-      auditoria:true, administrador:false,
-      calibragem: true,
-      delete_telefone: true
-    },
-    'Operacional': {
+    'Atendente': {
       home:false, dashboard:false, crm:true, cliente_base:true, calendario:true,
       rotina_blue:true, pomodoro:true, conversas:true, configuracoes:false,
       auditoria:false, administrador:false,
       calibragem: false,
       delete_telefone: false
     },
-    'Somente leitura': {
-      home:true, dashboard:true, crm:true, cliente_base:true, calendario:false,
-      rotina_blue:false, pomodoro:false, conversas:false, configuracoes:false,
-      auditoria:false, administrador:false,
-      calibragem: false,
-      delete_telefone: false
+    'Marketing': {
+      home:true, dashboard:true, crm:true, cliente_base:true, calendario:true,
+      rotina_blue:false, pomodoro:false, conversas:false, configuracoes:true,
+      auditoria:true, administrador:false,
+      calibragem: true,
+      delete_telefone: true
     }
   };
-  const p = presets[perfil] || presets['Somente leitura'];
+  const p = presets[perfil] || presets['Atendente'];
   document.getElementById('permHome').checked = p.home;
   document.getElementById('permDashboard').checked = p.dashboard;
   document.getElementById('permCrm').checked = p.crm;
@@ -731,9 +790,8 @@ function renderPermRow(m, perm) {
   const perfil = perm ? perm.perfil : 'Sem permissão';
   const perfilCls = perm ? ({
     'Administrador': 'perm-badge-admin',
-    'Gestor': 'perm-badge-gestor',
-    'Operacional': 'perm-badge-atend',
-    'Somente leitura': 'perm-badge-readonly'
+    'Atendente': 'perm-badge-atend',
+    'Marketing': 'perm-badge-marketing'
   })[perm.perfil] || 'perm-badge-readonly' : 'perm-badge-readonly';
 
   const row = document.createElement('tr');
@@ -887,47 +945,144 @@ async function loadPermissionsFromSupabase() {
 }
 
 /* ============================================
-   SIDEBAR · APLICAÇÃO DE PERMISSÕES
+   SIDEBAR · REBUILD DINÂMICO POR PERMISSÕES
    ============================================ */
 let _userPermCache = null;
 
+const _sidebarMenuItems = [
+  { page: 'home',          icon: 'home',             label: 'Home' },
+  { page: 'dashboard',     icon: 'layout-dashboard', label: 'Dashboard' },
+  { page: 'crm',           icon: 'kanban-square',    label: 'CRM' },
+  { page: 'clientes',      icon: 'users',            label: 'Cliente da Base' },
+  { page: 'calendario',    icon: 'calendar-days',    label: 'Calendário' },
+  { page: 'rotina',        icon: 'clipboard-list',   label: 'Rotina Blue' },
+  { page: 'pomodoro',      icon: 'timer',            label: 'Pomodoro' },
+  { page: 'conversas',     icon: 'message-circle',   label: 'Conversas' },
+  { page: 'configuracoes', icon: 'settings',         label: 'Configurações' },
+  { page: 'auditoria',     icon: 'shield',           label: 'Auditoria' },
+  { page: 'administrador', icon: 'shield-check',     label: 'Administrador' }
+];
+const _sidebarShortcuts = [
+  { page: 'calibragem',    icon: 'gauge',            label: 'Calibragem' }
+];
+
+const _permKeyMap = {
+  home: 'can_home', dashboard: 'can_dashboard', crm: 'can_crm',
+  clientes: 'can_cliente_base', calendario: 'can_calendario',
+  rotina: 'can_rotina_blue', pomodoro: 'can_pomodoro',
+  conversas: 'can_conversas', configuracoes: 'can_configuracoes',
+  auditoria: 'can_auditoria', administrador: 'can_administrador',
+  calibragem: 'can_calibragem'
+};
+
 async function loadUserPermissions() {
-  if (!_supabase || !currentUser.id) return null;
+  if (!_supabase) {
+    console.warn('[Perm] _supabase is null, returning null');
+    return null;
+  }
+
+  // Step 1: Ensure we have the membros.id (UUID from membros table)
+  if (!currentUser.id) {
+    console.warn('[Perm] currentUser.id is null, attempting to resolve member...');
+    const authUser = _authUser || (await _supabase.auth.getUser()).data?.user;
+    if (!authUser) {
+      console.error('[Perm] No auth user available');
+      return null;
+    }
+    // Try by auth_user_id
+    const { data: byAuth } = await _supabase.from('membros')
+      .select('id, nome, email').eq('auth_user_id', authUser.id).maybeSingle();
+    if (byAuth) {
+      currentUser.id = byAuth.id;
+      currentUser.nome = currentUser.nome || byAuth.nome;
+      console.log('[Perm] Resolved member by auth_user_id:', byAuth.id);
+    } else {
+      // Try by email
+      const { data: byEmail } = await _supabase.from('membros')
+        .select('id, nome, email').eq('email', authUser.email).maybeSingle();
+      if (byEmail) {
+        currentUser.id = byEmail.id;
+        currentUser.nome = currentUser.nome || byEmail.nome;
+        // Link auth_user_id for future lookups
+        await _supabase.from('membros').update({ auth_user_id: authUser.id }).eq('id', byEmail.id);
+        console.log('[Perm] Resolved member by email and linked auth_user_id:', byEmail.id);
+      } else {
+        console.error('[Perm] Could not find member for auth user:', authUser.id, authUser.email);
+        return null;
+      }
+    }
+  }
+
+  // Step 2: Query permissions
+  console.log('[Perm] Querying membros_permissoes for membro_id:', currentUser.id);
   try {
     const { data, error } = await _supabase.from('membros_permissoes')
       .select('*').eq('membro_id', currentUser.id).maybeSingle();
-    if (error || !data) return null;
+    if (error) {
+      console.error('[Perm] Query error:', error.message, error.code);
+      return null;
+    }
+    if (!data) {
+      console.warn('[Perm] No permission record found for membro_id:', currentUser.id);
+      return null;
+    }
+    console.log('[Perm] Permissions loaded:', JSON.stringify(data));
     _userPermCache = data;
     return data;
-  } catch { return null; }
+  } catch (err) {
+    console.error('[Perm] Exception:', err);
+    return null;
+  }
 }
 
-function applySidebarPermissions(perm) {
-  if (!perm) return;
-  const pageMap = {
-    home: perm.can_home,
-    dashboard: perm.can_dashboard,
-    crm: perm.can_crm,
-    clientes: perm.can_cliente_base,
-    calendario: perm.can_calendario,
-    rotina: perm.can_rotina_blue,
-    pomodoro: perm.can_pomodoro,
-    conversas: perm.can_conversas,
-    configuracoes: perm.can_configuracoes,
-    auditoria: perm.can_auditoria,
-    administrador: perm.can_administrador,
-    obrigacoes: perm.can_obrigacoes,
-    documentos: perm.can_documentos,
-    suporte: perm.can_suporte,
-    calibragem: perm.can_calibragem
-  };
-  document.querySelectorAll('.sidebar .nav-item[data-page]').forEach(item => {
-    const page = item.dataset.page;
-    if (pageMap[page] === false) {
-      const li = item.closest('li');
-      if (li) li.style.display = 'none';
-    }
+function isPageAllowed(page, perm) {
+  if (!perm) return true;
+  const key = _permKeyMap[page];
+  if (!key) return true;
+  return perm[key] !== false;
+}
+
+function renderSidebar() {
+  const nav = document.querySelector('.sidebar-nav');
+  if (!nav) return;
+
+  console.log('[Sidebar] Rendering, _userPermCache =', _userPermCache ? 'loaded' : 'null');
+
+  const allowedMenu = _sidebarMenuItems.filter(m => isPageAllowed(m.page, _userPermCache));
+  const allowedShortcuts = _sidebarShortcuts.filter(m => isPageAllowed(m.page, _userPermCache));
+
+  console.log('[Sidebar] Allowed menu items:', allowedMenu.map(m => m.page).join(', '));
+  console.log('[Sidebar] Allowed shortcuts:', allowedShortcuts.map(m => m.page).join(', '));
+
+  let html = '<p class="nav-label">Menu principal</p><ul>';
+  allowedMenu.forEach((item, i) => {
+    const activeClass = (item.page === activePage) ? ' active' : '';
+    html += `<li><a href="#" class="nav-item${activeClass}" data-page="${item.page}">
+      <i data-lucide="${item.icon}"></i><span>${item.label}</span></a></li>`;
   });
+  html += '</ul>';
+
+  if (allowedShortcuts.length > 0) {
+    html += '<p class="nav-label">Atalhos</p><ul>';
+    allowedShortcuts.forEach(item => {
+      const activeClass = (item.page === activePage) ? ' active' : '';
+      html += `<li><a href="#" class="nav-item${activeClass}" data-page="${item.page}">
+        <i data-lucide="${item.icon}"></i><span>${item.label}</span></a></li>`;
+    });
+    html += '</ul>';
+  }
+
+  nav.innerHTML = html;
+
+  $$('.nav-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.preventDefault();
+      const page = item.dataset.page;
+      if (page) setActivePage(page);
+    });
+  });
+
+  initIcons();
 }
 
 function canDeleteClienteTelefone() {
@@ -1305,6 +1460,13 @@ function setActivePage(page) {
     }
   }
 
+  // Limpa seleção de clientes ao sair da rota clientes
+  if (prevPage === 'clientes' && page !== 'clientes') {
+    selectedClientIds.clear();
+    const massBar = document.getElementById('clientMassBar');
+    if (massBar) massBar.hidden = true;
+  }
+
   $$('.page').forEach(p => p.classList.remove('active'));
   const target = $(`#page-${page}`);
   if (target) target.classList.add('active');
@@ -1360,6 +1522,9 @@ function setActivePage(page) {
   if (page === 'clientes' && !window._clientsInited) {
     renderClients();
   }
+  if (page === 'clientes') {
+    populateCadenceFilter();
+  }
   if (page === 'clientes' && subtitleEl) {
     subtitleEl.textContent = `${clientsData.length} clientes cadastrados`;
   }
@@ -1387,6 +1552,8 @@ function setActivePage(page) {
    CLIENTES — DATA + RENDER
    ============================================ */
 let clientsData = [];
+let selectedClientIds = new Set();
+let _clientMassBarBound = false;
 
 const statusMap = {
   active: { label: 'Ativo',        cls: 'status-active' },
@@ -1415,8 +1582,69 @@ function populateServiceFilter() {
   });
 }
 
+function populateCadenceFilter() {
+  const dropdown = $('#cadenciaDropdown');
+  if (!dropdown) return;
+
+  const cadenceMap = {};
+  cadences.forEach(c => { cadenceMap[c.id] = c.label; });
+
+  const usedIds = new Set();
+  clientsData.forEach(c => {
+    if (c._cadenciaId && cadenceMap[c._cadenciaId]) usedIds.add(c._cadenciaId);
+  });
+
+  const sorted = cadences.filter(c => usedIds.has(c.id));
+  dropdown.innerHTML = '<button class="filter-dropdown-item" data-cad="all">Todas</button>';
+  sorted.forEach(c => {
+    const btn = document.createElement('button');
+    btn.className = 'filter-dropdown-item';
+    btn.dataset.cad = c.id;
+    btn.textContent = c.label;
+    dropdown.appendChild(btn);
+  });
+}
+
+function initCadenceFilter() {
+  const btn = $('#cadenciaFilterBtn');
+  const dropdown = $('#cadenciaDropdown');
+  if (!btn || !dropdown) return;
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    $$('.filter-dropdown').forEach(d => { if (d !== dropdown) d.classList.remove('open'); });
+    dropdown.classList.toggle('open');
+  });
+
+  dropdown.addEventListener('click', (e) => {
+    const item = e.target.closest('.filter-dropdown-item');
+    if (!item) return;
+    e.stopPropagation();
+    const val = item.dataset.cad || 'all';
+    clienteCadenceFilter = val;
+    dropdown.classList.remove('open');
+
+    const label = val === 'all' ? 'Cadência' : (cadences.find(c => c.id === val)?.label || 'Cadência');
+    btn.innerHTML = `<i data-lucide="git-branch"></i> ${label} <i data-lucide="chevron-down"></i>`;
+    initIcons();
+
+    const badge = $('#activeFilterBadge');
+    const badgeLabel = $('#activeFilterLabel');
+    if (val !== 'all' && badge && badgeLabel) {
+      badge.hidden = false;
+      badge.style.display = '';
+      badgeLabel.textContent = label;
+    } else if (badge) {
+      badge.hidden = true;
+      badge.style.display = 'none!important';
+    }
+    renderClients();
+  });
+}
+
 let clienteSearchQuery = '';
 let clienteServiceFilter = 'all';
+let clienteCadenceFilter = 'all';
 let clienteViewMode = 'grid';
 
 function getFilteredClients() {
@@ -1424,6 +1652,7 @@ function getFilteredClients() {
   return clientsData.filter(c => {
     if (q && !c.name.toLowerCase().includes(q) && !c.cnpj.includes(q)) return false;
     if (clienteServiceFilter !== 'all' && !c.services.includes(clienteServiceFilter)) return false;
+    if (clienteCadenceFilter !== 'all' && c._cadenciaId !== clienteCadenceFilter) return false;
     return true;
   });
 }
@@ -1444,9 +1673,26 @@ function clientCardHTML(c) {
   const more = overflow > 0
     ? `<span class="lead-card-svc-more" tabindex="0" role="button" aria-label="Mais ${overflow} serviço${overflow > 1 ? 's' : ''}" title="${c.services.slice(MAX_SERVICES_CARD).join(', ')}">+${overflow}</span>`
     : '';
+  const isAdmin = isCurrentUserAdmin();
+  const isSelected = selectedClientIds.has(String(c.id));
+  const checkboxHtml = isAdmin
+    ? `<label class="client-select-label" onclick="event.stopPropagation()">
+        <input type="checkbox" class="client-select-cb" data-client-id="${c.id}" ${isSelected ? 'checked' : ''} />
+       </label>`
+    : '';
+  const transferSelectHtml = isAdmin
+    ? `<div class="client-transfer-select-wrap" onclick="event.stopPropagation()">
+        <label class="client-transfer-label">Transferir para:</label>
+        <select class="client-transfer-select" data-client-id="${c.id}">
+          <option value="">Selecionar membro...</option>
+        </select>
+       </div>`
+    : '';
   return `
-    <article class="client-card" data-name="${c.name}" tabindex="0"
+    <article class="client-card${isSelected ? ' selected' : ''}${isAdmin ? ' has-admin-actions' : ''}" data-name="${c.name}" data-client-id="${c.id}" tabindex="0"
              aria-label="${c.name}${c.services.length ? ', ' + c.services.length + ' serviço' + (c.services.length > 1 ? 's' : '') : ''}">
+      ${checkboxHtml}
+      ${transferSelectHtml}
       <div class="client-card-head">
         <div class="avatar ${c.avatar}">${c.initials}</div>
         <div class="client-card-info">
@@ -1544,22 +1790,340 @@ function renderClients() {
 
   $$('.client-card').forEach(card => {
     card.addEventListener('click', (e) => {
+      if (e.target.closest('.client-select-label') || e.target.closest('.client-transfer-select-wrap')) return;
       openClientInLeadModal(card);
     });
     card.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        openClientInLeadModal(card);
+        if (!e.target.closest('.client-select-label') && !e.target.closest('.client-transfer-select-wrap')) {
+          openClientInLeadModal(card);
+        }
       }
     });
   });
+
+  // Bind checkboxes
+  $$('.client-select-cb').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      e.stopPropagation();
+      const clientId = String(cb.dataset.clientId);
+      if (cb.checked) {
+        selectedClientIds.add(clientId);
+      } else {
+        selectedClientIds.delete(clientId);
+      }
+      const card = cb.closest('.client-card');
+      if (card) card.classList.toggle('selected', cb.checked);
+      updateMassBar();
+    });
+  });
+
+  // Bind per-card transfer selects (admin only)
+  $$('.client-transfer-select').forEach(sel => {
+    const clientId = sel.dataset.clientId;
+    const client = clientsData.find(c => String(c.id) === String(clientId));
+    const currentMembroId = client?._membroId || null;
+    populateClientTransferSelect(sel, currentMembroId);
+    sel.addEventListener('change', (e) => {
+      e.stopPropagation();
+      const memberId = sel.value;
+      if (!memberId) return;
+      transferSingleClient(clientId, memberId);
+    });
+  });
+
+  // Close filter dropdowns on outside click (only once)
+  if (!window._transferDropdownListenerBound) {
+    document.addEventListener('click', () => {
+      $$('.filter-dropdown').forEach(d => d.classList.remove('open'));
+    });
+    window._transferDropdownListenerBound = true;
+  }
 
   const summary = $('#clienteBaseSummary');
   if (summary) {
     summary.innerHTML = `<p class="summary-text">${filtered.length} cliente${filtered.length !== 1 ? 's' : ''} encontrado${filtered.length !== 1 ? 's' : ''}</p>`;
   }
 
+  updateMassBar();
+  bindClientMassBar();
   window._clientsInited = true;
+}
+
+/* ============================================
+   CLIENTES · TRANSFERÊNCIA (individual + massa)
+   ============================================ */
+
+function populateClientTransferSelect(sel, currentMembroId) {
+  if (!_membersCache) {
+    _supabase.from('membros')
+      .select('id, nome, email')
+      .eq('status', 'Ativo')
+      .order('nome')
+      .then(({ data, error }) => {
+        if (!error && data) {
+          _membersCache = data;
+          fillMemberOptions(sel, currentMembroId);
+        }
+      });
+  } else {
+    fillMemberOptions(sel, currentMembroId);
+  }
+}
+
+function fillMemberOptions(sel, currentMembroId) {
+  if (!_membersCache || !sel) return;
+  sel.innerHTML = '<option value="">Selecionar membro...</option>';
+  _membersCache.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = m.nome + (m.email ? ' (' + m.email + ')' : '');
+    if (String(m.id) === String(currentMembroId)) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+async function transferSingleClient(clientId, memberId) {
+  const member = _membersCache?.find(m => m.id === memberId);
+  const memberName = member?.nome || 'Membro';
+
+  try {
+    const { error } = await _supabase.from('leads')
+      .update({ membro_id: memberId })
+      .eq('id', String(clientId));
+
+    if (error) throw error;
+
+    const client = clientsData.find(c => String(c.id) === String(clientId));
+    if (client) client._membroId = memberId;
+
+    selectedClientIds.delete(String(clientId));
+    toast(`Cliente transferido para ${memberName}`);
+    renderClients();
+  } catch (err) {
+    console.error('[Transfer] Erro ao transferir cliente:', err);
+    toast(err.message || 'Erro ao transferir cliente', 'error');
+  }
+}
+
+function updateMassBar() {
+  const bar = $('#clientMassBar');
+  const countEl = $('#massBarCount');
+  const selectAllWrap = $('#selectAllWrap');
+  const selectAllCb = $('#selectAllClients');
+  if (!bar) return;
+
+  const isAdmin = isCurrentUserAdmin();
+
+  if (selectAllWrap) selectAllWrap.style.display = isAdmin ? '' : 'none';
+
+  if (!isAdmin || selectedClientIds.size === 0) {
+    bar.hidden = true;
+    if (selectAllCb) selectAllCb.checked = false;
+    return;
+  }
+
+  bar.hidden = false;
+  if (countEl) countEl.textContent = `${selectedClientIds.size} LEAD(S) SELECIONADO(S)`;
+
+  const filtered = getFilteredClients();
+  if (selectAllCb) {
+    selectAllCb.checked = filtered.length > 0 && filtered.every(c => selectedClientIds.has(String(c.id)));
+  }
+
+  const memberSelect = $('#massNewMember');
+  const qualSelect = $('#massNewQualificador');
+  if (_membersCache) {
+    if (memberSelect && memberSelect.options.length <= 1) populateBarSelect(memberSelect);
+    if (qualSelect && qualSelect.options.length <= 1) populateBarSelect(qualSelect);
+  } else {
+    if (memberSelect && memberSelect.options.length <= 1) loadMembersForClientBar(memberSelect);
+    if (qualSelect && qualSelect.options.length <= 1) loadMembersForClientBar(qualSelect);
+  }
+
+  const saveBtn = $('#massTransferBtn');
+  if (saveBtn) {
+    const hasAction = !!(memberSelect?.value || qualSelect?.value || $('#massLostReason')?.value);
+    saveBtn.disabled = !hasAction;
+    if (memberSelect) memberSelect.onchange = updateSaveBtnState;
+    if (qualSelect) qualSelect.onchange = updateSaveBtnState;
+    const lostSel = $('#massLostReason');
+    if (lostSel) lostSel.onchange = updateSaveBtnState;
+  }
+
+  initIcons();
+}
+
+function updateSaveBtnState() {
+  const saveBtn = $('#massTransferBtn');
+  if (!saveBtn) return;
+  const memberSelect = $('#massNewMember');
+  const qualSelect = $('#massNewQualificador');
+  const lostSel = $('#massLostReason');
+  const hasAction = !!(memberSelect?.value || qualSelect?.value || lostSel?.value);
+  saveBtn.disabled = !hasAction;
+}
+
+function populateBarSelect(sel) {
+  if (!_membersCache || !sel) return;
+  sel.innerHTML = '<option value="">Selecionar...</option>';
+  _membersCache.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = m.nome + (m.email ? ' (' + m.email + ')' : '');
+    sel.appendChild(opt);
+  });
+}
+
+async function loadMembersForClientBar(select) {
+  if (!_supabase) return;
+  try {
+    const { data, error } = await _supabase.from('membros')
+      .select('id, nome, email')
+      .eq('status', 'Ativo')
+      .order('nome');
+    if (error || !data) return;
+    _membersCache = data;
+    populateBarSelect(select);
+  } catch (err) {
+    console.error('[ClientBar] Erro ao buscar membros:', err);
+  }
+}
+
+function bindClientMassBar() {
+  if (_clientMassBarBound) return;
+  _clientMassBarBound = true;
+
+  const saveBtn = $('#massTransferBtn');
+  const deleteBtn = $('#massDeleteBtn');
+  const cancelBtn = $('#massTransferCancel');
+  const selectAllCb = $('#selectAllClients');
+
+  if (saveBtn) saveBtn.addEventListener('click', saveMassTransfer);
+  if (deleteBtn) deleteBtn.addEventListener('click', deleteMassLeads);
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
+      selectedClientIds.clear();
+      renderClients();
+    });
+  }
+
+  if (selectAllCb) {
+    selectAllCb.addEventListener('change', () => {
+      const filtered = getFilteredClients();
+      if (selectAllCb.checked) {
+        filtered.forEach(c => selectedClientIds.add(String(c.id)));
+      } else {
+        filtered.forEach(c => selectedClientIds.delete(String(c.id)));
+      }
+      renderClients();
+    });
+  }
+}
+
+async function saveMassTransfer() {
+  const memberSelect = $('#massNewMember');
+  const qualSelect = $('#massNewQualificador');
+  const lostSel = $('#massLostReason');
+  const memberId = memberSelect?.value || null;
+  const qualId = qualSelect?.value || null;
+  const lostReason = lostSel?.value || null;
+  if (!memberId && !qualId && !lostReason) return;
+  if (selectedClientIds.size === 0) return;
+
+  const ids = [...selectedClientIds];
+  const saveBtn = $('#massTransferBtn');
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i data-lucide="loader"></i> <span>Salvando...</span>';
+    initIcons();
+  }
+
+  try {
+    const updates = {};
+    if (memberId) updates.membro_id = memberId;
+    if (lostReason) updates.status = lostReason;
+
+    if (Object.keys(updates).length > 0) {
+      const { error } = await _supabase.from('leads')
+        .update(updates)
+        .in('id', ids);
+      if (error) throw error;
+    }
+
+    if (qualId) {
+      const { error: qualErr } = await _supabase.from('leads')
+        .update({ qualificador_id: qualId })
+        .in('id', ids);
+      if (qualErr) console.warn('[MassTransfer] Erro ao atualizar qualificador:', qualErr);
+    }
+
+    ids.forEach(id => {
+      const client = clientsData.find(c => String(c.id) === String(id));
+      if (client) {
+        if (memberId) client._membroId = memberId;
+      }
+    });
+
+    const parts = [];
+    if (memberId) parts.push('membro');
+    if (qualId) parts.push('qualificador');
+    if (lostReason) parts.push(`status: ${lostReason}`);
+
+    selectedClientIds.clear();
+    toast(`${ids.length} lead(s) atualizado(s) — ${parts.join(', ')}`);
+    if (memberSelect) memberSelect.value = '';
+    if (qualSelect) qualSelect.value = '';
+    if (lostSel) lostSel.value = '';
+    renderClients();
+  } catch (err) {
+    console.error('[MassTransfer] Erro ao salvar:', err);
+    toast(err.message || 'Erro ao salvar alterações', 'error');
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = '<i data-lucide="check"></i> <span>Salvar</span>';
+      initIcons();
+    }
+  }
+}
+
+async function deleteMassLeads() {
+  if (selectedClientIds.size === 0) return;
+  const ids = [...selectedClientIds];
+  const confirmed = confirm(`Tem certeza que deseja excluir ${ids.length} lead(s)? Esta ação não pode ser desfeita.`);
+  if (!confirmed) return;
+
+  const deleteBtn = $('#massDeleteBtn');
+  if (deleteBtn) {
+    deleteBtn.disabled = true;
+    deleteBtn.innerHTML = '<i data-lucide="loader"></i> <span>Excluindo...</span>';
+    initIcons();
+  }
+
+  try {
+    const { error } = await _supabase.from('leads')
+      .delete()
+      .in('id', ids);
+    if (error) throw error;
+
+    clientsData = clientsData.filter(c => !ids.includes(String(c.id)));
+    selectedClientIds.clear();
+    toast(`${ids.length} lead(s) excluído(s)`);
+    renderClients();
+    populateServiceFilter();
+    populateCadenceFilter();
+  } catch (err) {
+    console.error('[MassDelete] Erro ao excluir:', err);
+    toast(err.message || 'Erro ao excluir leads', 'error');
+  } finally {
+    if (deleteBtn) {
+      deleteBtn.disabled = false;
+      deleteBtn.innerHTML = '<i data-lucide="trash-2"></i> <span>Excluir Lead</span>';
+      initIcons();
+    }
+  }
 }
 
 function openClientInLeadModal(card) {
@@ -2063,6 +2627,7 @@ function initInteractions() {
   if (servicoBtn && servicoDropdown) {
     servicoBtn.addEventListener('click', (e) => {
       e.stopPropagation();
+      $$('.filter-dropdown').forEach(d => { if (d !== servicoDropdown) d.classList.remove('open'); });
       servicoDropdown.classList.toggle('open');
     });
     document.addEventListener('click', () => servicoDropdown.classList.remove('open'));
@@ -2091,12 +2656,17 @@ function initInteractions() {
   if (clearFilterBtn) {
     clearFilterBtn.addEventListener('click', () => {
       clienteServiceFilter = 'all';
+      clienteCadenceFilter = 'all';
       $('#activeFilterBadge').hidden = true;
-      const btn = $('#servicoFilterBtn');
-      if (btn) {
-        btn.innerHTML = '<i data-lucide="filter"></i> Tipo de Serviço <i data-lucide="chevron-down"></i>';
-        initIcons();
+      const svcBtn = $('#servicoFilterBtn');
+      if (svcBtn) {
+        svcBtn.innerHTML = '<i data-lucide="filter"></i> Tipo de Serviço <i data-lucide="chevron-down"></i>';
       }
+      const cadBtn = $('#cadenciaFilterBtn');
+      if (cadBtn) {
+        cadBtn.innerHTML = '<i data-lucide="git-branch"></i> Cadência <i data-lucide="chevron-down"></i>';
+      }
+      initIcons();
       renderClients();
     });
   }
@@ -2543,12 +3113,118 @@ function renderCadenceGrid() {
   initIcons();
 }
 
+function isCurrentUserAdmin() {
+  if (!_userPermCache) {
+    console.log('[DEBUG-ADMIN] _userPermCache is NULL → returning false');
+    return false;
+  }
+  const result = _userPermCache.perfil === 'Administrador';
+  console.log('[DEBUG-ADMIN] perfil:', _userPermCache.perfil, '→ isAdmin:', result);
+  return result;
+}
+
 function getSearchFilteredLeads() {
   const q = leadSearchQuery.toLowerCase().trim();
   return leads.filter(l => {
     if (q && !l.empresa.toLowerCase().includes(q) && !l.telefone.includes(q) && !l.cnpj.includes(q)) return false;
     return true;
   });
+}
+
+let _membersCache = null;
+
+async function loadMembersForTransfer(currentMembroId) {
+  const select = $('#leadTransferMember');
+  if (!select) return;
+
+  if (!_membersCache) {
+    const { data, error } = await _supabase.from('membros')
+      .select('id, nome, email')
+      .eq('status', 'Ativo')
+      .order('nome');
+    if (error || !data) {
+      console.error('[Transfer] Erro ao buscar membros:', error?.message);
+      return;
+    }
+    _membersCache = data;
+  }
+
+  select.innerHTML = '<option value="">Selecione um membro...</option>';
+  _membersCache.forEach(m => {
+    if (m.id === currentMembroId) return;
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = m.nome + (m.email ? ' (' + m.email + ')' : '');
+    select.appendChild(opt);
+  });
+
+  const transferBtn = $('#leadTransferBtn');
+  if (transferBtn) {
+    transferBtn.disabled = true;
+    select.onchange = () => { transferBtn.disabled = !select.value; };
+  }
+}
+
+async function transferLead() {
+  const select = $('#leadTransferMember');
+  const newOwnerId = select?.value;
+  if (!newOwnerId || !currentLeadId) return;
+
+  const lead = leads.find(l => String(l.id) === String(currentLeadId));
+  if (!lead) return;
+
+  const newMember = _membersCache?.find(m => m.id === newOwnerId);
+  const newMemberName = newMember?.nome || 'Membro';
+
+  const transferBtn = $('#leadTransferBtn');
+  if (transferBtn) {
+    transferBtn.disabled = true;
+    transferBtn.innerHTML = '<i data-lucide="loader"></i> Transferindo...';
+    initIcons();
+  }
+
+  try {
+    const { error } = await _supabase.from('leads')
+      .update({ membro_id: newOwnerId })
+      .eq('id', String(currentLeadId));
+
+    if (error) throw error;
+
+    lead._membroId = newOwnerId;
+    lead.responsavel = newMemberName;
+    lead.lastTouch = new Date().toLocaleDateString('pt-BR');
+    if (!lead.history) lead.history = [];
+    lead.history.unshift({
+      type: 'transfer',
+      icon: 'arrow-right-left',
+      title: 'Lead transferido',
+      meta: new Date().toLocaleString('pt-BR'),
+      desc: `Transferido para ${newMemberName}`
+    });
+
+    toast(`Lead transferido para ${newMemberName} com sucesso!`);
+
+    // Notificar o novo responsável (salva notificação)
+    addNotification(`Novo lead atribuído a você: ${lead.empresa} (de ${currentUser.nome})`);
+
+    // Recarregar leads do Supabase para manter filtro consistente
+    const isAdmin = isCurrentUserAdmin();
+    const filterId = isAdmin ? null : currentUser.id;
+    const refreshed = await fetchLeadsSupabase(filterId);
+    leads = refreshed;
+
+    renderAll();
+    closeLeadModal();
+  } catch (err) {
+    console.error('[Transfer] Erro ao transferir lead:', err);
+    toast(err.message || 'Erro ao transferir lead', 'error');
+  } finally {
+    if (transferBtn) {
+      transferBtn.disabled = false;
+      transferBtn.innerHTML = '<i data-lucide="arrow-right-left"></i> Transferir';
+      initIcons();
+    }
+  }
 }
 
 function renderKanban() {
@@ -2695,6 +3371,7 @@ function leadCardHTML(l) {
       <div class="lead-card-meta">
         <div class="row"><span class="lbl">Serviço</span><span class="val">${svcBadges || '—'}${more}</span></div>
         <div class="row"><span class="lbl">Data do Evento</span><span class="val">${evDate}</span></div>
+        ${l.responsavel && l.responsavel !== 'Camila' ? `<div class="row"><span class="lbl">Responsável</span><span class="val">${l.responsavel}</span></div>` : ''}
       </div>
     </article>
   `;
@@ -2920,6 +3597,12 @@ function openNewLeadModal() {
   // Bind honorários mask
   bindHonMask();
 
+  // Hide transfer tab for new leads
+  const transferTab = $('#leadTransferTab');
+  const transferHeaderBtn = $('#leadTransferHeaderBtn');
+  if (transferTab) transferTab.style.display = 'none';
+  if (transferHeaderBtn) transferHeaderBtn.style.display = 'none';
+
   // Show
   modal.classList.add('open');
   $('#leadModalOverlay').classList.add('open');
@@ -3007,6 +3690,18 @@ function openLeadModal(id) {
     if (i < cadenceIdx) step.classList.add('done');
     else if (i === cadenceIdx) step.classList.add('active');
   });
+
+  // Transfer tab: show only for admins
+  const transferTab = $('#leadTransferTab');
+  const transferHeaderBtn = $('#leadTransferHeaderBtn');
+  if (isCurrentUserAdmin()) {
+    if (transferTab) transferTab.style.display = '';
+    if (transferHeaderBtn) transferHeaderBtn.style.display = '';
+    loadMembersForTransfer(lead._membroId);
+  } else {
+    if (transferTab) transferTab.style.display = 'none';
+    if (transferHeaderBtn) transferHeaderBtn.style.display = 'none';
+  }
 
   // Reset tab to edit
   switchLeadTab('edit');
@@ -3238,7 +3933,10 @@ async function saveLead() {
       cnpj: '',
       telefone: fields.telefone,
       email: '',
-      responsavel: 'Camila',
+      responsavel: currentUser.nome || 'Camila',
+      _ownerId: currentUser.id || null,
+      _createdBy: currentUser.id || null,
+      _membroId: null,
       status: 'dados-ia',
       thermal: fields.thermal || 'frio',
       honorarios: fields.honorarios,
@@ -3286,7 +3984,8 @@ async function saveLead() {
         honorarios: fields.honorarios,
         observacoes: fields.observacoes || '',
         tipo_servico_id: newLead._tipoServicoIds.length > 0 ? newLead._tipoServicoIds : null,
-        cadencia_id: newLead._cadenciaId || null
+        cadencia_id: newLead._cadenciaId || null,
+        owner_id: currentUser.id || null
       });
       if (result && result[0] && result[0].id) {
         newLead.id = result[0].id;
@@ -3391,6 +4090,48 @@ function toast(text, type = 'success') {
   toastTimer = setTimeout(() => el.hidden = true, 2500);
 }
 
+/* ============================================
+   NOTIFICAÇÕES · Bell badge + localStorage
+   ============================================ */
+function _getNotifications() {
+  try { return JSON.parse(localStorage.getItem('blue_notifications') || '[]'); } catch { return []; }
+}
+function _saveNotifications(list) {
+  localStorage.setItem('blue_notifications', JSON.stringify(list));
+}
+function addNotification(msg) {
+  const list = _getNotifications();
+  list.unshift({ msg, time: Date.now(), read: false });
+  _saveNotifications(list);
+  _updateNotifDot();
+}
+function _updateNotifDot() {
+  const dot = $('#notifDot');
+  const list = _getNotifications();
+  const unread = list.filter(n => !n.read).length;
+  if (dot) dot.hidden = unread === 0;
+}
+function clearNotifications() {
+  const list = _getNotifications().map(n => ({ ...n, read: true }));
+  _saveNotifications(list);
+  _updateNotifDot();
+}
+function initNotifications() {
+  _updateNotifDot();
+  const bellBtn = $('#notifBellBtn');
+  if (bellBtn) {
+    bellBtn.addEventListener('click', () => {
+      clearNotifications();
+      const list = _getNotifications();
+      if (list.length > 0) {
+        toast('Notificações limpas');
+      } else {
+        toast('Nenhuma notificação');
+      }
+    });
+  }
+}
+
 function renderAll() {
   renderCadenceGrid();
   renderKanban();
@@ -3447,6 +4188,12 @@ function initCRM() {
       const text = encodeURIComponent(`Olá ${lead.empresa.split(' ')[0]}, tudo bem? Aqui é da Blue Contabilidade.`);
       window.open(`https://wa.me/55${phone}?text=${text}`, '_blank');
     }));
+
+  // Transferência (admin)
+  $$('#leadModal [data-action="transfer"]').forEach(b =>
+    b.addEventListener('click', () => switchLeadTab('transfer')));
+  const transferBtnEl = $('#leadTransferBtn');
+  if (transferBtnEl) transferBtnEl.addEventListener('click', transferLead);
 
   // Inicial: esconder journey arrows errados
   renderAll();
@@ -5366,7 +6113,7 @@ function initDashboardPeriod() {
   if (si) si.addEventListener('change', () => { dashState.startDate = si.value; persistDashPeriod(); refreshDashboard(); });
   if (ei) ei.addEventListener('change', () => { dashState.endDate = ei.value; persistDashPeriod(); refreshDashboard(); });
   const cta = document.getElementById('eventosCta');
-  if (cta) cta.addEventListener('click', () => navigateToRoute('/calendario'));
+  if (cta) cta.addEventListener('click', () => setActivePage('calendario'));
 }
 
 function persistDashPeriod() {
@@ -7246,6 +7993,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderDashRemindersWidget();
   renderReunRespChips();
   initCalibragem();
+  initNotifications();
 
   // Carregar serviços primeiro (necessário para mapear leads)
   try {
@@ -7255,9 +8003,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('[Boot] Erro ao carregar serviços:', err);
   }
 
-  // Carregar leads do Supabase
+  // Carregar leads do Supabase (admin vê todos, membro vê apenas seus)
   try {
-    const supabaseLeads = await fetchLeadsSupabase();
+    const isAdmin = isCurrentUserAdmin();
+    const filterId = isAdmin ? null : currentUser.id;
+    console.log('[Boot] Carregando leads, admin:', isAdmin, 'filterId:', filterId, 'currentUser.id:', currentUser.id);
+    const supabaseLeads = await fetchLeadsSupabase(filterId);
     if (supabaseLeads.length > 0) {
       leads = supabaseLeads;
       console.log('[Boot] Leads carregados do Supabase:', leads.length);
@@ -7310,7 +8061,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Carregar clientes do Supabase para a página "Cliente da Base"
   try {
-    const supabaseClients = await fetchClientsSupabase();
+    const isAdminForClients = isCurrentUserAdmin();
+    const filterClientId = isAdminForClients ? null : currentUser.id;
+    console.log('[Boot] Carregando clientes, admin:', isAdminForClients, 'filterClientId:', filterClientId);
+    const supabaseClients = await fetchClientsSupabase(filterClientId);
     if (supabaseClients.length > 0) {
       clientsData = supabaseClients;
       console.log('[Boot] Clientes carregados do Supabase:', clientsData.length);
@@ -7322,6 +8076,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   populateServiceFilter();
+  populateCadenceFilter();
+  initCadenceFilter();
   renderClients();
   setActivePage('home');
 

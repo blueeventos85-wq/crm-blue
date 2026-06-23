@@ -589,7 +589,7 @@ svg.lucide.lg { width: 22px; height: 22px; }
 /* ============================================
    HOME · MÓDULOS (grid dinâmico)
    ============================================ */
-#page-home {
+#page-home.active {
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -6797,6 +6797,7 @@ textarea:focus-visible,
 .perm-badge-gestor { background: #E0F2FE; color: #0369A1; }
 .perm-badge-atend { background: #FAE8FF; color: #9333EA; }
 .perm-badge-fin { background: var(--green-50); color: var(--green-600); }
+.perm-badge-marketing { background: #FEF3C7; color: #92400E; }
 .perm-badge-readonly { background: var(--gray-100); color: var(--gray-600); }
 
 /* New permission grid layout */
@@ -7164,4 +7165,137 @@ textarea:focus-visible,
 @media (max-width: 480px) {
   .auth-card { margin: 16px; padding: 28px 24px 24px; }
   .auth-brand { font-size: 20px; }
+}
+
+/* ============================================
+   CLIENTES · TRANSFERÊNCIA (checkbox + bottom bar)
+   ============================================ */
+
+/* "Selecionar todos" na barra de filtros */
+.client-select-all-wrap {
+  display: flex; align-items: center; gap: 6px;
+  cursor: pointer; padding: 6px 10px; border-radius: 6px;
+  transition: background 0.12s;
+}
+.client-select-all-wrap:hover { background: var(--gray-100, #f1f5f9); }
+.select-all-label {
+  font: 500 13px 'Inter', sans-serif; color: var(--text-primary);
+  white-space: nowrap;
+}
+
+/* Checkbox de seleção no card */
+.client-select-label {
+  position: absolute; top: 12px; left: 12px; z-index: 3;
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; cursor: pointer;
+}
+.client-select-cb {
+  width: 18px; height: 18px; cursor: pointer;
+  accent-color: var(--primary-blue);
+  border-radius: 4px;
+}
+
+/* Card selecionado */
+.client-card.selected {
+  outline: 2px solid var(--primary-blue);
+  outline-offset: -2px;
+  background: var(--primary-blue-soft, rgba(22, 91, 255, 0.04));
+}
+
+/* Ajuste de padding para cards com checkbox + transfer button */
+.client-card.has-admin-actions {
+  padding-top: 14px;
+}
+
+/* Transfer select no card */
+.client-transfer-select-wrap {
+  position: absolute; top: 10px; right: 10px; z-index: 3;
+  display: flex; flex-direction: column; gap: 3px; min-width: 160px;
+}
+.client-transfer-label {
+  font: 600 10px 'Inter', sans-serif; color: var(--muted-text);
+  text-transform: uppercase; letter-spacing: 0.4px;
+}
+.client-transfer-select {
+  padding: 5px 8px; border-radius: 6px;
+  border: 1px solid var(--gray-200); background: var(--card-bg);
+  font: 400 12px 'Inter', sans-serif; color: var(--text-primary);
+  cursor: pointer; max-width: 180px;
+}
+.client-transfer-select:focus {
+  outline: none; border-color: var(--primary-blue);
+  box-shadow: 0 0 0 2px rgba(22, 91, 255, 0.12);
+}
+
+/* Bottom bar de transferência em massa */
+.client-mass-bar {
+  position: fixed; bottom: 0; left: 260px; right: 0; z-index: 100;
+  background: var(--card-bg); border-top: 1px solid var(--gray-200);
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.08);
+  animation: slideUpBar 0.2s ease-out;
+}
+@keyframes slideUpBar {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.client-mass-bar-inner {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 24px; gap: 12px; flex-wrap: wrap;
+}
+.mass-bar-count {
+  font: 700 13px 'Inter', sans-serif; color: var(--text-primary);
+  white-space: nowrap; text-transform: uppercase; letter-spacing: 0.3px;
+}
+.mass-bar-actions {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.mass-bar-field {
+  display: flex; flex-direction: column; gap: 3px;
+}
+.mass-bar-label {
+  font: 600 10px 'Inter', sans-serif; color: var(--muted-text);
+  text-transform: uppercase; letter-spacing: 0.4px;
+}
+.mass-bar-select {
+  padding: 6px 10px; border-radius: 6px;
+  border: 1px solid var(--gray-200); background: var(--card-bg);
+  font: 400 12px 'Inter', sans-serif; color: var(--text-primary);
+  min-width: 160px; cursor: pointer;
+}
+.mass-bar-select:focus {
+  outline: none; border-color: var(--primary-blue);
+  box-shadow: 0 0 0 3px rgba(22, 91, 255, 0.12);
+}
+
+/* Botões da bottom bar */
+.btn-sm {
+  padding: 7px 14px; border-radius: 8px; font: 500 13px 'Inter', sans-serif;
+  display: inline-flex; align-items: center; gap: 6px;
+  cursor: pointer; border: none; transition: all 0.15s;
+}
+.btn-sm i { width: 15px; height: 15px; }
+.btn-primary.btn-sm {
+  background: var(--primary-blue); color: #fff;
+}
+.btn-primary.btn-sm:hover:not(:disabled) { background: var(--primary-blue-dark); }
+.btn-primary.btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-danger.btn-sm {
+  background: #DC2626; color: #fff;
+}
+.btn-danger.btn-sm:hover:not(:disabled) { background: #B91C1C; }
+.btn-danger.btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-ghost.btn-sm {
+  background: transparent; color: var(--muted-text);
+  border: 1px solid var(--gray-200);
+}
+.btn-ghost.btn-sm:hover { background: var(--gray-100, #f1f5f9); color: var(--text-primary); }
+
+/* Responsivo: bottom bar */
+@media (max-width: 768px) {
+  .client-mass-bar { left: 0; }
+  .client-mass-bar-inner { flex-direction: column; gap: 10px; padding: 12px 16px; }
+  .mass-bar-select { min-width: 100%; }
+  .mass-bar-actions { width: 100%; }
+  .mass-bar-field { width: 100%; }
+  .mass-bar-field .mass-bar-select { width: 100%; }
 }

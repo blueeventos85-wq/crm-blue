@@ -171,15 +171,22 @@ async function validateForeignKeys(payload) {
    HELPER: buscar leads do Supabase
    Retorna array de leads no formato do CRM
    ============================================ */
-async function fetchLeadsSupabase() {
+async function fetchLeadsSupabase(filterMemberId) {
   if (!_supabase) return [];
 
   const cadenciaMap = await fetchCadenciasMap();
 
-  const { data, error } = await _supabase
+  let query = _supabase
     .from('leads')
-    .select('*')
+    .select('*, membros!membro_id(nome)')
     .order('created_at', { ascending: false });
+
+  if (filterMemberId) {
+    console.log('[Supabase] Filtrando leads por membro_id/qualificador_id:', filterMemberId);
+    query = query.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error('[Supabase] Erro ao buscar leads:', error.message, error.code);
@@ -199,18 +206,24 @@ async function fetchLeadsSupabase() {
     const nowStr = created.toLocaleString('pt-BR');
     const today = created.toLocaleDateString('pt-BR');
 
+    // Se houver membro_id, usar o nome do membro retornado no join
+    const respName = row.membros ? row.membros.nome : 'Camila';
+
     return {
       id: row.id,
       empresa: row.nome || 'Sem nome',
       cnpj: '',
       telefone: row.telefone || '',
       email: '',
-      responsavel: 'Camila',
+      responsavel: respName,
       status: status,
       thermal: row.temperatura || 'frio',
       honorarios: row.honorarios || 0,
       servicos: [],
       dataEvento: row.data_evento || '',
+      _ownerId: row.owner_id || null,
+      _createdBy: row.created_by || null,
+      _membroId: row.membro_id || null,
       tiposServico: (function() {
         const raw = row.tipo_servico_id;
         if (!raw) return [];
@@ -259,7 +272,7 @@ async function insertLeadSupabase(data) {
 
   const { nome, telefone, data_evento, endereco_evento,
           quantidade_horas, temperatura, honorarios, observacoes,
-          tipo_servico_id, cadencia_id } = data;
+          tipo_servico_id, cadencia_id, owner_id } = data;
 
   console.log('[Supabase] Inserindo lead:', { nome, telefone, data_evento });
 
@@ -271,8 +284,10 @@ async function insertLeadSupabase(data) {
     quantidade_horas,
     temperatura,
     honorarios: parseBrazilianCurrency(honorarios),
-    observacoes
+    observacoes,
+    membro_id: null // Começa sempre como null, conforme requisitos
   };
+  if (owner_id) payload.owner_id = owner_id;
   if (tipo_servico_id) payload.tipo_servico_id = Array.isArray(tipo_servico_id) ? tipo_servico_id : [tipo_servico_id];
   if (cadencia_id) payload.cadencia_id = cadencia_id;
 
@@ -491,13 +506,26 @@ async function fetchProximosEventos() {
    HELPER: buscar clientes (leads + serviços)
    para a página "Cliente da Base"
    ============================================ */
-async function fetchClientsSupabase() {
+async function fetchClientsSupabase(filterMemberId) {
   if (!_supabase) return [];
 
+  console.log('[Supabase-Clientes] filterMemberId recebido:', filterMemberId, '| tipo:', typeof filterMemberId);
+
+  let leadsQuery = _supabase.from('leads').select('*').order('created_at', { ascending: false });
+
+  if (filterMemberId) {
+    console.log('[Supabase-Clientes] Aplicando filtro membro_id/qualificador_id:', filterMemberId);
+    leadsQuery = leadsQuery.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId);
+  } else {
+    console.log('[Supabase-Clientes] SEM FILTRO — retornando TODOS os leads');
+  }
+
   const [leadsRes, svcRes] = await Promise.all([
-    _supabase.from('leads').select('*').order('created_at', { ascending: false }),
+    leadsQuery,
     _supabase.from('servicos').select('*')
   ]);
+
+  console.log('[Supabase-Clientes] Resultado:', leadsRes.data?.length, 'leads retornados');
 
   if (leadsRes.error) {
     console.error('[Supabase] Erro ao buscar leads (clientes):', leadsRes.error.message, leadsRes.error.code);
@@ -551,7 +579,9 @@ async function fetchClientsSupabase() {
       telefone: row.telefone || '',
       enderecoEvento: row.endereco_evento || '',
       quantidadeHoras: row.quantidade_horas || 0,
-      observacoes: row.observacoes || ''
+      observacoes: row.observacoes || '',
+      _membroId: row.membro_id || null,
+      _cadenciaId: row.cadencia_id || null
     };
   });
 }

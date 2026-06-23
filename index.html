@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>Blue Eventos · CRM</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/blue-eventos-logo.png" />
   <link rel="icon" type="image/png" sizes="64x64" href="assets/blue-eventos-logo.png" />
@@ -203,9 +206,9 @@
           <button class="icon-btn" id="themeToggle" title="Alternar tema" aria-label="Ativar tema escuro" aria-pressed="false">
             <i data-lucide="moon"></i>
           </button>
-          <button class="icon-btn" title="Notificações">
+          <button class="icon-btn" id="notifBellBtn" title="Notificações">
             <i data-lucide="bell"></i>
-            <span class="dot"></span>
+            <span class="dot" id="notifDot" hidden></span>
           </button>
           <button class="icon-btn" title="Mensagens">
             <i data-lucide="message-square"></i>
@@ -372,7 +375,7 @@
                 <!-- rendered by JS -->
               </div>
               <div class="card-footer">
-                <button class="btn-secondary eventos-cta" id="eventosCta">
+                <button class="btn-secondary eventos-cta" id="eventosCta" onclick="setActivePage('calendario')">
                   <i data-lucide="calendar-days"></i> Ver no Calendário
                 </button>
               </div>
@@ -427,6 +430,19 @@
             </div>
 
             <div class="filters-right">
+              <label class="client-select-all-wrap" id="selectAllWrap" style="display:none" onclick="event.stopPropagation()">
+                <input type="checkbox" id="selectAllClients" class="client-select-cb" />
+                <span class="select-all-label">Selecionar todos</span>
+              </label>
+              <div class="filter-dropdown-wrap">
+                <button class="filter-btn" id="cadenciaFilterBtn" data-filter-trigger="cadencia">
+                  <i data-lucide="git-branch"></i> Cadência
+                  <i data-lucide="chevron-down"></i>
+                </button>
+                <div class="filter-dropdown" id="cadenciaDropdown">
+                  <button class="filter-dropdown-item" data-cad="all">Todas</button>
+                </div>
+              </div>
               <div class="filter-dropdown-wrap">
                 <button class="filter-btn" id="servicoFilterBtn" data-filter-trigger="servico">
                   <i data-lucide="filter"></i> Tipo de Serviço
@@ -462,6 +478,45 @@
 
           <div class="client-grid" id="clientGrid">
             <!-- cards injetados via JS (derivado dos leads) -->
+          </div>
+
+          <!-- Bottom bar de transferência em massa (apenas admin) -->
+          <div class="client-mass-bar" id="clientMassBar" hidden>
+            <div class="client-mass-bar-inner">
+              <span class="mass-bar-count" id="massBarCount">0 LEAD(S) SELECIONADO(S)</span>
+              <div class="mass-bar-actions">
+                <div class="mass-bar-field">
+                  <label class="mass-bar-label">NOVO MEMBRO:</label>
+                  <select id="massNewMember" class="mass-bar-select">
+                    <option value="">Selecionar...</option>
+                  </select>
+                </div>
+                <div class="mass-bar-field">
+                  <label class="mass-bar-label">NOVO QUALIFICADOR:</label>
+                  <select id="massNewQualificador" class="mass-bar-select">
+                    <option value="">Selecionar...</option>
+                  </select>
+                </div>
+                <div class="mass-bar-field">
+                  <label class="mass-bar-label">FINALIZAR LEAD COMO:</label>
+                  <select id="massLostReason" class="mass-bar-select">
+                    <option value="">Nenhum</option>
+                    <option value="perdido">Perdido</option>
+                    <option value="cancelado">Cancelado</option>
+                    <option value="sem-resposta">Sem Resposta</option>
+                  </select>
+                </div>
+                <button class="btn-primary btn-sm" id="massTransferBtn" disabled>
+                  <i data-lucide="check"></i> <span>Salvar</span>
+                </button>
+                <button class="btn-danger btn-sm" id="massDeleteBtn">
+                  <i data-lucide="trash-2"></i> <span>Excluir Lead</span>
+                </button>
+                <button class="btn-ghost btn-sm" id="massTransferCancel">
+                  <i data-lucide="x"></i> <span>Cancelar</span>
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -1406,9 +1461,8 @@
                     <label>Perfil de acesso</label>
                     <select id="adminPermPerfil">
                       <option value="Administrador">Administrador</option>
-                      <option value="Gestor">Gestor</option>
-                      <option value="Operacional">Operacional</option>
-                      <option value="Somente leitura" selected>Somente leitura</option>
+                      <option value="Atendente">Atendente</option>
+                      <option value="Marketing">Marketing</option>
                     </select>
                   </div>
                 </div>
@@ -1794,6 +1848,9 @@
         <button class="btn-ghost small" data-action="whatsapp" title="Abrir WhatsApp">
           <i data-lucide="message-circle"></i> WhatsApp
         </button>
+        <button class="btn-ghost small" data-action="transfer" title="Transferir para Membro" id="leadTransferHeaderBtn" style="display:none">
+          <i data-lucide="arrow-right-left"></i> Transferir para Membro
+        </button>
         <button class="icon-btn small" data-action="close-modal" title="Fechar">
           <i data-lucide="x"></i>
         </button>
@@ -1906,6 +1963,32 @@
         <ul class="modal-history" id="leadHistoryList">
           <!-- preenchido via JS -->
         </ul>
+      </div>
+
+      <!-- Aba de transferência (apenas admin) -->
+      <div class="lead-tab" data-tab="transfer" id="leadTransferTab" style="display:none">
+        <button class="btn-ghost small history-back-btn" data-action="back-to-edit" style="margin-bottom:16px">
+          <i data-lucide="arrow-left"></i> Voltar ao detalhe
+        </button>
+        <div class="form-grid-2">
+          <div class="form-group full">
+            <label><i data-lucide="shield-check" style="width:16px;height:16px;vertical-align:middle"></i> Administração: Transferência de Responsáveis</label>
+            <p style="color:var(--muted-text);font-size:0.85rem;margin-bottom:16px">
+              Transfera este lead para outro membro da equipe. O membro selecionado receberá uma notificação.
+            </p>
+          </div>
+          <div class="form-group full">
+            <label>Membro Responsável</label>
+            <select id="leadTransferMember" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--input-bg);color:var(--text)">
+              <option value="">Selecione um membro...</option>
+            </select>
+          </div>
+          <div class="form-group full" style="margin-top:8px">
+            <button class="btn-primary" id="leadTransferBtn" type="button" disabled>
+              <i data-lucide="arrow-right-left"></i> Transferir
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -2165,6 +2248,6 @@
   </div>
 
   <script src="supabaseClient.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=2"></script>
 </body>
 </html>
