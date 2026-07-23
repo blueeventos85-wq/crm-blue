@@ -9,16 +9,17 @@ const $$ = (s, ctx = document) => Array.from(ctx.querySelectorAll(s));
 /* ============================================
    AUTH STATE · Controle de permissão
    ============================================
-   Roles válidas: 'admin' | 'editor' | 'viewer'
-   - admin:  pode editar/excluir tudo
-   - editor: pode editar eventos que criou
-   - viewer: apenas visualização (read-only)
+   Perfis de acesso:
+   - Administrador: visão global, vê todos os dados de todos os membros
+   - Atendente: visão individual, vê apenas seus próprios dados (criou/atribuído)
+   - Marketing: visão individual, vê apenas seus próprios dados (criou/atribuído)
    ============================================ */
 let currentUser = {
   id: null,
   authUserId: null,
   nome: 'Usuário',
-  role: 'admin'
+  perfil: 'Atendente',
+  centro_custo_id: null
 };
 
 /* ============================================
@@ -69,6 +70,7 @@ function resetAuthState() {
   currentUser.id = null;
   currentUser.authUserId = null;
   currentUser.nome = 'Usuário';
+  currentUser.centro_custo_id = null;
   currentUser.role = 'admin';
   activePage = 'home';
 
@@ -124,6 +126,7 @@ async function initAuth() {
     if (member) {
       currentUser.id = member.id;
       currentUser.nome = member.nome || session.user.email?.split('@')[0] || 'Usuário';
+      currentUser.centro_custo_id = member.centro_custo_id || null;
     } else {
       // Don't overwrite currentUser.id if already set — loadUserPermissions will resolve it
       if (!currentUser.id) {
@@ -161,6 +164,7 @@ async function initAuth() {
     if (member) {
       currentUser.id = member.id;
       currentUser.nome = member.nome || session.user.email?.split('@')[0] || 'Usuário';
+      currentUser.centro_custo_id = member.centro_custo_id || null;
     } else if (!currentUser.id) {
       // Only set nome if we can't resolve — loadUserPermissions will try to find member
       currentUser.nome = session.user.user_metadata?.nome || session.user.email?.split('@')[0] || 'Usuário';
@@ -304,8 +308,37 @@ let _adminMembersCache = [];
 let _adminPermCache = [];
 let _adminBound = false;
 
+/* ── Estado da aba Empresas ── */
+let _empresaEditingId = null;
+let _empresaDeleteId = null;
+let _empresaOriginalServicoIds = [];
+let _empresaOriginalMembroIds = [];
+
+
 function initAdminView() {
   console.log('[Admin] initAdminView called, bound=', _adminBound);
+  if (centrosCustoData.length === 0) {
+    loadCentrosCustoFromSupabase();
+  }
+  populateDashCcFilter();
+
+  // ── Tabs: bind direto em todas as abas (sempre executado, evita duplicatas por flag no elemento) ──
+  document.querySelectorAll('.admin-tab').forEach(tab => {
+    if (tab._adminTabBound) return;
+    tab._adminTabBound = true;
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.remove('active'));
+      tab.classList.add('active');
+      const target = tab.dataset.adminTab;
+      const content = document.getElementById('adminTab' + target.charAt(0).toUpperCase() + target.slice(1));
+      if (content) content.classList.add('active');
+      if (target === 'permissoes') loadPermissionsFromSupabase();
+      if (target === 'empresas') loadEmpresasAdmin();
+      if (target === 'servicos') loadServicosAdmin();
+      initIcons();
+    });
+  });
 
   if (!_adminBound) {
     _adminBound = true;
@@ -319,20 +352,6 @@ function initAdminView() {
     const delOverlay = document.getElementById('adminDeleteOverlay');
     const delCloseBtns = document.querySelectorAll('[data-action="close-admin-delete"]');
     const delConfirmBtn = document.getElementById('adminDeleteConfirmBtn');
-
-    // ── Tabs ──
-    document.querySelectorAll('.admin-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.remove('active'));
-        tab.classList.add('active');
-        const target = tab.dataset.adminTab;
-        const content = document.getElementById('adminTab' + target.charAt(0).toUpperCase() + target.slice(1));
-        if (content) content.classList.add('active');
-        if (target === 'permissoes') loadPermissionsFromSupabase();
-        initIcons();
-      });
-    });
 
     // ── Abrir modal: Criar novo ──
     if (addBtn) {
@@ -418,6 +437,7 @@ function openMemberModal() {
   const modal = document.getElementById('adminMemberModal');
   if (overlay) overlay.classList.add('open');
   if (modal) { modal.classList.add('open'); modal.scrollTop = 0; }
+  populateDashCcFilter();
   initIcons();
 }
 
@@ -449,7 +469,7 @@ function closeDeleteModal() {
 function resetMemberForm() {
   const ids = ['adminMemberId','adminMemberName','adminMemberEmail','adminMemberPassword','adminMemberCPF','adminMemberBirth','adminMemberPhone'];
   ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  const selects = ['adminMemberRole','adminMemberTeam'];
+  const selects = ['adminMemberRole','adminMemberTeam','adminMemberCentroCusto'];
   selects.forEach(id => { const el = document.getElementById(id); if (el) el.selectedIndex = 0; });
   document.getElementById('adminMemberPessoa').value = 'Pessoa Física';
   ['adminMemberNotifEmail','adminMemberNotifWhats','adminMemberNotifSound'].forEach(id => {
@@ -492,6 +512,7 @@ function fillMemberForm(member) {
   document.getElementById('adminMemberPassword').value = '';
   setSelectValue('adminMemberRole', member.cargo);
   setSelectValue('adminMemberTeam', member.equipe);
+  setSelectValue('adminMemberCentroCusto', member.centro_custo_id || '');
   document.getElementById('adminMemberPessoa').value = member.pessoa || 'Pessoa Física';
   document.getElementById('adminMemberCPF').value = member.cpf || '';
   // Converter dd/mm/aaaa para YYYY-MM-DD se necessário (dados antigos)
@@ -533,8 +554,9 @@ async function handleMemberSave() {
   const notifEmail = document.getElementById('adminMemberNotifEmail')?.value;
   const notifWhats = document.getElementById('adminMemberNotifWhats')?.value;
   const notifSound = document.getElementById('adminMemberNotifSound')?.value;
+  const centroCustoId = document.getElementById('adminMemberCentroCusto')?.value || null;
 
-  console.log('[Admin] Dados do form:', { name, email, role, team });
+  console.log('[Admin] Dados do form:', { name, email, role, team, centroCustoId });
 
   // Validação
   if (!name || !email) { toast('Preencha nome e e-mail', 'error'); return; }
@@ -555,7 +577,8 @@ async function handleMemberSave() {
         data_aniversario: birth, telefone: phone || '',
         notificacao_email: notifEmail === 'Sim',
         notificacao_whatsapp: notifWhats === 'Sim',
-        notificacao_som: notifSound === 'Sim'
+        notificacao_som: notifSound === 'Sim',
+        centro_custo_id: centroCustoId
       };
 
       const { data, error } = await _supabase.from('membros').update(payload).eq('id', _adminEditingId).select();
@@ -574,7 +597,7 @@ async function handleMemberSave() {
 
       const payload = {
         name, email, password, role, team, pessoa, cpf, birth, phone,
-        notifEmail, notifWhats, notifSound
+        notifEmail, notifWhats, notifSound, centro_custo_id: centroCustoId
       };
 
       const { data, error } = await _supabase.functions.invoke('create-member', {
@@ -653,6 +676,7 @@ function bindRowActions(row, member) {
       fillMemberForm(member);
       setMemberFormMode('edit');
       openMemberModal();
+      setSelectValue('adminMemberCentroCusto', member.centro_custo_id || '');
     });
   }
 
@@ -942,6 +966,494 @@ async function loadPermissionsFromSupabase() {
     tbody.appendChild(renderPermRow(m, permMap[m.id] || null));
   });
   initIcons();
+}
+
+/* ============================================
+   ADMIN · ABA EMPRESAS (Centros de Custo)
+   ============================================ */
+function initEmpresasAdmin() {
+  const container = document.getElementById('page-administrador');
+  if (!container || container.dataset.empresaBound) return;
+  container.dataset.empresaBound = 'true';
+
+  container.addEventListener('click', (e) => {
+    if (e.target.closest('#empresaNewBtn')) {
+      _empresaEditingId = null;
+      document.getElementById('empresaId').value = '';
+      document.getElementById('empresaNomeInput').value = '';
+      document.getElementById('empresaModalTitle').textContent = 'Nova Empresa';
+      document.getElementById('empresaModalSubtitle').textContent = 'Cadastre uma nova empresa';
+      document.getElementById('empresaSaveBtnText').textContent = 'Salvar Empresa';
+      document.getElementById('empresaFootNote').textContent = 'Os vínculos serão salvos no Supabase.';
+      _empresaOriginalServicoIds = [];
+      _empresaOriginalMembroIds = [];
+      openEmpresaModal();
+      return;
+    }
+    if (e.target.closest('#empresaModalOverlay') || e.target.closest('[data-action="close-empresa-modal"]')) {
+      closeEmpresaModal();
+      return;
+    }
+    if (e.target.closest('#empresaDeleteOverlay') || e.target.closest('[data-action="close-empresa-delete"]')) {
+      closeEmpresaDeleteModal();
+      return;
+    }
+    if (e.target.closest('#empresaSaveBtn')) {
+      handleEmpresaSave();
+      return;
+    }
+    if (e.target.closest('#empresaDeleteConfirmBtn')) {
+      handleEmpresaDelete();
+      return;
+    }
+  });
+}
+
+async function loadEmpresasAdmin() {
+  console.log('[Empresas] loadEmpresasAdmin');
+  initEmpresasAdmin();
+
+  if (!_supabase) { console.error('[Empresas] _supabase is null'); return; }
+
+  const { data: empresas, error: errEmp } = await _supabase
+    .from('centros_custo')
+    .select('*')
+    .order('nome');
+  if (errEmp) { console.error('[Empresas] Erro ao buscar empresas:', errEmp); return; }
+
+  const { data: vinculos, error: errVin } = await _supabase
+    .from('centro_custo_servicos')
+    .select('*');
+  if (errVin) { console.error('[Empresas] Erro ao buscar vínculos de serviços:', errVin); }
+
+  const vinculoMap = {};
+  if (vinculos) {
+    vinculos.forEach(v => {
+      if (!vinculoMap[v.centro_custo_id]) vinculoMap[v.centro_custo_id] = [];
+      vinculoMap[v.centro_custo_id].push(v.servico_id);
+    });
+  }
+
+  const { data: servicos, error: errSvc } = await _supabase
+    .from('servicos')
+    .select('*')
+    .order('nome');
+  if (errSvc) { console.error('[Empresas] Erro ao buscar serviços:', errSvc); }
+
+  const servicoMap = {};
+  if (servicos) servicos.forEach(s => { servicoMap[s.id] = s.nome; });
+
+  const { data: membros, error: errMem } = await _supabase
+    .from('membros')
+    .select('id, nome, centro_custo_id')
+    .order('nome');
+  if (errMem) { console.error('[Empresas] Erro ao buscar membros:', errMem); }
+
+  renderEmpresasTable(empresas || [], vinculoMap, servicoMap, membros || []);
+}
+
+function renderEmpresasTable(empresas, vinculoMap, servicoMap, membros) {
+  const tbody = document.getElementById('adminEmpresasBody');
+  if (!tbody) return;
+
+  if (empresas.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted-text)">Nenhuma empresa cadastrada</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = '';
+  empresas.forEach(emp => {
+    const servicoNomes = (vinculoMap[emp.id] || []).map(sid => servicoMap[sid]).filter(Boolean);
+    const servicoStr = servicoNomes.length > 0 ? servicoNomes.join(', ') : '—';
+    const membrosDaEmpresa = membros.filter(m => m.centro_custo_id === emp.id);
+    const membroStr = membrosDaEmpresa.length > 0
+      ? membrosDaEmpresa.map(m => m.nome).join(', ')
+      : '—';
+    const created = emp.created_at ? new Date(emp.created_at).toLocaleDateString('pt-BR') : '—';
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${escapeHtml(emp.nome)}</strong></td>
+      <td style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(servicoStr)}">${escapeHtml(servicoStr)}</td>
+      <td style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(membroStr)}">${escapeHtml(membroStr)}</td>
+      <td>${created}</td>
+      <td class="admin-actions-cell">
+        <button class="btn-icon" title="Editar" data-emp-edit="${emp.id}"><i data-lucide="pencil"></i></button>
+        <button class="btn-icon btn-icon-danger" title="Remover" data-emp-delete="${emp.id}"><i data-lucide="trash-2"></i></button>
+      </td>`;
+    tbody.appendChild(tr);
+
+    const editBtn = tr.querySelector('[data-emp-edit]');
+    if (editBtn) {
+      editBtn.addEventListener('click', () => openEmpresaModal(emp, vinculoMap, membros));
+    }
+    const delBtn = tr.querySelector('[data-emp-delete]');
+    if (delBtn) {
+      delBtn.addEventListener('click', () => openEmpresaDeleteModal(emp));
+    }
+  });
+  initIcons();
+}
+
+async function openEmpresaModal(emp, vinculoMap, membros) {
+  const overlay = document.getElementById('empresaModalOverlay');
+  const modal = document.getElementById('empresaModal');
+  if (!overlay || !modal) return;
+
+  if (emp) {
+    _empresaEditingId = emp.id;
+    document.getElementById('empresaId').value = emp.id;
+    document.getElementById('empresaNomeInput').value = emp.nome;
+    document.getElementById('empresaModalTitle').textContent = 'Editar Empresa';
+    document.getElementById('empresaModalSubtitle').textContent = 'Altere os dados da empresa';
+    document.getElementById('empresaSaveBtnText').textContent = 'Salvar Alterações';
+    document.getElementById('empresaFootNote').textContent = 'Os vínculos serão atualizados no Supabase.';
+  } else {
+    _empresaEditingId = null;
+    document.getElementById('empresaId').value = '';
+    document.getElementById('empresaNomeInput').value = '';
+  }
+
+  // Carregar serviços checados
+  const servicosCheckContainer = document.getElementById('empresaServicosChecks');
+  if (servicosCheckContainer) {
+    const { data: servicos } = await _supabase.from('servicos').select('*').order('nome');
+    const linkedServicos = emp ? (vinculoMap[emp.id] || []) : [];
+    _empresaOriginalServicoIds = [...linkedServicos];
+    servicosCheckContainer.innerHTML = '';
+    (servicos || []).forEach(s => {
+      const checked = linkedServicos.includes(s.id);
+      const label = document.createElement('label');
+      label.className = 'perm-check';
+      label.innerHTML = `<input type="checkbox" class="empresa-servico-cb" value="${s.id}" ${checked ? 'checked' : ''} /> ${escapeHtml(s.nome)}`;
+      servicosCheckContainer.appendChild(label);
+    });
+  }
+
+  // Carregar membros checados
+  const membrosCheckContainer = document.getElementById('empresaMembrosChecks');
+  if (membrosCheckContainer) {
+    const { data: allMembros } = await _supabase.from('membros').select('id, nome, centro_custo_id').order('nome');
+    const linkedMembroIds = emp
+      ? (allMembros || []).filter(m => m.centro_custo_id === emp.id).map(m => m.id)
+      : [];
+    _empresaOriginalMembroIds = [...linkedMembroIds];
+    membrosCheckContainer.innerHTML = '';
+    (allMembros || []).forEach(m => {
+      const checked = linkedMembroIds.includes(m.id);
+      const label = document.createElement('label');
+      label.className = 'perm-check';
+      label.innerHTML = `<input type="checkbox" class="empresa-membro-cb" value="${m.id}" ${checked ? 'checked' : ''} /> ${escapeHtml(m.nome)}`;
+      membrosCheckContainer.appendChild(label);
+    });
+  }
+
+  overlay.classList.add('open');
+  modal.classList.add('open');
+  modal.scrollTop = 0;
+  initIcons();
+}
+
+function closeEmpresaModal() {
+  const overlay = document.getElementById('empresaModalOverlay');
+  const modal = document.getElementById('empresaModal');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+  _empresaEditingId = null;
+}
+
+async function handleEmpresaSave() {
+  const nome = document.getElementById('empresaNomeInput').value.trim();
+  if (!nome) { toast('Informe o nome da empresa', 'error'); return; }
+
+  const saveBtn = document.getElementById('empresaSaveBtn');
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '<span class="auth-spinner"></span>';
+
+  try {
+    let empresaId = _empresaEditingId;
+
+    if (empresaId) {
+      // UPDATE
+      const { error } = await _supabase.from('centros_custo').update({ nome }).eq('id', empresaId);
+      if (error) throw error;
+    } else {
+      // INSERT
+      const { data, error } = await _supabase.from('centros_custo').insert([{ nome }]).select();
+      if (error) throw error;
+      empresaId = data[0].id;
+    }
+
+    // ── Gerenciar vínculo de serviços (pivot centro_custo_servicos) ──
+    const selectedServicoIds = Array.from(document.querySelectorAll('.empresa-servico-cb:checked')).map(cb => cb.value);
+
+    // Remover vínculos que foram desmarcados
+    const toRemove = _empresaOriginalServicoIds.filter(id => !selectedServicoIds.includes(id));
+    if (toRemove.length > 0 && empresaId) {
+      await _supabase.from('centro_custo_servicos').delete().eq('centro_custo_id', empresaId).in('servico_id', toRemove);
+    }
+
+    // Adicionar novos vínculos
+    const toAdd = selectedServicoIds.filter(id => !_empresaOriginalServicoIds.includes(id));
+    for (const svcId of toAdd) {
+      await _supabase.from('centro_custo_servicos').insert([{ centro_custo_id: empresaId, servico_id: svcId }]);
+    }
+
+    // ── Gerenciar vínculo de membros (coluna centro_custo_id na tabela membros) ──
+    const selectedMembroIds = Array.from(document.querySelectorAll('.empresa-membro-cb:checked')).map(cb => cb.value);
+
+    // Membros desmarcados que antes pertenciam a esta empresa → NULL
+    const membrosToRemove = _empresaOriginalMembroIds.filter(id => !selectedMembroIds.includes(id));
+    for (const mid of membrosToRemove) {
+      await _supabase.from('membros').update({ centro_custo_id: null }).eq('id', mid);
+    }
+
+    // Membros marcados agora → centro_custo_id = empresaId
+    const membrosToAdd = selectedMembroIds.filter(id => !_empresaOriginalMembroIds.includes(id));
+    for (const mid of membrosToAdd) {
+      await _supabase.from('membros').update({ centro_custo_id: empresaId }).eq('id', mid);
+    }
+
+    toast(_empresaEditingId ? 'Empresa atualizada com sucesso!' : 'Empresa criada com sucesso!');
+
+    // Invalidar cache global para forçar recarga
+    if (typeof invalidateCentrosCustoCache === 'function') invalidateCentrosCustoCache();
+
+    closeEmpresaModal();
+    await loadEmpresasAdmin();
+  } catch (err) {
+    console.error('[Empresas] Erro ao salvar:', err);
+    toast(err.message || 'Erro ao salvar empresa', 'error');
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = '<i data-lucide="save"></i> <span id="empresaSaveBtnText">' + (_empresaEditingId ? 'Salvar Alterações' : 'Salvar Empresa') + '</span>';
+    initIcons();
+  }
+}
+
+function openEmpresaDeleteModal(emp) {
+  _empresaDeleteId = emp.id;
+  const text = document.getElementById('empresaDeleteText');
+  if (text) text.textContent = `Tem certeza que deseja remover a empresa "${emp.nome}"? Esta ação não poderá ser desfeita.`;
+  const overlay = document.getElementById('empresaDeleteOverlay');
+  const modal = document.getElementById('empresaDeleteModal');
+  if (overlay) overlay.classList.add('open');
+  if (modal) modal.classList.add('open');
+}
+
+function closeEmpresaDeleteModal() {
+  const overlay = document.getElementById('empresaDeleteOverlay');
+  const modal = document.getElementById('empresaDeleteModal');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+  _empresaDeleteId = null;
+}
+
+async function handleEmpresaDelete() {
+  if (!_empresaDeleteId) return;
+
+  const delBtn = document.getElementById('empresaDeleteConfirmBtn');
+  delBtn.disabled = true;
+  delBtn.innerHTML = '<span class="auth-spinner"></span>';
+
+  try {
+    // Remover vínculos de serviços
+    await _supabase.from('centro_custo_servicos').delete().eq('centro_custo_id', _empresaDeleteId);
+    // Remover vínculo dos membros
+    await _supabase.from('membros').update({ centro_custo_id: null }).eq('centro_custo_id', _empresaDeleteId);
+    // Deletar a empresa
+    await _supabase.from('centros_custo').delete().eq('id', _empresaDeleteId);
+
+    toast('Empresa removida com sucesso!');
+    if (typeof invalidateCentrosCustoCache === 'function') invalidateCentrosCustoCache();
+
+    closeEmpresaDeleteModal();
+    await loadEmpresasAdmin();
+  } catch (err) {
+    console.error('[Empresas] Erro ao excluir:', err);
+    toast(err.message || 'Erro ao excluir empresa', 'error');
+  } finally {
+    delBtn.disabled = false;
+    delBtn.innerHTML = '<i data-lucide="trash-2"></i> Remover';
+    initIcons();
+  }
+}
+
+/* ============================================
+   ADMIN · ABA SERVIÇOS
+   ============================================ */
+let _servicoEditingId = null;
+let _servicoDeleteId = null;
+
+function initServicosAdmin() {
+  const container = document.getElementById('page-administrador');
+  if (!container || container.dataset.servicoBound) return;
+  container.dataset.servicoBound = 'true';
+
+  container.addEventListener('click', (e) => {
+    if (e.target.closest('#servicoNewBtn')) {
+      _servicoEditingId = null;
+      document.getElementById('servicoId').value = '';
+      document.getElementById('servicoNomeInput').value = '';
+      document.getElementById('servicoModalTitle').textContent = 'Novo Serviço';
+      document.getElementById('servicoModalSubtitle').textContent = 'Cadastre um novo serviço';
+      document.getElementById('servicoSaveBtnText').textContent = 'Salvar Serviço';
+      openServicoModal();
+      return;
+    }
+    if (e.target.closest('#servicoModalOverlay') || e.target.closest('[data-action="close-servico-modal"]')) {
+      closeServicoModal();
+      return;
+    }
+    if (e.target.closest('#servicoDeleteOverlay') || e.target.closest('[data-action="close-servico-delete"]')) {
+      closeServicoDeleteModal();
+      return;
+    }
+    if (e.target.closest('#servicoSaveBtn')) {
+      handleServicoSave();
+      return;
+    }
+    if (e.target.closest('#servicoDeleteConfirmBtn')) {
+      handleServicoDelete();
+      return;
+    }
+  });
+}
+
+async function loadServicosAdmin() {
+  console.log('[Servicos] loadServicosAdmin');
+  initServicosAdmin();
+
+  if (!_supabase) { console.error('[Servicos] _supabase is null'); return; }
+
+  const { data: servicos, error } = await _supabase
+    .from('servicos')
+    .select('*')
+    .order('nome');
+  if (error) { console.error('[Servicos] Erro ao buscar serviços:', error); return; }
+
+  renderServicosTable(servicos || []);
+}
+
+function renderServicosTable(servicos) {
+  const tbody = document.getElementById('adminServicosBody');
+  if (!tbody) return;
+
+  if (servicos.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:32px;color:var(--muted-text)">Nenhum serviço cadastrado</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = '';
+  servicos.forEach(svc => {
+    const created = svc.created_at ? new Date(svc.created_at).toLocaleDateString('pt-BR') : '—';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${escapeHtml(svc.nome)}</strong></td>
+      <td>${created}</td>
+      <td class="admin-actions-cell">
+        <button class="btn-icon btn-icon-danger" title="Remover" data-servico-delete="${svc.id}"><i data-lucide="trash-2"></i></button>
+      </td>`;
+    tbody.appendChild(tr);
+
+    const delBtn = tr.querySelector('[data-servico-delete]');
+    if (delBtn) {
+      delBtn.addEventListener('click', () => openServicoDeleteModal(svc));
+    }
+  });
+  initIcons();
+}
+
+function openServicoModal() {
+  const overlay = document.getElementById('servicoModalOverlay');
+  const modal = document.getElementById('servicoModal');
+  if (!overlay || !modal) return;
+  overlay.classList.add('open');
+  modal.classList.add('open');
+  modal.scrollTop = 0;
+  const input = document.getElementById('servicoNomeInput');
+  if (input) setTimeout(() => input.focus(), 100);
+}
+
+function closeServicoModal() {
+  const overlay = document.getElementById('servicoModalOverlay');
+  const modal = document.getElementById('servicoModal');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+  _servicoEditingId = null;
+}
+
+async function handleServicoSave() {
+  const nomeInput = document.getElementById('servicoNomeInput');
+  const nome = nomeInput.value.trim();
+  if (!nome) { toast('Informe o nome do serviço.', 'error'); return; }
+
+  const saveBtn = document.getElementById('servicoSaveBtn');
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '<span class="auth-spinner"></span>';
+
+  try {
+    if (_servicoEditingId) {
+      await _supabase.from('servicos').update({ nome }).eq('id', _servicoEditingId);
+      toast('Serviço atualizado com sucesso!');
+    } else {
+      await _supabase.from('servicos').insert({ nome });
+      toast('Serviço cadastrado com sucesso!');
+    }
+
+    closeServicoModal();
+    await loadServicosAdmin();
+  } catch (err) {
+    console.error('[Servicos] Erro ao salvar:', err);
+    toast(err.message || 'Erro ao salvar serviço', 'error');
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = '<i data-lucide="save"></i> <span id="servicoSaveBtnText">' + (_servicoEditingId ? 'Salvar Alterações' : 'Salvar Serviço') + '</span>';
+    initIcons();
+  }
+}
+
+function openServicoDeleteModal(svc) {
+  _servicoDeleteId = svc.id;
+  const text = document.getElementById('servicoDeleteText');
+  if (text) text.textContent = `Tem certeza que deseja remover o serviço "${svc.nome}"? Esta ação não poderá ser desfeita.`;
+  const overlay = document.getElementById('servicoDeleteOverlay');
+  const modal = document.getElementById('servicoDeleteModal');
+  if (overlay) overlay.classList.add('open');
+  if (modal) modal.classList.add('open');
+}
+
+function closeServicoDeleteModal() {
+  const overlay = document.getElementById('servicoDeleteOverlay');
+  const modal = document.getElementById('servicoDeleteModal');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+  _servicoDeleteId = null;
+}
+
+async function handleServicoDelete() {
+  if (!_servicoDeleteId) return;
+
+  const delBtn = document.getElementById('servicoDeleteConfirmBtn');
+  delBtn.disabled = true;
+  delBtn.innerHTML = '<span class="auth-spinner"></span>';
+
+  try {
+    await _supabase.from('centro_custo_servicos').delete().eq('servico_id', _servicoDeleteId);
+    await _supabase.from('servicos').delete().eq('id', _servicoDeleteId);
+
+    toast('Serviço removido com sucesso!');
+
+    closeServicoDeleteModal();
+    await loadServicosAdmin();
+  } catch (err) {
+    console.error('[Servicos] Erro ao excluir:', err);
+    toast(err.message || 'Erro ao excluir serviço', 'error');
+  } finally {
+    delBtn.disabled = false;
+    delBtn.innerHTML = '<i data-lucide="trash-2"></i> Remover';
+    initIcons();
+  }
 }
 
 /* ============================================
@@ -1314,7 +1826,7 @@ const homeModules = [
   { id: 'auditoria',     title: 'Auditoria',      desc: 'Rastreamento completo de ações e histórico do sistema.', icon: 'shield',           route: '/auditoria',      section: 'Ferramentas' }
 ];
 
-const knownPages = new Set(['home','dashboard','crm','clientes','calendario','configuracoes','rotina','pomodoro','conversas','auditoria','administrador','obrigacoes','documentos','suporte','calibragem']);
+const knownPages = new Set(['home','dashboard','crm','clientes','calendario','configuracoes','rotina','pomodoro','conversas','auditoria','administrador','obrigacoes','documentos','suporte','calibragem','centros-custo','centro-custo-detail']);
 
 const pageConfig = {
   home: {
@@ -1406,6 +1918,18 @@ const pageConfig = {
     subtitle: 'Análise de performance da equipe',
     primary: '',
     primaryIcon: 'gauge'
+  },
+  'centros-custo': {
+    title: 'Centros de Custo',
+    subtitle: 'Gerencie os centros de custo do sistema',
+    primary: '',
+    primaryIcon: 'building-2'
+  },
+  'centro-custo-detail': {
+    title: 'Centro de Custo',
+    subtitle: 'Dados e funcionalidades deste centro de custo',
+    primary: '',
+    primaryIcon: 'building-2'
   }
 };
 
@@ -1465,6 +1989,23 @@ function setActivePage(page) {
     selectedClientIds.clear();
     const massBar = document.getElementById('clientMassBar');
     if (massBar) massBar.hidden = true;
+  }
+
+  // Restaura o Dashboard principal caso estivéssemos na tela de Centro de Custo
+  if (prevPage === 'centro-custo-detail' && page !== 'centro-custo-detail') {
+    const dashContainer = document.querySelector('.dash-container');
+    const pageDashboard = document.getElementById('page-dashboard');
+    if (dashContainer && pageDashboard && dashContainer.parentElement !== pageDashboard) {
+      pageDashboard.appendChild(dashContainer);
+      const dashHeader = document.querySelector('.dash-header');
+      if (dashHeader) dashHeader.style.display = '';
+      dashCcFilter = 'all';
+      const btn = document.getElementById('dashCcFilterBtn');
+      if (btn) btn.innerHTML = '<i data-lucide="building-2"></i> Centro de Custo <i data-lucide="chevron-down"></i>';
+      const badge = document.getElementById('dashCcActiveBadge');
+      if (badge) badge.hidden = true;
+      invalidateDashCache();
+    }
   }
 
   $$('.page').forEach(p => p.classList.remove('active'));
@@ -1545,6 +2086,9 @@ function setActivePage(page) {
   }
   if (page === 'calibragem') {
     initCalibragem();
+  }
+  if (page === 'centros-custo') {
+    initCentrosCusto();
   }
 }
 
@@ -1642,17 +2186,84 @@ function initCadenceFilter() {
   });
 }
 
+function populateEmpresaFilter() {
+  const dropdown = $('#clienteCcDropdown');
+  if (!dropdown) return;
+  dropdown.innerHTML = '<button class="filter-dropdown-item" data-cc="all">Todas as Empresas</button>';
+  centrosCustoData.forEach(cc => {
+    const btn = document.createElement('button');
+    btn.className = 'filter-dropdown-item';
+    btn.dataset.cc = cc.id;
+    btn.textContent = cc.nome;
+    dropdown.appendChild(btn);
+  });
+}
+
+function initEmpresaFilter() {
+  console.log('[CC Filter] initEmpresaFilter() chamada');
+  const btn = $('#clienteCcFilterBtn');
+  const dropdown = $('#clienteCcDropdown');
+  if (!btn || !dropdown) {
+    console.warn('[CC Filter] Elementos não encontrados:', { btn: !!btn, dropdown: !!dropdown });
+    return;
+  }
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    console.log('[CC Filter] Botão Empresa clicado, open class:', dropdown.classList.contains('open'));
+    $$('.filter-dropdown').forEach(d => { if (d !== dropdown) d.classList.remove('open'); });
+    dropdown.classList.toggle('open');
+  });
+
+  dropdown.addEventListener('click', (e) => {
+    const item = e.target.closest('.filter-dropdown-item');
+    if (!item) return;
+    e.stopPropagation();
+    const val = item.dataset.cc || 'all';
+    clienteCcFilter = val;
+    dropdown.classList.remove('open');
+
+    const label = val === 'all' ? 'Empresa' : (centrosCustoData.find(cc => cc.id === val)?.nome || 'Empresa');
+    btn.innerHTML = `<i data-lucide="building-2"></i> ${label} <i data-lucide="chevron-down"></i>`;
+    initIcons();
+
+    const badge = $('#activeFilterBadge');
+    const badgeLabel = $('#activeFilterLabel');
+    if (val !== 'all' && badge && badgeLabel) {
+      badge.hidden = false;
+      badge.style.display = '';
+      badgeLabel.textContent = label;
+    } else if (badge) {
+      badge.hidden = true;
+      badge.style.display = 'none!important';
+    }
+    renderClients();
+  });
+}
+
 let clienteSearchQuery = '';
 let clienteServiceFilter = 'all';
 let clienteCadenceFilter = 'all';
+let clienteCcFilter = 'all';
 let clienteViewMode = 'grid';
 
 function getFilteredClients() {
   const q = clienteSearchQuery.toLowerCase().trim();
+  const canViewAll = canViewAllData();
+  const userId = getCurrentUserId();
+  
   return clientsData.filter(c => {
     if (q && !c.name.toLowerCase().includes(q) && !c.cnpj.includes(q)) return false;
     if (clienteServiceFilter !== 'all' && !c.services.includes(clienteServiceFilter)) return false;
     if (clienteCadenceFilter !== 'all' && c._cadenciaId !== clienteCadenceFilter) return false;
+    if (clienteCcFilter !== 'all' && c._centroCustoId !== clienteCcFilter) return false;
+    
+    // Se não é admin, filtrar apenas clientes do próprio usuário (membro_id ou qualificador_id)
+    if (!canViewAll && userId) {
+      const membroId = c._membroId;
+      const qualificadorId = c._qualificadorId;
+      if (membroId !== userId && qualificadorId !== userId) return false;
+    }
     return true;
   });
 }
@@ -1708,6 +2319,7 @@ function clientCardHTML(c) {
           <span class="lbl">Data do Evento</span>
           <span class="val">${evDate}</span>
         </div>
+        ${c._membroNome ? `<div class="lead-card-member-badge"><i data-lucide="user"></i> ${c._membroNome}</div>` : ''}
       </div>
     </article>
   `;
@@ -1858,7 +2470,7 @@ function renderClients() {
 function populateClientTransferSelect(sel, currentMembroId) {
   if (!_membersCache) {
     _supabase.from('membros')
-      .select('id, nome, email')
+      .select('id, nome, email, centro_custo_id')
       .eq('status', 'Ativo')
       .order('nome')
       .then(({ data, error }) => {
@@ -1890,13 +2502,16 @@ async function transferSingleClient(clientId, memberId) {
 
   try {
     const { error } = await _supabase.from('leads')
-      .update({ membro_id: memberId })
+      .update({ membro_id: memberId, centro_custo_id: member?.centro_custo_id || null })
       .eq('id', String(clientId));
 
     if (error) throw error;
 
     const client = clientsData.find(c => String(c.id) === String(clientId));
-    if (client) client._membroId = memberId;
+    if (client) {
+      client._membroId = memberId;
+      client._centroCustoId = member?.centro_custo_id || null;
+    }
 
     selectedClientIds.delete(String(clientId));
     toast(`Cliente transferido para ${memberName}`);
@@ -1980,7 +2595,7 @@ async function loadMembersForClientBar(select) {
   if (!_supabase) return;
   try {
     const { data, error } = await _supabase.from('membros')
-      .select('id, nome, email')
+      .select('id, nome, email, centro_custo_id')
       .eq('status', 'Ativo')
       .order('nome');
     if (error || !data) return;
@@ -2041,8 +2656,13 @@ async function saveMassTransfer() {
   }
 
   try {
+    let member = null;
     const updates = {};
-    if (memberId) updates.membro_id = memberId;
+    if (memberId) {
+      updates.membro_id = memberId;
+      member = _membersCache?.find(m => m.id === memberId);
+      if (member?.centro_custo_id) updates.centro_custo_id = member.centro_custo_id;
+    }
     if (lostReason) updates.status = lostReason;
 
     if (Object.keys(updates).length > 0) {
@@ -2062,7 +2682,10 @@ async function saveMassTransfer() {
     ids.forEach(id => {
       const client = clientsData.find(c => String(c.id) === String(id));
       if (client) {
-        if (memberId) client._membroId = memberId;
+        if (memberId) {
+          client._membroId = memberId;
+          client._centroCustoId = member?.centro_custo_id || null;
+        }
       }
     });
 
@@ -2212,7 +2835,7 @@ function openClientInLeadModal(card) {
     createdAt: client.eventDate ? `Evento em ${formatEventDate(client.eventDate)}` : '—',
     history: [
       { icon: 'user-check', title: 'Cliente na base', meta: 'Dados cadastrais', desc: `${svcNames.length} serviço(s) vinculado(s)` },
-      ...(honorariosVal > 0 ? [{ icon: 'banknote', title: 'Honorários definidos', meta: `R$ ${honorariosVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, desc: '' }] : [])
+      ...(honorariosVal > 0 ? [{ icon: 'banknote', title: 'Valor de Faturamento definido', meta: `R$ ${honorariosVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, desc: '' }] : [])
     ]
   });
 
@@ -2657,6 +3280,7 @@ function initInteractions() {
     clearFilterBtn.addEventListener('click', () => {
       clienteServiceFilter = 'all';
       clienteCadenceFilter = 'all';
+      clienteCcFilter = 'all';
       $('#activeFilterBadge').hidden = true;
       const svcBtn = $('#servicoFilterBtn');
       if (svcBtn) {
@@ -2665,6 +3289,10 @@ function initInteractions() {
       const cadBtn = $('#cadenciaFilterBtn');
       if (cadBtn) {
         cadBtn.innerHTML = '<i data-lucide="git-branch"></i> Cadência <i data-lucide="chevron-down"></i>';
+      }
+      const ccBtn = $('#clienteCcFilterBtn');
+      if (ccBtn) {
+        ccBtn.innerHTML = '<i data-lucide="building-2"></i> Empresa <i data-lucide="chevron-down"></i>';
       }
       initIcons();
       renderClients();
@@ -2964,10 +3592,17 @@ const cadences = [
 
 // Leads são carregados do Supabase na inicialização (ver boot)
 let leads = [];
+let vinculosServicos = [];
 
 /* ============================================
    CRM · SERVIÇOS DINÂMICOS
    ============================================ */
+async function loadVinculosServicos() {
+  if (!_supabase) return;
+  const { data, error } = await _supabase.from('centro_custo_servicos').select('*');
+  if (error) { console.error('[Vinculos] Erro ao carregar vínculos:', error); return; }
+  vinculosServicos = data || [];
+}
 let _servicosLoaded = false;
 
 async function loadServiceChips() {
@@ -2975,19 +3610,39 @@ async function loadServiceChips() {
   if (!container) return;
 
   const servicos = await fetchServicosSupabase();
-  if (servicos.length === 0) {
-    container.innerHTML = '<span style="opacity:0.5;font-size:0.85rem">Nenhum serviço cadastrado</span>';
+
+  // Determinar qual empresa usar para filtrar os serviços
+  let empresaId = null;
+  if (currentUser.perfil === 'Administrador') {
+    empresaId = currentCrmEmpresaFilter !== 'all' ? currentCrmEmpresaFilter : null;
+  } else {
+    empresaId = currentUser.centro_custo_id;
+  }
+
+  let filteredServicos = servicos;
+  if (empresaId) {
+    const linkedSvcIds = vinculosServicos
+      .filter(v => v.centro_custo_id === empresaId)
+      .map(v => v.servico_id);
+    filteredServicos = servicos.filter(s => linkedSvcIds.includes(s.id));
+  }
+
+  if (filteredServicos.length === 0) {
+    container.innerHTML = '<span style="opacity:0.5;font-size:0.85rem">Nenhum serviço disponível para esta empresa</span>';
     return;
   }
 
-  container.innerHTML = servicos.map(s =>
+  container.innerHTML = filteredServicos.map(s =>
     `<button type="button" class="chip-toggle" data-value="${escapeHtml(s.nome)}" data-svc-id="${s.id}">${escapeHtml(s.nome)}</button>`
   ).join('');
 
   _servicosLoaded = true;
 
-  container.querySelectorAll('.chip-toggle').forEach(chip => {
-    chip.addEventListener('click', async () => {
+  if (!container._chipDelegBound) {
+    container._chipDelegBound = true;
+    container.addEventListener('click', async (e) => {
+      const chip = e.target.closest('.chip-toggle');
+      if (!chip) return;
       chip.classList.toggle('active');
 
       if (!currentLeadId) return;
@@ -3014,7 +3669,7 @@ async function loadServiceChips() {
 
       renderAll();
     });
-  });
+  }
 }
 
 function setServiceChipsActive(values) {
@@ -3044,6 +3699,7 @@ function getActiveServiceChips() {
 }
 
 let activeCadenceFilter = null;
+let currentCrmEmpresaFilter = 'all';
 let leadSearchQuery = '';
 
 /* ============================================
@@ -3123,12 +3779,63 @@ function isCurrentUserAdmin() {
   return result;
 }
 
+function isUserProfile(perfil) {
+  if (!_userPermCache) return false;
+  return _userPermCache.perfil === perfil;
+}
+
+function canViewAllData() {
+  return isCurrentUserAdmin();
+}
+
+function getCurrentUserId() {
+  return currentUser.id;
+}
+
 function getSearchFilteredLeads() {
   const q = leadSearchQuery.toLowerCase().trim();
+  const canViewAll = canViewAllData();
+  const userId = getCurrentUserId();
+  
   return leads.filter(l => {
     if (q && !l.empresa.toLowerCase().includes(q) && !l.telefone.includes(q) && !l.cnpj.includes(q)) return false;
+    
+    // Se não é admin, filtrar apenas leads do próprio usuário (membro_id ou qualificador_id)
+    if (!canViewAll && userId) {
+      const membroId = l._membroId || l._ownerId || l._createdBy;
+      const qualificadorId = l._qualificadorId;
+      if (membroId !== userId && qualificadorId !== userId) return false;
+    }
+
+    // Filtro por empresa (centro de custo)
+    if (currentCrmEmpresaFilter !== 'all' && l._centroCustoId !== currentCrmEmpresaFilter) return false;
+
     return true;
   });
+}
+
+function initCrmEmpresaFilter() {
+  const select = document.getElementById('crmEmpresaFilter');
+  if (!select) return;
+
+  const currentVal = select.value;
+  select.innerHTML = '<option value="all">Todas as Empresas</option>';
+  centrosCustoData.forEach(cc => {
+    const opt = document.createElement('option');
+    opt.value = cc.id;
+    opt.textContent = cc.nome;
+    select.appendChild(opt);
+  });
+  select.value = currentVal;
+
+  if (!select._crmEmpresaBound) {
+    select._crmEmpresaBound = true;
+    select.addEventListener('change', () => {
+      currentCrmEmpresaFilter = select.value;
+      loadServiceChips();
+      renderAll();
+    });
+  }
 }
 
 let _membersCache = null;
@@ -3139,7 +3846,7 @@ async function loadMembersForTransfer(currentMembroId) {
 
   if (!_membersCache) {
     const { data, error } = await _supabase.from('membros')
-      .select('id, nome, email')
+      .select('id, nome, email, centro_custo_id')
       .eq('status', 'Ativo')
       .order('nome');
     if (error || !data) {
@@ -3185,12 +3892,13 @@ async function transferLead() {
 
   try {
     const { error } = await _supabase.from('leads')
-      .update({ membro_id: newOwnerId })
+      .update({ membro_id: newOwnerId, centro_custo_id: newMember?.centro_custo_id || null })
       .eq('id', String(currentLeadId));
 
     if (error) throw error;
 
     lead._membroId = newOwnerId;
+    lead._centroCustoId = newMember?.centro_custo_id || null;
     lead.responsavel = newMemberName;
     lead.lastTouch = new Date().toLocaleDateString('pt-BR');
     if (!lead.history) lead.history = [];
@@ -3360,6 +4068,7 @@ function leadCardHTML(l) {
   const more = overflow > 0
     ? `<span class="lead-card-svc-more" tabindex="0" role="button" aria-label="Mais ${overflow} serviço${overflow > 1 ? 's' : ''}" title="${allServices.slice(MAX_SERVICES_CARD).join(', ')}">+${overflow}</span>`
     : '';
+  const respName = l.responsavel || '—';
   return `
     <article class="lead-card" draggable="true" data-lead-id="${l.id}" tabindex="0"
              aria-label="${l.empresa}${svcCount ? ', ' + svcCount + ' serviço' + (svcCount > 1 ? 's' : '') : ''}">
@@ -3371,7 +4080,7 @@ function leadCardHTML(l) {
       <div class="lead-card-meta">
         <div class="row"><span class="lbl">Serviço</span><span class="val">${svcBadges || '—'}${more}</span></div>
         <div class="row"><span class="lbl">Data do Evento</span><span class="val">${evDate}</span></div>
-        ${l.responsavel && l.responsavel !== 'Camila' ? `<div class="row"><span class="lbl">Responsável</span><span class="val">${l.responsavel}</span></div>` : ''}
+        <div class="lead-card-member-badge"><i data-lucide="user"></i> ${respName}</div>
       </div>
     </article>
   `;
@@ -3566,14 +4275,13 @@ function openNewLeadModal() {
 
   // Limpa todos os campos do formulário
   $$('#leadModal [name]').forEach(el => {
-    if (el.type === 'checkbox' || el.type === 'radio') {
-      el.checked = false;
-    } else {
-      el.value = '';
-    }
+    if (el.type === 'checkbox' || el.type === 'radio') el.checked = false;
+    else if (el.name === 'thermal') el.value = 'frio';
+    else el.value = '';
   });
 
-  // Limpa chip-groups
+  // Limpa chip-groups e recarrega com filtro de empresa
+  loadServiceChips();
   setServiceChipsActive([]);
 
   // Limpa erros
@@ -3679,9 +4387,11 @@ function openLeadModal(id) {
   // Bind honorários mask
   bindHonMask();
 
-  // Chip groups — serviços dinâmicos
-  const svcValues = lead.tiposServico || [];
-  setServiceChipsActive(svcValues);
+  // Chip groups — serviços dinâmicos (recarrega com filtro de empresa)
+  loadServiceChips().then(() => {
+    const svcValues = lead.tiposServico || [];
+    setServiceChipsActive(svcValues);
+  });
 
   // Journey bar: define steps done/active conforme status
   const cadenceIdx = cadences.findIndex(c => c.id === lead.status);
@@ -3811,7 +4521,7 @@ function defaultHistory(lead) {
   return [
     { icon: 'user-plus',   title: 'Lead criado',                 meta: lead.createdAt,                                  desc: 'Importação automática · origem: ' + (lead.origem || '—') },
     { icon: 'phone',       title: 'Ligação de qualificação',     meta: '28/05/2026 14:20',                              desc: 'Conversa inicial · lead demonstrou interesse em contabilidade mensal.' },
-    { icon: 'mail',        title: 'E-mail de follow-up',         meta: '30/05/2026 09:10',                              desc: 'Envio da proposta de honorários.' },
+    { icon: 'mail',        title: 'E-mail de follow-up',         meta: '30/05/2026 09:10',                              desc: 'Envio da proposta de faturamento.' },
     { icon: 'calendar',    title: 'Reunião agendada',            meta: '02/06/2026 11:00',                              desc: 'Reunião marcada para 10/06 às 14h.' }
   ];
 }
@@ -3841,7 +4551,7 @@ function recordInteraction(id, title, icon, desc) {
      - Data do Evento (dataEvento) *
      - Tipo de Serviço (tiposServico) *  →  ao menos 1 chip selecionado
    Campos opcionais:
-     - Endereço do Evento, Quantidade de Horas, Honorários, Observações
+     - Endereço do Evento, Quantidade de Horas, Valor de Faturamento, Observações
    ============================================ */
 async function saveLead() {
   const isNew = currentLeadId === null;
@@ -3937,6 +4647,7 @@ async function saveLead() {
       _ownerId: currentUser.id || null,
       _createdBy: currentUser.id || null,
       _membroId: null,
+      _centroCustoId: currentUser.centro_custo_id || null,
       status: 'dados-ia',
       thermal: fields.thermal || 'frio',
       honorarios: fields.honorarios,
@@ -3985,7 +4696,8 @@ async function saveLead() {
         observacoes: fields.observacoes || '',
         tipo_servico_id: newLead._tipoServicoIds.length > 0 ? newLead._tipoServicoIds : null,
         cadencia_id: newLead._cadenciaId || null,
-        owner_id: currentUser.id || null
+        owner_id: currentUser.id || null,
+        centro_custo_id: currentUser.centro_custo_id || null
       });
       if (result && result[0] && result[0].id) {
         newLead.id = result[0].id;
@@ -4707,7 +5419,7 @@ function renderFunilTable(funnel) {
   wrap.innerHTML = `
     <div class="table-wrap">
       <table class="data-table">
-        <thead><tr><th>Nome</th><th>Empresa</th><th>Data de entrada</th><th>Status atual</th><th>Honorário</th></tr></thead>
+        <thead><tr><th>Nome</th><th>Empresa</th><th>Data de entrada</th><th>Status atual</th><th>Valor de Faturamento</th></tr></thead>
         <tbody>
           ${rows.map(l => `
             <tr class="lead-row-clickable" data-lead-id="${l.id}">
@@ -4773,7 +5485,7 @@ function renderOrigensLegend(origins) {
       body.innerHTML = `
         <div class="table-wrap">
           <table class="data-table">
-            <thead><tr><th>Empresa</th><th>Cadência</th><th>Responsável</th><th>Honorário</th></tr></thead>
+            <thead><tr><th>Empresa</th><th>Cadência</th><th>Responsável</th><th>Valor de Faturamento</th></tr></thead>
             <tbody>${filtered.map(l => `
               <tr class="lead-row-clickable" data-lead-id="${l.id}">
                 <td>${escapeHtml(l.empresa)}</td>
@@ -4813,7 +5525,7 @@ function renderTempBars(temps) {
       body.innerHTML = `
         <div class="table-wrap">
           <table class="data-table">
-            <thead><tr><th>Empresa</th><th>Responsável</th><th>Último contato</th><th>Honorário est.</th></tr></thead>
+            <thead><tr><th>Empresa</th><th>Responsável</th><th>Último contato</th><th>Valor Faturamento</th></tr></thead>
             <tbody>${filtered.map(l => `
               <tr class="lead-row-clickable" data-lead-id="${l.id}">
                 <td>${escapeHtml(l.empresa)}</td>
@@ -4941,10 +5653,10 @@ function renderDashSubHeaders(payload) {
   set('dashAndSub',    `${payload.metrics.andamento.count} em andamento · ${fmt}`);
   set('dashPenSub',    `${payload.metrics.pendente.count} pendentes · ${fmt}`);
   set('dashReunSub',   `Reuniões no período · ${fmt} <span style="opacity:0.7">· sync com Calendário</span>`);
-  set('dashFunilSub',  `Soma de leads e honorários por cadência · ${fmt}`);
+  set('dashFunilSub',  `Soma de leads e faturamento por cadência · ${fmt}`);
   set('dashOrigSub',   `Distribuição por origem (4 fixas) · ${fmt}`);
   set('dashTempSub',   `Frio · Morno · Quente · ${fmt}`);
-  set('dashHonSub',    `Soma de honorários no período · ${fmt}`);
+  set('dashHonSub',    `Soma de faturamento no período · ${fmt}`);
   set('dashTotalTrend', trendPill(payload.metrics.total.var));
   set('dashFinTrend',   trendPill(payload.metrics.finalizado.var));
   set('dashAndTrend',   trendPill(payload.metrics.andamento.var));
@@ -5001,13 +5713,18 @@ function renderDashTab(tabId, payload) {
 function renderDashAll(force = false) {
   let payload = force ? null : getCachedPayload();
   if (!payload) {
-    const metrics = computeAllMetrics(leads);
+    // Aplicar filtro de centro de custo
+    let filteredLeads = leads;
+    if (dashCcFilter !== 'all') {
+      filteredLeads = leads.filter(l => l._centroCustoId === dashCcFilter);
+    }
+    const metrics = computeAllMetrics(filteredLeads);
     payload = {
       ...metrics,
       origins:      computeOrigins(metrics.current),
       temperatures: computeTemperatures(metrics.current),
       funnel:       computeCadenceFunnel(metrics.current),
-      reminders:    computeReminders(leads),
+      reminders:    computeReminders(filteredLeads),
       honorarios:   computeHonorarios(metrics.current)
     };
     setCachedPayload(payload);
@@ -5061,25 +5778,25 @@ function exportData(format) {
   let filename = `dashboard-${tabId}`;
 
   if (tabId === 'total') {
-    rows = p.current.map(l => ({ Empresa: l.empresa, Cadência: cadences.find(c=>c.id===l.status)?.label||l.status, Temperatura: l.thermal, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, Honorário: l.honorarios||0, Entrada: (l.createdAt||'').split(' ')[0], 'Último contato': l.lastTouch||'' }));
+    rows = p.current.map(l => ({ Empresa: l.empresa, Cadência: cadences.find(c=>c.id===l.status)?.label||l.status, Temperatura: l.thermal, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios||0, Entrada: (l.createdAt||'').split(' ')[0], 'Último contato': l.lastTouch||'' }));
   } else if (tabId === 'finalizados') {
-    rows = p.current.filter(l => getStatusCategory(l.status)==='finalizado').map(l => ({ Empresa: l.empresa, 'Cadência final': cadences.find(c=>c.id===l.status)?.label||l.status, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, Honorário: l.honorarios||0, 'Concluído em': (l.createdAt||'').split(' ')[0] }));
+    rows = p.current.filter(l => getStatusCategory(l.status)==='finalizado').map(l => ({ Empresa: l.empresa, 'Cadência final': cadences.find(c=>c.id===l.status)?.label||l.status, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios||0, 'Concluído em': (l.createdAt||'').split(' ')[0] }));
   } else if (tabId === 'andamento') {
-    rows = p.current.filter(l => getStatusCategory(l.status)==='andamento').map(l => ({ Empresa: l.empresa, 'Cadência atual': cadences.find(c=>c.id===l.status)?.label||l.status, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, Honorário: l.honorarios||0, 'Último contato': l.lastTouch||'' }));
+    rows = p.current.filter(l => getStatusCategory(l.status)==='andamento').map(l => ({ Empresa: l.empresa, 'Cadência atual': cadences.find(c=>c.id===l.status)?.label||l.status, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios||0, 'Último contato': l.lastTouch||'' }));
   } else if (tabId === 'pendentes') {
-    rows = p.current.filter(l => getStatusCategory(l.status)==='pendente').map(l => ({ Empresa: l.empresa, Cadência: cadences.find(c=>c.id===l.status)?.label||l.status, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Honorário est.': l.honorarios||0, 'Último contato': l.lastTouch||'' }));
+    rows = p.current.filter(l => getStatusCategory(l.status)==='pendente').map(l => ({ Empresa: l.empresa, Cadência: cadences.find(c=>c.id===l.status)?.label||l.status, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios||0, 'Último contato': l.lastTouch||'' }));
   } else if (tabId === 'reunioes') {
     rows = p.reminders.map(m => ({ Dia: m.iso, Horário: m.time||'', Cliente: m.cliente||'', Empresa: m.empresa, Responsável: m.responsavel||'', Tipo: meetingTypeLabel(m.type) }));
   } else if (tabId === 'funil') {
-    rows = p.funnel.flatMap(f => f.leads.map(l => ({ Cadência: f.label, Nome: l.responsavel||'', Empresa: l.empresa, 'Data de entrada': (l.createdAt||'').split(' ')[0], 'Status atual': cadences.find(c=>c.id===l.status)?.label||l.status, Honorário: l.honorarios||0 })));
+    rows = p.funnel.flatMap(f => f.leads.map(l => ({ Cadência: f.label, Nome: l.responsavel||'', Empresa: l.empresa, 'Data de entrada': (l.createdAt||'').split(' ')[0], 'Status atual': cadences.find(c=>c.id===l.status)?.label||l.status, 'Valor de Faturamento': l.honorarios||0 })));
   } else if (tabId === 'origens') {
     rows = [];
-    ORIGENS_FIXAS.forEach(o => (p.origins[o]?.leads || []).forEach(l => rows.push({ Origem: o, Empresa: l.empresa, Cadência: cadences.find(c=>c.id===l.status)?.label||l.status, Responsável: l.responsavel, Honorário: l.honorarios||0 })));
+    ORIGENS_FIXAS.forEach(o => (p.origins[o]?.leads || []).forEach(l => rows.push({ Origem: o, Empresa: l.empresa, Cadência: cadences.find(c=>c.id===l.status)?.label||l.status, Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios||0 })));
   } else if (tabId === 'temperatura') {
     rows = [];
-    ['frio','morno','quente'].forEach(t => (p.temperatures[t]?.leads || []).forEach(l => rows.push({ Temperatura: t, Empresa: l.empresa, Responsável: l.responsavel, 'Último contato': l.lastTouch||'', 'Honorário est.': l.honorarios||0 })));
+    ['frio','morno','quente'].forEach(t => (p.temperatures[t]?.leads || []).forEach(l => rows.push({ Temperatura: t, Empresa: l.empresa, Responsável: l.responsavel, 'Último contato': l.lastTouch||'', 'Valor de Faturamento': l.honorarios||0 })));
   } else if (tabId === 'honorarios') {
-    rows = p.current.filter(l => (l.honorarios||0) > 0).map(l => ({ Empresa: l.empresa, Cadência: cadences.find(c=>c.id===l.status)?.label||l.status, Temperatura: l.thermal, Responsável: l.responsavel, Honorário: l.honorarios }));
+    rows = p.current.filter(l => (l.honorarios||0) > 0).map(l => ({ Empresa: l.empresa, Cadência: cadences.find(c=>c.id===l.status)?.label||l.status, Temperatura: l.thermal, Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios }));
   }
 
   if (!rows.length) { alert('Nenhum dado para exportar neste painel.'); return; }
@@ -5283,6 +6000,8 @@ function initDashboard() {
     const p = getCachedPayload();
     if (p) renderReunioesPanel(p.reminders);
   });
+  // Dashboard: filtro por centro de custo
+  initDashCcFilter();
 }
 
 function addMeetingPrompt() {
@@ -6126,8 +6845,13 @@ function persistDashPeriod() {
 
 function refreshDashboard() {
   const { start, end } = getPeriodRange();
-  const filtered = applyPeriod(leads, { start, end });
-  const metrics = computeAllMetrics(leads);
+  // Aplicar filtro de centro de custo
+  let filteredLeads = leads;
+  if (dashCcFilter !== 'all') {
+    filteredLeads = leads.filter(l => l._centroCustoId === dashCcFilter);
+  }
+  const filtered = applyPeriod(filteredLeads, { start, end });
+  const metrics = computeAllMetrics(filteredLeads);
   const fm = metrics.metrics;
   renderKpiTotal(fm.total);
   renderKpiFinalizados(fm.finalizado, fm.total);
@@ -6469,13 +7193,16 @@ const rotinaItems = [];
 
 /* Carregar rotinas do Supabase */
 async function loadRotinas() {
-  const data = await fetchRotinas();
+  const canViewAll = canViewAllData();
+  const filterId = canViewAll ? null : getCurrentUserId();
+  const data = await fetchRotinas(filterId);
   if (data.length === 0) {
     console.log('[Rotina] Nenhuma rotina no Supabase, usando dados locais');
     return;
   }
   rotinaItems.length = 0;
   data.forEach(row => {
+    const membroNome = row.membros ? row.membros.nome : '';
     rotinaItems.push({
       id:        row.id,
       type:      row.tipo || 'tarefa',
@@ -6488,7 +7215,9 @@ async function loadRotinas() {
       done:      (row.status === 'concluido'),
       desc:      row.observacoes || '',
       fixado:    row.fixado || false,
-      _supabaseId: row.id
+      _supabaseId: row.id,
+      _membroId: row.membro_id || null,
+      _membroNome: membroNome
     });
   });
   console.log('[Rotina] Rotinas carregadas:', rotinaItems.length);
@@ -6503,9 +7232,15 @@ const rotinaTeam = {
 };
 
 function rotinaGetFiltered() {
+  const canViewAll = canViewAllData();
+  const userId = getCurrentUserId();
+  
   return rotinaItems.filter(i => {
     if (i.done && !rotinaFilters.concluido) return false;
     if (!i.done && !rotinaFilters[i.type]) return false;
+    
+    // Se não é admin, filtrar apenas rotinas do próprio usuário (assumindo que o campo membro_id existe)
+    if (!canViewAll && userId && i._membroId && i._membroId !== userId) return false;
     return true;
   });
 }
@@ -6530,6 +7265,7 @@ function rotinaCardHTML(item) {
         ${item.date ? `<span class="rotina-meta-item"><i data-lucide="calendar"></i> ${formatEventDate(item.date)}</span>` : ''}
         ${item.time ? `<span class="rotina-meta-item"><i data-lucide="clock"></i> ${item.time}</span>` : ''}
         ${item.location ? `<span class="rotina-meta-item"><i data-lucide="map-pin"></i> ${escapeHtml(item.location)}</span>` : ''}
+        ${item._membroNome ? `<span class="rotina-member-badge"><i data-lucide="user"></i> ${item._membroNome}</span>` : ''}
       </div>
     </div>`;
 }
@@ -7976,9 +8712,727 @@ function bindCalibragemReport() {
 }
 
 /* ============================================
+   CONVERSAS - CENTRAL DE MENSAGENS
+   ============================================ */
+let conversasState = {
+  chats: [],
+  selectedChatId: null,
+  messages: [],
+  members: [],
+  realtimeChannel: null
+};
+
+async function loadConversasChats() {
+  const list = $('#conversasList');
+  if (!list) return;
+
+  try {
+    const canViewAll = canViewAllData();
+    const userId = getCurrentUserId();
+
+    let query = _supabase
+      .from('chats')
+      .select('*')
+      .order('last_message_at', { ascending: false, nullsFirst: false });
+
+    if (!canViewAll && userId) {
+      query = query.eq('assigned_to', userId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    conversasState.chats = data || [];
+    renderConversasList();
+
+    // Carregar membros para o select de atribuição
+    const { data: membrosData } = await _supabase
+      .from('membros')
+      .select('id, nome')
+      .eq('status', 'Ativo')
+      .order('nome');
+    conversasState.members = membrosData || [];
+
+  } catch (err) {
+    console.error('[Conversas] Erro ao carregar chats:', err);
+    list.innerHTML = '<div class="conversas-empty-state"><p>Erro ao carregar conversas</p></div>';
+  }
+}
+
+function renderConversasList() {
+  const list = $('#conversasList');
+  if (!list) return;
+
+  const chats = conversasState.chats;
+
+  if (!chats.length) {
+    list.innerHTML = `<div class="conversas-empty-state">
+      <i data-lucide="message-circle"></i>
+      <p>Nenhuma conversa encontrada</p>
+    </div>`;
+    initIcons();
+    return;
+  }
+
+  list.innerHTML = chats.map(chat => {
+    const initials = (chat.contact_name || chat.contact_phone || '?')
+      .split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+    const time = chat.last_message_at
+      ? new Date(chat.last_message_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      : '';
+    const isActive = chat.id === conversasState.selectedChatId;
+    const statusColors = { open: '#22c55e', pending: '#f59e0b', closed: '#94a3b8' };
+    const dotColor = statusColors[chat.status] || '#94a3b8';
+
+    return `
+      <div class="conversas-chat-item${isActive ? ' active' : ''}" data-chat-id="${chat.id}">
+        <div class="conversas-chat-avatar">${initials}</div>
+        <div class="conversas-chat-info">
+          <div class="conversas-chat-name">${escapeHtml(chat.contact_name || chat.contact_phone)}</div>
+          <div class="conversas-chat-preview">${escapeHtml(chat.last_message || 'Sem mensagens')}</div>
+        </div>
+        <div class="conversas-chat-meta">
+          <span class="conversas-chat-time">${time}</span>
+          <span style="width:8px;height:8px;border-radius:50%;background:${dotColor};display:inline-block;"></span>
+        </div>
+      </div>`;
+  }).join('');
+
+  initIcons();
+
+  list.querySelectorAll('.conversas-chat-item').forEach(item => {
+    item.addEventListener('click', () => selectConversasChat(item.dataset.chatId));
+  });
+}
+
+async function selectConversasChat(chatId) {
+  conversasState.selectedChatId = chatId;
+  const chat = conversasState.chats.find(c => c.id === chatId);
+  if (!chat) return;
+
+  renderConversasList();
+
+  // Coluna 2: Detalhes
+  $('#conversasDetailEmpty').style.display = 'none';
+  $('#conversasDetailContent').style.display = 'block';
+
+  const initials = (chat.contact_name || chat.contact_phone || '?')
+    .split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+
+  $('#detailAvatar').textContent = initials;
+  $('#detailName').textContent = chat.contact_name || 'Sem nome';
+  $('#detailPhone').textContent = chat.contact_phone ? `+${chat.contact_phone}` : '';
+  $('#detailStatus').value = chat.status || 'open';
+
+  // Select de responsável
+  const assigneeSelect = $('#detailAssignee');
+  assigneeSelect.innerHTML = '<option value="">Não atribuído</option>' +
+    conversasState.members.map(m =>
+      `<option value="${m.id}"${chat.assigned_to === m.id ? ' selected' : ''}>${m.nome}</option>`
+    ).join('');
+
+  // Lead vinculado
+  const linkedLead = $('#detailLinkedLead');
+  if (chat.lead_id) {
+    const { data: lead } = await _supabase.from('leads').select('nome').eq('id', chat.lead_id).single();
+    linkedLead.innerHTML = lead ? `<span style="color:var(--blue-600);font-weight:600;">${escapeHtml(lead.nome)}</span>` : '<span>Lead não encontrado</span>';
+  } else {
+    linkedLead.innerHTML = '<span>Nenhum lead vinculado</span>';
+  }
+
+  // Coluna 3: Mensagens
+  $('#conversasChatEmpty').style.display = 'none';
+  $('#conversasChatContent').style.display = 'flex';
+  $('#chatHeaderName').textContent = chat.contact_name || chat.contact_phone;
+  $('#chatHeaderStatus').textContent = chat.status === 'open' ? 'Online' : chat.status === 'pending' ? 'Pendente' : 'Fechado';
+
+  await loadConversasMessages(chatId);
+}
+
+async function loadConversasMessages(chatId) {
+  const container = $('#conversasMessages');
+  if (!container) return;
+
+  try {
+    const { data, error } = await _supabase
+      .from('messages')
+      .select('*')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    conversasState.messages = data || [];
+    renderConversasMessages();
+
+  } catch (err) {
+    console.error('[Conversas] Erro ao carregar mensagens:', err);
+    container.innerHTML = '<div class="conversas-empty-state"><p>Erro ao carregar mensagens</p></div>';
+  }
+}
+
+function renderConversasMessages() {
+  const container = $('#conversasMessages');
+  if (!container) return;
+
+  const msgs = conversasState.messages;
+
+  if (!msgs.length) {
+    container.innerHTML = `<div class="conversas-empty-state">
+      <i data-lucide="message-square"></i>
+      <p>Nenhuma mensagem ainda</p>
+    </div>`;
+    initIcons();
+    return;
+  }
+
+  container.innerHTML = msgs.map(msg => {
+    const type = msg.sender_type === 'agent' ? 'agent' : 'lead';
+    const time = new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    return `
+      <div class="conversas-msg ${type}">
+        <div>${escapeHtml(msg.content)}</div>
+        <div class="conversas-msg-time">${time}</div>
+      </div>`;
+  }).join('');
+
+  container.scrollTop = container.scrollHeight;
+  initIcons();
+}
+
+async function sendConversasMessage() {
+  const input = $('#conversasMessageInput');
+  if (!input) return;
+
+  const content = input.value.trim();
+  if (!content || !conversasState.selectedChatId) return;
+
+  input.value = '';
+
+  try {
+    const { error } = await _supabase
+      .from('messages')
+      .insert([{
+        chat_id: conversasState.selectedChatId,
+        sender_type: 'agent',
+        sender_name: currentUser?.nome || 'Atendente',
+        content: content,
+        status: 'sent'
+      }]);
+
+    if (error) throw error;
+
+    // Atualizar last_message no chat
+    await _supabase
+      .from('chats')
+      .update({
+        last_message: content,
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', conversasState.selectedChatId);
+
+  } catch (err) {
+    console.error('[Conversas] Erro ao enviar mensagem:', err);
+    toast('Erro ao enviar mensagem');
+  }
+}
+
+function subscribeConversasRealtime() {
+  if (conversasState.realtimeChannel) {
+    _supabase.removeChannel(conversasState.realtimeChannel);
+  }
+
+  conversasState.realtimeChannel = _supabase
+    .channel('conversas-realtime')
+    .on('postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages' },
+      (payload) => {
+        console.log('[Conversas] Nova mensagem recebida:', payload);
+        const newMsg = payload.new;
+
+        // Se é do chat selecionado, adicionar à lista
+        if (newMsg.chat_id === conversasState.selectedChatId) {
+          conversasState.messages.push(newMsg);
+          renderConversasMessages();
+        }
+
+        // Atualizar last_message na lista de chats
+        const chatItem = conversasState.chats.find(c => c.id === newMsg.chat_id);
+        if (chatItem) {
+          chatItem.last_message = newMsg.content;
+          chatItem.last_message_at = newMsg.created_at;
+          renderConversasList();
+        }
+      }
+    )
+    .on('postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'chats' },
+      (payload) => {
+        console.log('[Conversas] Chat atualizado:', payload);
+        const updatedChat = payload.new;
+        const idx = conversasState.chats.findIndex(c => c.id === updatedChat.id);
+        if (idx >= 0) {
+          conversasState.chats[idx] = { ...conversasState.chats[idx], ...updatedChat };
+          renderConversasList();
+        }
+      }
+    )
+    .subscribe();
+}
+
+function initConversas() {
+  const searchInput = $('#conversasSearchInput');
+  const sendBtn = $('#conversasSendBtn');
+  const msgInput = $('#conversasMessageInput');
+  const statusSelect = $('#detailStatus');
+  const assigneeSelect = $('#detailAssignee');
+
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const term = e.target.value.toLowerCase();
+      const filtered = conversasState.chats.filter(c =>
+        (c.contact_name || '').toLowerCase().includes(term) ||
+        (c.contact_phone || '').includes(term)
+      );
+      const list = $('#conversasList');
+      if (!list) return;
+
+      if (!filtered.length) {
+        list.innerHTML = '<div class="conversas-empty-state"><p>Nenhuma conversa encontrada</p></div>';
+        return;
+      }
+
+      const chats = filtered;
+      list.innerHTML = chats.map(chat => {
+        const initials = (chat.contact_name || chat.contact_phone || '?')
+          .split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+        const time = chat.last_message_at
+          ? new Date(chat.last_message_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+          : '';
+        const isActive = chat.id === conversasState.selectedChatId;
+        const statusColors = { open: '#22c55e', pending: '#f59e0b', closed: '#94a3b8' };
+        const dotColor = statusColors[chat.status] || '#94a3b8';
+
+        return `
+          <div class="conversas-chat-item${isActive ? ' active' : ''}" data-chat-id="${chat.id}">
+            <div class="conversas-chat-avatar">${initials}</div>
+            <div class="conversas-chat-info">
+              <div class="conversas-chat-name">${escapeHtml(chat.contact_name || chat.contact_phone)}</div>
+              <div class="conversas-chat-preview">${escapeHtml(chat.last_message || 'Sem mensagens')}</div>
+            </div>
+            <div class="conversas-chat-meta">
+              <span class="conversas-chat-time">${time}</span>
+              <span style="width:8px;height:8px;border-radius:50%;background:${dotColor};display:inline-block;"></span>
+            </div>
+          </div>`;
+      }).join('');
+
+      list.querySelectorAll('.conversas-chat-item').forEach(item => {
+        item.addEventListener('click', () => selectConversasChat(item.dataset.chatId));
+      });
+    });
+  }
+
+  if (sendBtn) sendBtn.addEventListener('click', sendConversasMessage);
+
+  if (msgInput) {
+    msgInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendConversasMessage();
+      }
+    });
+  }
+
+  if (statusSelect) {
+    statusSelect.addEventListener('change', async (e) => {
+      if (!conversasState.selectedChatId) return;
+      await _supabase
+        .from('chats')
+        .update({ status: e.target.value, updated_at: new Date().toISOString() })
+        .eq('id', conversasState.selectedChatId);
+    });
+  }
+
+  if (assigneeSelect) {
+    assigneeSelect.addEventListener('change', async (e) => {
+      if (!conversasState.selectedChatId) return;
+      await _supabase
+        .from('chats')
+        .update({ assigned_to: e.target.value || null, updated_at: new Date().toISOString() })
+        .eq('id', conversasState.selectedChatId);
+    });
+  }
+
+  // Carregar dados e inscrever em realtime
+  loadConversasChats();
+  subscribeConversasRealtime();
+}
+
+/* ============================================
+   CENTROS DE CUSTO · ESTADO + CRUD + RENDER
+   ============================================ */
+let centrosCustoData = [];
+let _ccBound = false;
+let _ccDeleteId = null;
+let _ccDetailId = null;
+let _ccDetailNome = null;
+
+// Dashboard: filtro por centro de custo
+let dashCcFilter = 'all';
+
+async function initCentrosCusto() {
+  if (_ccBound) return;
+  _ccBound = true;
+
+  // Carregar dados
+  await loadCentrosCustoFromSupabase();
+
+  // Botão "Novo Centro de Custo"
+  const newBtn = document.getElementById('ccNewBtn');
+  if (newBtn) newBtn.addEventListener('click', openCcModal);
+
+  // Modal: fechar
+  document.querySelectorAll('[data-action="close-cc-modal"]').forEach(b => b.addEventListener('click', closeCcModal));
+  const ccOverlay = document.getElementById('ccModalOverlay');
+  if (ccOverlay) ccOverlay.addEventListener('click', closeCcModal);
+
+  // Modal: salvar
+  const saveBtn = document.getElementById('ccSaveBtn');
+  if (saveBtn) saveBtn.addEventListener('click', handleCcSave);
+
+  // Modal: deletar fechar
+  document.querySelectorAll('[data-action="close-cc-delete"]').forEach(b => b.addEventListener('click', closeCcDeleteModal));
+  const delOverlay = document.getElementById('ccDeleteOverlay');
+  if (delOverlay) delOverlay.addEventListener('click', closeCcDeleteModal);
+
+  // Modal: deletar confirmar
+  const delConfirmBtn = document.getElementById('ccDeleteConfirmBtn');
+  if (delConfirmBtn) delConfirmBtn.addEventListener('click', handleCcDelete);
+
+  // Botão voltar na página de detalhe
+  const backBtn = document.getElementById('ccBackBtn');
+  if (backBtn) backBtn.addEventListener('click', () => setActivePage('centros-custo'));
+}
+
+async function loadCentrosCustoFromSupabase() {
+  try {
+    centrosCustoData = await fetchCentrosCusto();
+    console.log('[CC] Centros de custo carregados:', centrosCustoData.length);
+  } catch (err) {
+    console.error('[CC] Erro ao carregar centros de custo:', err);
+    centrosCustoData = [];
+  }
+  renderCentrosCustoGrid();
+  populateDashCcFilter();
+  populateEmpresaFilter();
+  initCrmEmpresaFilter();
+}
+
+function renderCentrosCustoGrid() {
+  const grid = document.getElementById('ccGrid');
+  if (!grid) return;
+
+  if (centrosCustoData.length === 0) {
+    grid.innerHTML = `
+      <div class="cc-empty-state">
+        <i data-lucide="building-2"></i>
+        <p>Nenhum centro de custo cadastrado</p>
+        <button class="btn-primary" onclick="openCcModal()"><i data-lucide="plus"></i> Criar Primeiro Centro</button>
+      </div>`;
+    initIcons();
+    return;
+  }
+
+  grid.innerHTML = centrosCustoData.map(cc => {
+    const isTodos = cc.nome === 'Todos';
+    const leadCount = isTodos ? leads.length : leads.filter(l => l._centroCustoId === cc.id).length;
+    const totalHonorarios = isTodos
+      ? leads.reduce((sum, l) => sum + (l.honorarios || 0), 0)
+      : leads.filter(l => l._centroCustoId === cc.id).reduce((sum, l) => sum + (l.honorarios || 0), 0);
+    const iconColor = isTodos ? 'var(--blue-600)' : getCentroCustoColor(cc.nome);
+
+    return `
+      <div class="cc-card" data-cc-id="${cc.id}" data-cc-nome="${escapeHtml(cc.nome)}" tabindex="0" role="button" aria-label="Abrir centro de custo ${escapeHtml(cc.nome)}">
+        <div class="cc-card-header">
+          <div class="cc-card-icon" style="background:${iconColor}15;color:${iconColor}">
+            <i data-lucide="${isTodos ? 'layers' : 'building-2'}"></i>
+          </div>
+          <div class="cc-card-actions">
+            ${!isTodos ? `<button class="icon-btn small cc-delete-btn" data-cc-id="${cc.id}" data-cc-nome="${escapeHtml(cc.nome)}" title="Remover" aria-label="Remover ${escapeHtml(cc.nome)}"><i data-lucide="trash-2"></i></button>` : ''}
+          </div>
+        </div>
+        <h3 class="cc-card-name">${escapeHtml(cc.nome)}</h3>
+        <div class="cc-card-stats">
+          <div class="cc-card-stat">
+            <span class="cc-card-stat-value">${leadCount}</span>
+            <span class="cc-card-stat-label">Lead${leadCount !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="cc-card-stat">
+            <span class="cc-card-stat-value">R$ ${totalHonorarios.toLocaleString('pt-BR')}</span>
+            <span class="cc-card-stat-label">Faturamento</span>
+          </div>
+        </div>
+        <div class="cc-card-footer">
+          <span class="cc-card-link">Ver detalhes <i data-lucide="arrow-right"></i></span>
+        </div>
+      </div>`;
+  }).join('');
+
+  initIcons();
+
+  // Bind clicks nos cards
+  grid.querySelectorAll('.cc-card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.cc-delete-btn')) return;
+      const id = card.dataset.ccId;
+      const nome = card.dataset.ccNome;
+      openCentroCustoDetail(id, nome);
+    });
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (!e.target.closest('.cc-delete-btn')) {
+          openCentroCustoDetail(card.dataset.ccId, card.dataset.ccNome);
+        }
+      }
+    });
+  });
+
+  // Bind delete buttons
+  grid.querySelectorAll('.cc-delete-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _ccDeleteId = btn.dataset.ccId;
+      const text = document.getElementById('ccDeleteText');
+      if (text) text.textContent = `Tem certeza que deseja remover o centro de custo "${btn.dataset.ccNome}"? Leads vinculados perderão a referência.`;
+      openCcDeleteModal();
+    });
+  });
+}
+
+function getCentroCustoColor(nome) {
+  const colors = {
+    'Blue PRO': '#165BFF',
+    'Blue Eventos': '#10B981',
+    'Blue Digital': '#A855F7'
+  };
+  return colors[nome] || '#6B7885';
+}
+
+/* ── Modal helpers ── */
+function openCcModal() {
+  const overlay = document.getElementById('ccModalOverlay');
+  const modal = document.getElementById('ccModal');
+  const input = document.getElementById('ccNameInput');
+  if (overlay) overlay.classList.add('open');
+  if (modal) { modal.classList.add('open'); modal.scrollTop = 0; }
+  if (input) { input.value = ''; input.focus(); }
+  initIcons();
+}
+
+function closeCcModal() {
+  const overlay = document.getElementById('ccModalOverlay');
+  const modal = document.getElementById('ccModal');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+}
+
+function openCcDeleteModal() {
+  const overlay = document.getElementById('ccDeleteOverlay');
+  const modal = document.getElementById('ccDeleteModal');
+  if (overlay) overlay.classList.add('open');
+  if (modal) modal.classList.add('open');
+  initIcons();
+}
+
+function closeCcDeleteModal() {
+  const overlay = document.getElementById('ccDeleteOverlay');
+  const modal = document.getElementById('ccDeleteModal');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+  _ccDeleteId = null;
+}
+
+/* ── Save handler ── */
+async function handleCcSave() {
+  const input = document.getElementById('ccNameInput');
+  const nome = input?.value?.trim();
+  if (!nome) { toast('Preencha o nome do centro de custo', 'error'); return; }
+
+  // Verificar duplicata
+  if (centrosCustoData.some(cc => cc.nome.toLowerCase() === nome.toLowerCase())) {
+    toast('Já existe um centro de custo com este nome', 'error');
+    return;
+  }
+
+  const saveBtn = document.getElementById('ccSaveBtn');
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '<span class="auth-spinner"></span>';
+
+  try {
+    await insertCentroCusto(nome);
+    toast('Centro de custo criado com sucesso!');
+    closeCcModal();
+    await loadCentrosCustoFromSupabase();
+    invalidateDashCache();
+    populateDashCcFilter();
+  } catch (err) {
+    console.error('[CC] Erro ao criar centro de custo:', err);
+    toast(err.message || 'Erro ao criar centro de custo', 'error');
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = '<i data-lucide="save"></i> Salvar';
+    initIcons();
+  }
+}
+
+/* ── Delete handler ── */
+async function handleCcDelete() {
+  if (!_ccDeleteId) return;
+
+  const delBtn = document.getElementById('ccDeleteConfirmBtn');
+  delBtn.disabled = true;
+  delBtn.innerHTML = '<span class="auth-spinner"></span>';
+
+  try {
+    // Atualizar leads que tinham este centro de custo
+    await _supabase.from('leads').update({ centro_custo_id: null }).eq('centro_custo_id', _ccDeleteId);
+
+    await deleteCentroCusto(_ccDeleteId);
+    toast('Centro de custo removido com sucesso!');
+    closeCcDeleteModal();
+    await loadCentrosCustoFromSupabase();
+    invalidateDashCache();
+    populateDashCcFilter();
+  } catch (err) {
+    console.error('[CC] Erro ao deletar centro de custo:', err);
+    toast(err.message || 'Erro ao deletar centro de custo', 'error');
+  } finally {
+    delBtn.disabled = false;
+    delBtn.innerHTML = '<i data-lucide="trash-2"></i> Remover';
+    initIcons();
+  }
+}
+
+/* ── Página de detalhe do centro de custo ── */
+function openCentroCustoDetail(id, nome) {
+  _ccDetailId = id;
+  _ccDetailNome = nome;
+
+  // Atualizar header
+  const titleEl = document.getElementById('ccDetailTitle');
+  const subtitleEl = document.getElementById('ccDetailSubtitle');
+  if (titleEl) titleEl.textContent = nome;
+  if (subtitleEl) subtitleEl.textContent = `Dados e funcionalidades do centro de custo "${nome}"`;
+
+  // Mover o dashboard para a view do CC
+  const dashboardContainer = document.querySelector('#page-dashboard > .dash-container') || document.querySelector('.dash-container');
+  const ccWrapper = document.getElementById('ccDashboardWrapper');
+  if (dashboardContainer && ccWrapper) {
+    ccWrapper.appendChild(dashboardContainer);
+  }
+  
+  // Esconder a barra superior de filtro original
+  const dashHeader = document.querySelector('.dash-header');
+  if (dashHeader) dashHeader.style.display = 'none';
+
+  // Configurar Filtro para este Centro de Custo e atualizar Dashboard
+  dashCcFilter = id;
+  invalidateDashCache();
+  refreshDashboard();
+
+  // Navegar para a página de detalhe
+  setActivePage('centro-custo-detail');
+}
+
+/* ── Dashboard: Filtro por Centro de Custo ── */
+function initDashCcFilter() {
+  const btn = document.getElementById('dashCcFilterBtn');
+  const dropdown = document.getElementById('dashCcDropdown');
+  if (!btn || !dropdown) return;
+
+  // Popular dropdown
+  populateDashCcFilter();
+
+  // Toggle dropdown
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.querySelectorAll('.filter-dropdown').forEach(d => { if (d !== dropdown) d.classList.remove('open'); });
+    dropdown.classList.toggle('open');
+  });
+
+  // Seleção
+  dropdown.addEventListener('click', (e) => {
+    const item = e.target.closest('.filter-dropdown-item');
+    if (!item) return;
+    e.stopPropagation();
+    const val = item.dataset.cc || 'all';
+    dashCcFilter = val;
+    dropdown.classList.remove('open');
+
+    const nome = val === 'all' ? 'Todos' : (centrosCustoData.find(cc => cc.id === val)?.nome || 'Todos');
+    btn.innerHTML = `<i data-lucide="building-2"></i> ${escapeHtml(nome)} <i data-lucide="chevron-down"></i>`;
+
+    const badge = document.getElementById('dashCcActiveBadge');
+    const badgeLabel = document.getElementById('dashCcActiveLabel');
+    if (val !== 'all' && badge && badgeLabel) {
+      badge.hidden = false;
+      badgeLabel.textContent = nome;
+    } else if (badge) {
+      badge.hidden = true;
+    }
+    initIcons();
+
+    // Re-renderizar dashboard com filtro
+    invalidateDashCache();
+    refreshDashboard();
+  });
+
+  // Limpar filtro
+  const clearBtn = document.getElementById('dashCcClearBtn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      dashCcFilter = 'all';
+      btn.innerHTML = '<i data-lucide="building-2"></i> Centro de Custo <i data-lucide="chevron-down"></i>';
+      document.getElementById('dashCcActiveBadge').hidden = true;
+      initIcons();
+      invalidateDashCache();
+      refreshDashboard();
+    });
+  }
+
+  // Fechar ao clicar fora
+  document.addEventListener('click', () => dropdown.classList.remove('open'));
+}
+
+function populateDashCcFilter() {
+  const dropdown = document.getElementById('dashCcDropdown');
+  const adminSelect = document.getElementById('adminMemberCentroCusto');
+  
+  let html = '<button class="filter-dropdown-item" data-cc="all">Todos</button>';
+  let selectHtml = '<option value="">Selecione um Centro de Custo (Opcional)</option>';
+  
+  if (centrosCustoData) {
+    centrosCustoData.forEach(cc => {
+      html += `<button class="filter-dropdown-item" data-cc="${cc.id}">${escapeHtml(cc.nome)}</button>`;
+      selectHtml += `<option value="${cc.id}">${escapeHtml(cc.nome)}</option>`;
+    });
+  }
+  
+  if (dropdown) dropdown.innerHTML = html;
+  if (adminSelect) adminSelect.innerHTML = selectHtml;
+}
+
+/* ── Hook: filtrar leads por centro de custo no dashboard ── */
+// O filtro é aplicado diretamente na função refreshDashboard (modificada abaixo)
+
+/* ============================================
    BOOT
    ============================================ */
 document.addEventListener('DOMContentLoaded', async () => {
+  try {
   // Auth first - shows login screen or hides it
   bindAuthForms();
   await initAuth();
@@ -8003,11 +9457,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('[Boot] Erro ao carregar serviços:', err);
   }
 
-  // Carregar leads do Supabase (admin vê todos, membro vê apenas seus)
+  // Carregar leads do Supabase (Administrador vê todos, Atendente/Marketing veem apenas seus)
   try {
-    const isAdmin = isCurrentUserAdmin();
-    const filterId = isAdmin ? null : currentUser.id;
-    console.log('[Boot] Carregando leads, admin:', isAdmin, 'filterId:', filterId, 'currentUser.id:', currentUser.id);
+    const canViewAll = canViewAllData();
+    const filterId = canViewAll ? null : getCurrentUserId();
+    console.log('[Boot] Carregando leads, canViewAll:', canViewAll, 'filterId:', filterId, 'currentUser.id:', currentUser.id);
     const supabaseLeads = await fetchLeadsSupabase(filterId);
     if (supabaseLeads.length > 0) {
       leads = supabaseLeads;
@@ -8038,6 +9492,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderCalUpcoming();
   renderDashRemindersWidget();
 
+  // Carregar centros de custo do Supabase
+  try {
+    await loadCentrosCustoFromSupabase();
+    console.log('[Boot] Centros de custo carregados:', centrosCustoData.length);
+  } catch (err) {
+    console.error('[Boot] Erro ao carregar centros de custo:', err);
+  }
+
+  // Carregar vínculos de serviços por empresa
+  try {
+    await loadVinculosServicos();
+    console.log('[Boot] Vínculos de serviços carregados:', vinculosServicos.length);
+  } catch (err) {
+    console.error('[Boot] Erro ao carregar vínculos de serviços:', err);
+  }
+
+  // Inicializar filtro de empresa no CRM
+  initCrmEmpresaFilter();
+
   // Carregar chips de serviços no modal
   try {
     await loadServiceChips();
@@ -8058,12 +9531,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderAll();
   renderRotina();
   initPomodoro();
+  initConversas();
 
   // Carregar clientes do Supabase para a página "Cliente da Base"
   try {
-    const isAdminForClients = isCurrentUserAdmin();
-    const filterClientId = isAdminForClients ? null : currentUser.id;
-    console.log('[Boot] Carregando clientes, admin:', isAdminForClients, 'filterClientId:', filterClientId);
+    const canViewAllClients = canViewAllData();
+    const filterClientId = canViewAllClients ? null : getCurrentUserId();
+    console.log('[Boot] Carregando clientes, canViewAll:', canViewAllClients, 'filterClientId:', filterClientId);
     const supabaseClients = await fetchClientsSupabase(filterClientId);
     if (supabaseClients.length > 0) {
       clientsData = supabaseClients;
@@ -8078,6 +9552,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   populateServiceFilter();
   populateCadenceFilter();
   initCadenceFilter();
+  populateEmpresaFilter();
+  initEmpresaFilter();
   renderClients();
   setActivePage('home');
 
@@ -8091,4 +9567,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Charts inicializam quando o dashboard for aberto
+  } catch (bootErr) {
+    console.error('[Boot] ERRO FATAL:', bootErr);
+    document.body.innerHTML = '<div style="padding:40px;font-family:sans-serif;color:red"><h2>Erro ao inicializar</h2><pre>' + (bootErr.message || bootErr) + '</pre></div>';
+  }
 });

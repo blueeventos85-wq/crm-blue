@@ -12,9 +12,9 @@ serve(async (req) => {
   }
 
   try {
-    const { name, email, password, role, team, pessoa, cpf, birth, phone, notifEmail, notifWhats, notifSound } = await req.json()
+    const { name, email, password, role, team, pessoa, cpf, birth, phone, notifEmail, notifWhats, notifSound, centro_custo_id } = await req.json()
 
-    console.log('[create-member] Payload recebido:', { name, email, role, team })
+    console.log('[create-member] Payload recebido:', { name, email, role, team, centro_custo_id })
 
     if (!name || !email || !password) {
       return new Response(JSON.stringify({ error: 'Nome, e-mail e senha são obrigatórios' }), {
@@ -64,7 +64,8 @@ serve(async (req) => {
       notificacao_whatsapp: notifWhats === 'Sim',
       notificacao_som: notifSound === 'Sim',
       status: 'Ativo',
-      auth_user_id: userId
+      auth_user_id: userId,
+      centro_custo_id: centro_custo_id || null
     }
 
     const { data: inserted, error: insertError } = await supabaseAdmin

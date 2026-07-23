@@ -176,17 +176,18 @@ async function fetchLeadsSupabase(filterMemberId) {
 
   const cadenciaMap = await fetchCadenciasMap();
 
-  let query = _supabase
+  // Tentar com join de centros_custo; se a tabela não existir, fazer fallback
+  let q = _supabase
     .from('leads')
     .select('*, membros!membro_id(nome)')
     .order('created_at', { ascending: false });
 
   if (filterMemberId) {
     console.log('[Supabase] Filtrando leads por membro_id/qualificador_id:', filterMemberId);
-    query = query.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId);
+    q = q.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId);
   }
 
-  const { data, error } = await query;
+  let { data, error } = await q;
 
   if (error) {
     console.error('[Supabase] Erro ao buscar leads:', error.message, error.code);
@@ -243,6 +244,8 @@ async function fetchLeadsSupabase(filterMemberId) {
         return [raw];
       })(),
       _cadenciaId: row.cadencia_id || null,
+      _centroCustoId: row.centro_custo_id || null,
+      _centroCustoNome: '',
       enderecoEvento: row.endereco_evento || '',
       quantidadeHoras: row.quantidade_horas || 0,
       cidade: '',
@@ -272,7 +275,7 @@ async function insertLeadSupabase(data) {
 
   const { nome, telefone, data_evento, endereco_evento,
           quantidade_horas, temperatura, honorarios, observacoes,
-          tipo_servico_id, cadencia_id, owner_id } = data;
+          tipo_servico_id, cadencia_id, owner_id, centro_custo_id } = data;
 
   console.log('[Supabase] Inserindo lead:', { nome, telefone, data_evento });
 
@@ -285,7 +288,8 @@ async function insertLeadSupabase(data) {
     temperatura,
     honorarios: parseBrazilianCurrency(honorarios),
     observacoes,
-    membro_id: null // Começa sempre como null, conforme requisitos
+    membro_id: null, // Começa sempre como null, conforme requisitos
+    centro_custo_id: centro_custo_id || null
   };
   if (owner_id) payload.owner_id = owner_id;
   if (tipo_servico_id) payload.tipo_servico_id = Array.isArray(tipo_servico_id) ? tipo_servico_id : [tipo_servico_id];
@@ -511,7 +515,7 @@ async function fetchClientsSupabase(filterMemberId) {
 
   console.log('[Supabase-Clientes] filterMemberId recebido:', filterMemberId, '| tipo:', typeof filterMemberId);
 
-  let leadsQuery = _supabase.from('leads').select('*').order('created_at', { ascending: false });
+  let leadsQuery = _supabase.from('leads').select('*, membros!membro_id(nome)').order('created_at', { ascending: false });
 
   if (filterMemberId) {
     console.log('[Supabase-Clientes] Aplicando filtro membro_id/qualificador_id:', filterMemberId);
@@ -555,6 +559,7 @@ async function fetchClientsSupabase(filterMemberId) {
 
     const nome = row.nome || 'Sem nome';
     const initials = nome.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+    const membroNome = row.membros ? row.membros.nome : '';
 
     const statusMap = {
       'frio': 'active', 'morno': 'active', 'quente': 'active',
@@ -581,7 +586,10 @@ async function fetchClientsSupabase(filterMemberId) {
       quantidadeHoras: row.quantidade_horas || 0,
       observacoes: row.observacoes || '',
       _membroId: row.membro_id || null,
-      _cadenciaId: row.cadencia_id || null
+      _membroNome: membroNome,
+      _cadenciaId: row.cadencia_id || null,
+      _centroCustoId: row.centro_custo_id || null,
+      _centroCustoNome: ''
     };
   });
 }
@@ -728,13 +736,20 @@ async function updateLeadSupabase(id, data) {
 /* ============================================
    HELPER: buscar rotinas do Supabase
    ============================================ */
-async function fetchRotinas() {
+async function fetchRotinas(filterMemberId) {
   if (!_supabase) return [];
 
-  const { data, error } = await _supabase
+  let query = _supabase
     .from('rotinas')
-    .select('*')
+    .select('*, membros!membro_id(nome)')
     .order('created_at', { ascending: false });
+
+  if (filterMemberId) {
+    console.log('[Supabase] Filtrando rotinas por membro_id:', filterMemberId);
+    query = query.eq('membro_id', filterMemberId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error('[Supabase] Erro ao buscar rotinas:', error.message, error.code);
@@ -985,6 +1000,70 @@ async function contarUsuariosAtivosHoje() {
 
   const unique = new Set((data || []).map(r => r.usuario_nome));
   return unique.size;
+}
+
+/* ============================================
+   HELPER: centros de custo
+   ============================================ */
+let _centrosCustoCache = null;
+
+async function fetchCentrosCusto() {
+  if (_centrosCustoCache) return _centrosCustoCache;
+  if (!_supabase) return [];
+
+  const { data, error } = await _supabase
+    .from('centros_custo')
+    .select('*')
+    .order('nome');
+
+  if (error) {
+    console.error('[Supabase] Erro ao buscar centros de custo:', error.message, error.code);
+    return [];
+  }
+
+  _centrosCustoCache = data || [];
+  console.log('[Supabase] Centros de custo carregados:', _centrosCustoCache.length);
+  return _centrosCustoCache;
+}
+
+async function insertCentroCusto(nome) {
+  if (!_supabase) throw new Error('Supabase client não inicializado.');
+
+  const { data, error } = await _supabase
+    .from('centros_custo')
+    .insert([{ nome }])
+    .select();
+
+  if (error) {
+    console.error('[Supabase] Erro ao inserir centro de custo:', error.message, error.code);
+    throw error;
+  }
+
+  _centrosCustoCache = null;
+  console.log('[Supabase] Centro de custo inserido:', data);
+  return data;
+}
+
+async function deleteCentroCusto(id) {
+  if (!_supabase) throw new Error('Supabase client não inicializado.');
+  if (!id) throw new Error('ID do centro de custo é obrigatório.');
+
+  const { error } = await _supabase
+    .from('centros_custo')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('[Supabase] Erro ao deletar centro de custo:', error.message, error.code);
+    throw error;
+  }
+
+  _centrosCustoCache = null;
+  console.log('[Supabase] Centro de custo deletado:', id);
+}
+
+function invalidateCentrosCustoCache() {
+  _centrosCustoCache = null;
 }
 
 /* ============================================

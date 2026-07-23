@@ -161,6 +161,7 @@
               <span>Administrador</span>
             </a>
           </li>
+
         </ul>
 
         <p class="nav-label">Atalhos</p>
@@ -257,6 +258,23 @@
             <span class="dash-period-badge" id="dashPeriodBadge"></span>
           </div>
 
+          <!-- Centro de Custo Filter -->
+          <div class="dash-cc-filter" id="dashCcFilterWrap">
+            <div class="filter-dropdown-wrap">
+              <button class="filter-btn" id="dashCcFilterBtn" data-filter-trigger="centro-custo">
+                <i data-lucide="building-2"></i> Centro de Custo
+                <i data-lucide="chevron-down"></i>
+              </button>
+              <div class="filter-dropdown" id="dashCcDropdown">
+                <button class="filter-dropdown-item" data-cc="all">Todos</button>
+              </div>
+            </div>
+            <span class="dash-cc-active-badge" id="dashCcActiveBadge" hidden>
+              <span id="dashCcActiveLabel"></span>
+              <button class="filter-badge-x" id="dashCcClearBtn" aria-label="Limpar filtro">&times;</button>
+            </span>
+          </div>
+
           <!-- KPI Row -->
           <div class="dash-kpi-row" id="dashKpiRow">
             <!-- Total de Leads -->
@@ -348,19 +366,19 @@
             </div>
           </div>
 
-          <!-- Row 3: Honorários + Lembrete -->
+          <!-- Row 3: Valor de Faturamento + Lembrete -->
           <div class="dash-grid-2">
-            <!-- Honorários -->
+            <!-- Faturamento -->
             <div class="dash-widget card">
               <div class="card-header">
                 <div>
-                  <h3 class="card-title"><i data-lucide="circle-dollar-sign"></i> Honorários</h3>
+                  <h3 class="card-title"><i data-lucide="circle-dollar-sign"></i> Valor de Faturamento</h3>
                   <p class="card-sub">Faturamento por período</p>
                 </div>
               </div>
               <div class="honorarios-amount" id="honTotal">R$ 57.000</div>
               <div class="chart-wrap">
-                <canvas id="chartHon" aria-label="Honorários por mês" role="img"></canvas>
+                <canvas id="chartHon" aria-label="Valor de Faturamento por mês" role="img"></canvas>
               </div>
             </div>
             <!-- Próximos Eventos -->
@@ -392,9 +410,14 @@
                 <h2 class="section-title-main">Resumo por Cadência</h2>
                 <p class="section-sub">Clique em uma etapa para filtrar</p>
               </div>
-              <div class="search-box small">
-                <i data-lucide="search"></i>
-                <input id="crmSearch" type="text" placeholder="Buscar lead por nome ou telefone..." />
+              <div style="display:flex;gap:8px;align-items:center">
+                <div class="search-box small">
+                  <i data-lucide="search"></i>
+                  <input id="crmSearch" type="text" placeholder="Buscar lead por nome ou telefone..." />
+                </div>
+                <select id="crmEmpresaFilter" style="height:36px;border-radius:8px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);padding:0 12px;font-size:13px;cursor:pointer;min-width:180px;max-width:220px">
+                  <option value="all">Todas as Empresas</option>
+                </select>
               </div>
             </div>
             <div class="cadence-grid" id="cadenceGrid">
@@ -459,6 +482,15 @@
                   <button class="filter-dropdown-item" data-svc="Filmagem Terrestre">Filmagem Terrestre</button>
                   <button class="filter-dropdown-item" data-svc="Som Profissional">Som Profissional</button>
                   <button class="filter-dropdown-item" data-svc="Back Dropp">Back Dropp</button>
+                </div>
+              </div>
+              <div class="filter-dropdown-wrap">
+                <button class="filter-btn" id="clienteCcFilterBtn" data-filter-trigger="centro-custo">
+                  <i data-lucide="building-2"></i> Empresa
+                  <i data-lucide="chevron-down"></i>
+                </button>
+                <div class="filter-dropdown" id="clienteCcDropdown">
+                  <button class="filter-dropdown-item" data-cc="all">Todas as Empresas</button>
                 </div>
               </div>
               <div class="active-filter-badge" id="activeFilterBadge" hidden style="display:none!important">
@@ -1006,14 +1038,85 @@
 
         <!-- ============ CONVERSAS ============ -->
         <section class="page" id="page-conversas">
-          <div class="coming-soon">
-            <div class="coming-soon-icon">
-              <i data-lucide="message-circle"></i>
+          <div class="conversas-layout">
+            <!-- Coluna 1: Lista de chats -->
+            <div class="conversas-sidebar" id="conversasSidebar">
+              <div class="conversas-sidebar-header">
+                <h3>Conversas</h3>
+                <div class="conversas-search">
+                  <i data-lucide="search"></i>
+                  <input type="text" id="conversasSearchInput" placeholder="Buscar conversa..." />
+                </div>
+              </div>
+              <div class="conversas-list" id="conversasList">
+                <div class="conversas-loading">
+                  <div class="skeleton-card"></div>
+                  <div class="skeleton-card"></div>
+                  <div class="skeleton-card"></div>
+                </div>
+              </div>
             </div>
-            <h2 class="coming-soon-title">Conversas</h2>
-            <p class="coming-soon-text">Esta tela esta em desenvolvimento.<br>Em breve voce podera gerenciar suas conversas por aqui.</p>
-            <div class="coming-soon-badge">
-              <i data-lucide="wrench"></i> Em breve
+
+            <!-- Coluna 2: Detalhes do lead -->
+            <div class="conversas-detail" id="conversasDetail">
+              <div class="conversas-empty-state" id="conversasDetailEmpty">
+                <i data-lucide="message-circle"></i>
+                <p>Selecione uma conversa para ver os detalhes</p>
+              </div>
+              <div class="conversas-detail-content" id="conversasDetailContent" style="display:none;">
+                <div class="conversas-detail-header">
+                  <div class="conversas-detail-avatar" id="detailAvatar"></div>
+                  <div class="conversas-detail-info">
+                    <h4 id="detailName"></h4>
+                    <span class="conversas-detail-phone" id="detailPhone"></span>
+                  </div>
+                </div>
+                <div class="conversas-detail-section">
+                  <label>Status</label>
+                  <select id="detailStatus" class="conversas-status-select">
+                    <option value="open">Aberto</option>
+                    <option value="pending">Pendente</option>
+                    <option value="closed">Fechado</option>
+                  </select>
+                </div>
+                <div class="conversas-detail-section">
+                  <label>Responsável</label>
+                  <select id="detailAssignee" class="conversas-status-select">
+                    <option value="">Não atribuído</option>
+                  </select>
+                </div>
+                <div class="conversas-detail-section">
+                  <label>Lead Vinculado</label>
+                  <div class="conversas-linked-lead" id="detailLinkedLead">
+                    <span>Nenhum lead vinculado</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Coluna 3: Janela de mensagens -->
+            <div class="conversas-chat" id="conversasChat">
+              <div class="conversas-empty-state" id="conversasChatEmpty">
+                <i data-lucide="message-square"></i>
+                <p>Selecione uma conversa para iniciar</p>
+              </div>
+              <div class="conversas-chat-content" id="conversasChatContent" style="display:none;">
+                <div class="conversas-chat-header" id="chatHeader">
+                  <span class="chat-header-name" id="chatHeaderName"></span>
+                  <span class="chat-header-status" id="chatHeaderStatus"></span>
+                </div>
+                <div class="conversas-messages" id="conversasMessages">
+                  <!-- Mensagens carregadas aqui -->
+                </div>
+                <div class="conversas-input-area" id="conversasInputArea">
+                  <div class="conversas-input-wrap">
+                    <input type="text" id="conversasMessageInput" placeholder="Digite sua mensagem..." autocomplete="off" />
+                    <button class="conversas-send-btn" id="conversasSendBtn" title="Enviar">
+                      <i data-lucide="send"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -1220,6 +1323,8 @@
           <div class="admin-tabs" id="adminTabs">
             <button class="admin-tab active" data-admin-tab="membros"><i data-lucide="users"></i> Membros</button>
             <button class="admin-tab" data-admin-tab="permissoes"><i data-lucide="shield"></i> Permissões</button>
+            <button class="admin-tab" data-admin-tab="empresas"><i data-lucide="building-2"></i> Empresas</button>
+            <button class="admin-tab" data-admin-tab="servicos"><i data-lucide="briefcase"></i> Serviços</button>
           </div>
 
           <!-- ══════ TAB: Membros ══════ -->
@@ -1275,6 +1380,191 @@
             </div>
           </div>
 
+          <!-- ══════ TAB: Empresas ══════ -->
+          <div class="admin-tab-content" id="adminTabEmpresas">
+            <div class="admin-section-header">
+              <div>
+                <p class="admin-section-text">Gerencie as empresas (centros de custo) do sistema.</p>
+              </div>
+              <button class="btn-primary" id="empresaNewBtn"><i data-lucide="plus"></i> Nova Empresa</button>
+            </div>
+            <div class="admin-table-wrap">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Nome da Empresa</th>
+                    <th>Serviços</th>
+                    <th>Membros</th>
+                    <th>Criação</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="adminEmpresasBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ══════ TAB: Serviços ══════ -->
+          <div class="admin-tab-content" id="adminTabServicos">
+            <div class="admin-section-header">
+              <div>
+                <p class="admin-section-text">Gerencie os serviços oferecidos pela plataforma.</p>
+              </div>
+              <button class="btn-primary" id="servicoNewBtn"><i data-lucide="plus"></i> Novo Serviço</button>
+            </div>
+            <div class="admin-table-wrap">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Nome do Serviço</th>
+                    <th>Criação</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="adminServicosBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Modal: Criar/Editar Serviço -->
+          <div class="modal-overlay" id="empresaModalOverlay"></div>
+          <div class="modal modal-lg" id="empresaModal" role="dialog" aria-labelledby="empresaModalTitle">
+            <div class="modal-head">
+              <div class="modal-head-left">
+                <div class="modal-avatar" style="background:var(--blue-50);color:var(--blue-600)"><i data-lucide="building-2"></i></div>
+                <div>
+                  <h2 id="empresaModalTitle">Nova Empresa</h2>
+                  <p class="modal-meta" id="empresaModalSubtitle">Cadastre uma nova empresa</p>
+                </div>
+              </div>
+              <button class="icon-btn small" data-action="close-empresa-modal" title="Fechar"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body admin-member-body">
+              <input type="hidden" id="empresaId" value="" />
+
+              <!-- Nome -->
+              <div class="admin-form-section">
+                <h3 class="admin-form-section-title">Dados da Empresa</h3>
+                <div class="form-grid-2">
+                  <div class="form-group full">
+                    <label>Nome da Empresa <span class="req">*</span></label>
+                    <input type="text" id="empresaNomeInput" placeholder="Ex: Blue Eventos" required />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Vínculo de Serviços -->
+              <div class="admin-form-section">
+                <h3 class="admin-form-section-title">Vínculo de Serviços</h3>
+                <p class="perm-group-label">Marque os serviços que pertencem a esta empresa</p>
+                <div class="perm-checks-grid" id="empresaServicosChecks">
+                  <!-- preenchido via JS -->
+                </div>
+              </div>
+
+              <!-- Vínculo de Membros -->
+              <div class="admin-form-section">
+                <h3 class="admin-form-section-title">Vínculo de Membros</h3>
+                <p class="perm-group-label">Marque os membros que pertencem a esta empresa</p>
+                <div class="perm-checks-grid" id="empresaMembrosChecks">
+                  <!-- preenchido via JS -->
+                </div>
+              </div>
+
+            </div>
+            <div class="modal-foot admin-member-foot">
+              <p class="admin-foot-note" id="empresaFootNote">Os vínculos serão salvos no Supabase.</p>
+              <div class="modal-foot-actions">
+                <button class="btn-ghost" data-action="close-empresa-modal">Cancelar</button>
+                <button class="btn-primary" id="empresaSaveBtn"><i data-lucide="save"></i> <span id="empresaSaveBtnText">Salvar Empresa</span></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal: Confirmar Exclusão de Empresa -->
+          <div class="modal-overlay" id="empresaDeleteOverlay"></div>
+          <div class="modal modal-sm" id="empresaDeleteModal" role="dialog">
+            <div class="modal-head">
+              <div class="modal-head-left">
+                <div class="modal-avatar" style="background:#FDECEC;color:#E14C4C"><i data-lucide="alert-triangle"></i></div>
+                <div>
+                  <h2>Remover Empresa</h2>
+                  <p class="modal-meta">Essa ação não poderá ser desfeita</p>
+                </div>
+              </div>
+              <button class="icon-btn small" data-action="close-empresa-delete" title="Fechar"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+              <p id="empresaDeleteText">Tem certeza que deseja remover esta empresa?</p>
+            </div>
+            <div class="modal-foot admin-member-foot">
+              <div></div>
+              <div class="modal-foot-actions">
+                <button class="btn-ghost" data-action="close-empresa-delete">Cancelar</button>
+                <button class="btn-primary" style="background:#E14C4C" id="empresaDeleteConfirmBtn"><i data-lucide="trash-2"></i> Remover</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal: Criar/Editar Serviço -->
+          <div class="modal-overlay" id="servicoModalOverlay"></div>
+          <div class="modal modal-sm" id="servicoModal" role="dialog" aria-labelledby="servicoModalTitle">
+            <div class="modal-head">
+              <div class="modal-head-left">
+                <div class="modal-avatar" style="background:var(--blue-50);color:var(--blue-600)"><i data-lucide="briefcase"></i></div>
+                <div>
+                  <h2 id="servicoModalTitle">Novo Serviço</h2>
+                  <p class="modal-meta" id="servicoModalSubtitle">Cadastre um novo serviço</p>
+                </div>
+              </div>
+              <button class="icon-btn small" data-action="close-servico-modal" title="Fechar"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body admin-member-body">
+              <input type="hidden" id="servicoId" value="" />
+              <div class="admin-form-section">
+                <h3 class="admin-form-section-title">Dados do Serviço</h3>
+                <div class="form-grid-2">
+                  <div class="form-group full">
+                    <label>Nome do Serviço <span class="req">*</span></label>
+                    <input type="text" id="servicoNomeInput" placeholder="Ex: Assessoria de Casamento" required />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="modal-foot admin-member-foot">
+              <p class="admin-foot-note">O serviço será salvo no Supabase.</p>
+              <div class="modal-foot-actions">
+                <button class="btn-ghost" data-action="close-servico-modal">Cancelar</button>
+                <button class="btn-primary" id="servicoSaveBtn"><i data-lucide="save"></i> <span id="servicoSaveBtnText">Salvar Serviço</span></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal: Confirmar Exclusão de Serviço -->
+          <div class="modal-overlay" id="servicoDeleteOverlay"></div>
+          <div class="modal modal-sm" id="servicoDeleteModal" role="dialog">
+            <div class="modal-head">
+              <div class="modal-head-left">
+                <div class="modal-avatar" style="background:#FDECEC;color:#E14C4C"><i data-lucide="alert-triangle"></i></div>
+                <div>
+                  <h2>Remover Serviço</h2>
+                  <p class="modal-meta">Essa ação não poderá ser desfeita</p>
+                </div>
+              </div>
+              <button class="icon-btn small" data-action="close-servico-delete" title="Fechar"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+              <p id="servicoDeleteText">Tem certeza que deseja remover este serviço?</p>
+            </div>
+            <div class="modal-foot admin-member-foot">
+              <div></div>
+              <div class="modal-foot-actions">
+                <button class="btn-ghost" data-action="close-servico-delete">Cancelar</button>
+                <button class="btn-primary" style="background:#E14C4C" id="servicoDeleteConfirmBtn"><i data-lucide="trash-2"></i> Remover</button>
+              </div>
+            </div>
+          </div>
+
           <!-- Modal: Criar/Editar Membro -->
           <div class="modal-overlay" id="adminMemberOverlay"></div>
           <div class="modal modal-lg" id="adminMemberModal" role="dialog" aria-labelledby="adminMemberTitle">
@@ -1325,7 +1615,7 @@
                       <option value="Auxiliar">Auxiliar</option>
                     </select>
                   </div>
-                  <div class="form-group full">
+                  <div class="form-group">
                     <label>Equipe</label>
                     <select id="adminMemberTeam">
                       <option value="">Selecione…</option>
@@ -1334,6 +1624,13 @@
                       <option value="Marketing">Marketing</option>
                       <option value="Administrativo">Administrativo</option>
                       <option value="TI">TI</option>
+                    </select>
+                  </div>
+                  <div class="form-group full">
+                    <label>Centro de Custo</label>
+                    <select id="adminMemberCentroCusto">
+                      <option value="">Selecione um Centro de Custo (Opcional)</option>
+                      <!-- Preenchido via JS -->
                     </select>
                   </div>
                 </div>
@@ -1707,6 +2004,89 @@
 
         </section>
 
+        <!-- ============ CENTROS DE CUSTO ============ -->
+        <section class="page" id="page-centros-custo">
+          <div class="cc-header">
+            <div>
+              <h2 class="cc-title"><i data-lucide="building-2"></i> Centros de Custo</h2>
+              <p class="cc-subtitle">Gerencie os centros de custo do sistema</p>
+            </div>
+            <button class="btn-primary" id="ccNewBtn"><i data-lucide="plus"></i> Novo Centro de Custo</button>
+          </div>
+
+          <div class="cc-grid" id="ccGrid">
+            <!-- Renderizado via JS -->
+          </div>
+
+          <!-- Modal: Criar Centro de Custo -->
+          <div class="modal-overlay" id="ccModalOverlay"></div>
+          <div class="modal modal-sm" id="ccModal" role="dialog" aria-labelledby="ccModalTitle">
+            <div class="modal-head">
+              <div class="modal-head-left">
+                <div class="modal-avatar" style="background:var(--blue-50);color:var(--blue-600)"><i data-lucide="building-2"></i></div>
+                <div>
+                  <h2 id="ccModalTitle">Novo Centro de Custo</h2>
+                  <p class="modal-meta">Adicione um novo centro de custo</p>
+                </div>
+              </div>
+              <button class="icon-btn small" data-action="close-cc-modal" title="Fechar"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group full">
+                <label>Nome do Centro de Custo <span class="req">*</span></label>
+                <input type="text" id="ccNameInput" placeholder="Ex: Blue Eventos" required />
+              </div>
+            </div>
+            <div class="modal-foot admin-member-foot">
+              <div></div>
+              <div class="modal-foot-actions">
+                <button class="btn-ghost" data-action="close-cc-modal">Cancelar</button>
+                <button class="btn-primary" id="ccSaveBtn"><i data-lucide="save"></i> Salvar</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal: Confirmar Exclusão -->
+          <div class="modal-overlay" id="ccDeleteOverlay"></div>
+          <div class="modal modal-sm" id="ccDeleteModal" role="dialog">
+            <div class="modal-head">
+              <div class="modal-head-left">
+                <div class="modal-avatar" style="background:#FDECEC;color:#E14C4C"><i data-lucide="alert-triangle"></i></div>
+                <div>
+                  <h2>Remover Centro de Custo</h2>
+                  <p class="modal-meta">Essa ação não poderá ser desfeita</p>
+                </div>
+              </div>
+              <button class="icon-btn small" data-action="close-cc-delete" title="Fechar"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+              <p id="ccDeleteText">Tem certeza que deseja remover este centro de custo?</p>
+            </div>
+            <div class="modal-foot admin-member-foot">
+              <div></div>
+              <div class="modal-foot-actions">
+                <button class="btn-ghost" data-action="close-cc-delete">Cancelar</button>
+                <button class="btn-primary" style="background:#E14C4C" id="ccDeleteConfirmBtn"><i data-lucide="trash-2"></i> Remover</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ PÁGINA AUTÔNOMA: CENTRO DE CUSTO ============ -->
+        <section class="page" id="page-centro-custo-detail">
+          <div class="cc-detail-header" id="ccDetailHeader">
+            <div>
+              <button class="link-btn" id="ccBackBtn" style="margin-bottom:8px"><i data-lucide="arrow-left"></i> Voltar para Centros de Custo</button>
+              <h2 class="cc-title" id="ccDetailTitle">Blue PRO</h2>
+              <p class="cc-subtitle" id="ccDetailSubtitle">Dados e funcionalidades deste centro de custo</p>
+            </div>
+          </div>
+          <!-- Container onde injetaremos os gráficos do Dashboard -->
+          <div class="cc-detail-content" id="ccDashboardWrapper">
+            <!-- A inteligência vai mover a seção do dashboard para cá dinamicamente -->
+          </div>
+        </section>
+
       </div>
     </main>
   </div>
@@ -1943,7 +2323,7 @@
             </select>
           </div>
           <div class="form-group">
-            <label>Honorários (R$)</label>
+            <label>Valor de Faturamento (R$)</label>
             <input type="text" name="honorarios" id="leadHon" placeholder="R$ 0,00" inputmode="decimal" />
             <span class="form-error" data-error="honorarios"></span>
           </div>
@@ -2110,7 +2490,7 @@
           </div>
         </div>
 
-        <!-- Linha 6: Temperatura + Honorários -->
+        <!-- Linha 6: Temperatura + Valor de Faturamento -->
         <div class="form-group">
           <label>Temperatura do lead</label>
           <select name="calTemperature" id="calEventTemperature">
@@ -2122,7 +2502,7 @@
         </div>
 
         <div class="form-group">
-          <label>Honorários (R$)</label>
+          <label>Valor de Faturamento (R$)</label>
           <input type="text" name="calHonorarios" id="calEventHon" placeholder="0,00" inputmode="decimal" />
         </div>
 
@@ -2231,8 +2611,8 @@
         </select>
       </div>
       <div class="cal-lead-field">
-        <label>Honorários (R$)</label>
-        <input type="text" id="calLeadPopupHon" placeholder="0,00" inputmode="decimal" />
+        <label>Valor de Faturamento (R$)</label>
+        <input type="text" id="calLeadPopupHon" placeholder="R$ 0,00" inputmode="decimal" />
       </div>
       <div class="cal-lead-field">
         <label>Observações</label>
