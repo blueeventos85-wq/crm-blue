@@ -26,7 +26,7 @@
     <div class="auth-card" id="authCard">
       <!-- Logo -->
       <div class="auth-logo">
-        <img src="assets/blue-eventos-logo.png" alt="Blue Eventos" class="auth-brand-img" />
+        <img src="assets/blue-eventos-logo.png" alt="Blue Eventos" class="auth-brand-img" id="authBrandImg" />
         <p class="auth-tagline" id="authTagline">Acesse sua conta para gerenciar o CRM.</p>
       </div>
 
@@ -89,7 +89,7 @@
     <!-- ============ SIDEBAR ============ -->
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <img src="assets/blue-eventos-logo.png" alt="Blue Eventos" class="brand-img" />
+        <img src="assets/blue-eventos-logo.png" alt="Blue Eventos" class="brand-img" id="sidebarBrandImg" />
       </div>
 
       <nav class="sidebar-nav">
@@ -227,7 +227,7 @@
         <section class="page active" id="page-home">
           <header class="home-hero">
             <div class="home-hero-content">
-              <h1 class="home-hero-title">Bem vindo a Blue Eventos</h1>
+              <h1 class="home-hero-title">Bem vindo ao Blue Group</h1>
               <p class="home-hero-sub">Acesse rapidamente os módulos e recursos do sistema</p>
             </div>
             <div class="home-hero-search">
@@ -826,6 +826,50 @@
                 </ul>
               </div>
 
+              <!-- Identidade Visual da Empresa (Admin only) -->
+              <div class="card" id="settingsBrandingCard" style="display:none">
+                <div class="card-header">
+                  <div>
+                    <h3 class="card-title">Identidade Visual da Empresa</h3>
+                    <p class="card-sub">Altere o logo do sidebar e o favicon do navegador</p>
+                  </div>
+                </div>
+                <div class="card-body" style="display:grid;gap:20px">
+                  <div>
+                    <label class="field-label" for="brandingLogoInput">Logo do Sidebar</label>
+                    <p class="card-sub" style="margin-bottom:8px">Substitui a imagem no topo do menu lateral. Recomendado: PNG transparente, 256x256px.</p>
+                    <div style="display:flex;align-items:center;gap:12px">
+                      <img id="brandingLogoPreview" src="" alt="Logo preview" style="width:48px;height:48px;border-radius:8px;object-fit:cover;display:none" />
+                      <button class="btn-primary small" id="brandingLogoBtn"><i data-lucide="upload"></i> Escolher logo</button>
+                      <input type="file" id="brandingLogoInput" accept="image/*" style="display:none" />
+                      <button class="btn-danger small" id="brandingLogoRemove" style="display:none"><i data-lucide="trash-2"></i></button>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="field-label" for="brandingFaviconInput">Favicon</label>
+                    <p class="card-sub" style="margin-bottom:8px">Substitui o ícone na aba do navegador. Recomendado: PNG 32x32px ou SVG.</p>
+                    <div style="display:flex;align-items:center;gap:12px">
+                      <img id="brandingFaviconPreview" src="" alt="Favicon preview" style="width:32px;height:32px;border-radius:4px;object-fit:cover;display:none" />
+                      <button class="btn-primary small" id="brandingFaviconBtn"><i data-lucide="upload"></i> Escolher favicon</button>
+                      <input type="file" id="brandingFaviconInput" accept="image/*" style="display:none" />
+                      <button class="btn-danger small" id="brandingFaviconRemove" style="display:none"><i data-lucide="trash-2"></i></button>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="field-label" for="brandingLoginLogoInput">Logo da Tela de Login</label>
+                    <p class="card-sub" style="margin-bottom:8px">Substitui o logo na tela de login (acessível por não autenticados). Recomendado: PNG transparente, 512x512px.</p>
+                    <div style="display:flex;align-items:center;gap:12px">
+                      <img id="brandingLoginLogoPreview" src="" alt="Login logo preview" style="width:64px;height:64px;border-radius:8px;object-fit:cover;display:none" />
+                      <button class="btn-primary small" id="brandingLoginLogoBtn"><i data-lucide="upload"></i> Escolher logo</button>
+                      <input type="file" id="brandingLoginLogoInput" accept="image/*" style="display:none" />
+                      <button class="btn-danger small" id="brandingLoginLogoRemove" style="display:none"><i data-lucide="trash-2"></i></button>
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+                    <button class="btn-primary" id="brandingSaveBtn"><i data-lucide="save"></i> Salvar identidade visual</button>
+                  </div>
+                </div>
+              </div>
 
             </div>
           </div>

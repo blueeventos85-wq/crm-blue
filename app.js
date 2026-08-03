@@ -1750,6 +1750,7 @@ async function loadTeamMembers() {
 function initConfiguracoes() {
   loadCurrentUserProfile();
   loadTeamMembers();
+  initBrandingSection();
 
   if (_settingsBound) return;
   _settingsBound = true;
@@ -1798,8 +1799,208 @@ function initConfiguracoes() {
 }
 
 /* ============================================
-   SIDEBAR · REBUILD DINÂMICO POR PERMISSÕES
+   BRANDING · Identidade Visual (Logo + Favicon)
    ============================================ */
+
+const BRANDING_BUCKET = 'branding';
+const BRANDING_SEED_ID = '00000000-0000-0000-0000-000000000000';
+
+async function loadBranding() {
+  if (!_supabase) return;
+  try {
+    const { data, error } = await _supabase
+      .from('configuracoes_sistema')
+      .select('logo_url, favicon_url, login_logo_url')
+      .eq('id', BRANDING_SEED_ID)
+      .maybeSingle();
+    if (error) {
+      console.warn('[Branding] Erro ao carregar configuracoes:', error.message);
+      return;
+    }
+    if (!data) return;
+    applyBranding(data.logo_url || null, data.favicon_url || null, data.login_logo_url || null);
+  } catch (err) {
+    console.error('[Branding] Erro ao carregar branding:', err.message);
+  }
+}
+
+function applyBranding(logoUrl, faviconUrl, loginLogoUrl) {
+  if (logoUrl) {
+    const img = document.getElementById('sidebarBrandImg');
+    if (img) img.src = logoUrl;
+  }
+  if (faviconUrl) {
+    const links = document.querySelectorAll(
+      'link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]'
+    );
+    links.forEach(link => {
+      link.href = faviconUrl;
+    });
+    if (links.length === 0) {
+      const link = document.createElement('link');
+      link.rel = 'icon';
+      link.type = 'image/png';
+      link.href = faviconUrl;
+      document.head.appendChild(link);
+    }
+  }
+  if (loginLogoUrl) {
+    const img = document.getElementById('authBrandImg');
+    if (img) img.src = loginLogoUrl;
+  }
+}
+
+async function uploadBrandingImage(file, type) {
+  if (!_supabase || !currentUser || !currentUser.id) return null;
+  const ext = file.name.split('.').pop();
+  const filePath = `branding-${type}-${Date.now()}.${ext}`;
+
+  const { data: uploadData, error: uploadError } = await _supabase.storage
+    .from(BRANDING_BUCKET)
+    .upload(filePath, file, { cacheControl: '3600', upsert: true });
+
+  if (uploadError) {
+    console.error('[Branding] Erro ao fazer upload:', uploadError.message);
+    toast('Erro ao fazer upload da imagem.', 'error');
+    return null;
+  }
+
+  const { data: urlData } = _supabase.storage.from(BRANDING_BUCKET).getPublicUrl(filePath);
+  const publicUrl = urlData?.publicUrl || null;
+  if (!publicUrl) {
+    toast('Erro ao obter URL pública da imagem.', 'error');
+    return null;
+  }
+  return publicUrl;
+}
+
+async function saveBranding(logoUrl, faviconUrl, loginLogoUrl) {
+  if (!_supabase) return false;
+  const { error } = await _supabase
+    .from('configuracoes_sistema')
+    .update({ logo_url: logoUrl, favicon_url: faviconUrl, login_logo_url: loginLogoUrl, updated_at: new Date().toISOString() })
+    .eq('id', BRANDING_SEED_ID);
+  if (error) {
+    console.error('[Branding] Erro ao salvar:', error.message);
+    toast('Erro ao salvar identidade visual.', 'error');
+    return false;
+  }
+  return true;
+}
+
+function initBrandingSection() {
+  const card = document.getElementById('settingsBrandingCard');
+  if (!card) return;
+
+  const isAdmin = isCurrentUserAdmin();
+  card.style.display = isAdmin ? '' : 'none';
+
+  if (!isAdmin) return;
+
+  const logoInput = document.getElementById('brandingLogoInput');
+  const logoBtn = document.getElementById('brandingLogoBtn');
+  const logoPreview = document.getElementById('brandingLogoPreview');
+  const logoRemove = document.getElementById('brandingLogoRemove');
+  const faviconInput = document.getElementById('brandingFaviconInput');
+  const faviconBtn = document.getElementById('brandingFaviconBtn');
+  const faviconPreview = document.getElementById('brandingFaviconPreview');
+  const faviconRemove = document.getElementById('brandingFaviconRemove');
+  const loginLogoInput = document.getElementById('brandingLoginLogoInput');
+  const loginLogoBtn = document.getElementById('brandingLoginLogoBtn');
+  const loginLogoPreview = document.getElementById('brandingLoginLogoPreview');
+  const loginLogoRemove = document.getElementById('brandingLoginLogoRemove');
+  const saveBtn = document.getElementById('brandingSaveBtn');
+
+  let logoUrl = null;
+  let faviconUrl = null;
+  let loginLogoUrl = null;
+
+  if (logoBtn && logoInput) {
+    logoBtn.addEventListener('click', () => logoInput.click());
+    logoInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const url = await uploadBrandingImage(file, 'logo');
+      if (url) {
+        logoUrl = url;
+        if (logoPreview) { logoPreview.src = url; logoPreview.style.display = ''; }
+        if (logoRemove) logoRemove.style.display = '';
+        toast('Logo selecionado.');
+      }
+      logoInput.value = '';
+    });
+  }
+
+  if (logoRemove && logoPreview) {
+    logoRemove.addEventListener('click', () => {
+      logoUrl = null;
+      logoPreview.src = '';
+      logoPreview.style.display = 'none';
+      logoRemove.style.display = 'none';
+    });
+  }
+
+  if (faviconBtn && faviconInput) {
+    faviconBtn.addEventListener('click', () => faviconInput.click());
+    faviconInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const url = await uploadBrandingImage(file, 'favicon');
+      if (url) {
+        faviconUrl = url;
+        if (faviconPreview) { faviconPreview.src = url; faviconPreview.style.display = ''; }
+        if (faviconRemove) faviconRemove.style.display = '';
+        toast('Favicon selecionado.');
+      }
+      faviconInput.value = '';
+    });
+  }
+
+  if (faviconRemove && faviconPreview) {
+    faviconRemove.addEventListener('click', () => {
+      faviconUrl = null;
+      faviconPreview.src = '';
+      faviconPreview.style.display = 'none';
+      faviconRemove.style.display = 'none';
+    });
+  }
+
+  if (loginLogoBtn && loginLogoInput) {
+    loginLogoBtn.addEventListener('click', () => loginLogoInput.click());
+    loginLogoInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const url = await uploadBrandingImage(file, 'login-logo');
+      if (url) {
+        loginLogoUrl = url;
+        if (loginLogoPreview) { loginLogoPreview.src = url; loginLogoPreview.style.display = ''; }
+        if (loginLogoRemove) loginLogoRemove.style.display = '';
+        toast('Logo da tela de login selecionado.');
+      }
+      loginLogoInput.value = '';
+    });
+  }
+
+  if (loginLogoRemove && loginLogoPreview) {
+    loginLogoRemove.addEventListener('click', () => {
+      loginLogoUrl = null;
+      loginLogoPreview.src = '';
+      loginLogoPreview.style.display = 'none';
+      loginLogoRemove.style.display = 'none';
+    });
+  }
+
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      const ok = await saveBranding(logoUrl, faviconUrl, loginLogoUrl);
+      if (ok) {
+        applyBranding(logoUrl, faviconUrl, loginLogoUrl);
+        toast('Identidade visual salva com sucesso!');
+      }
+    });
+  }
+}
+
 let _userPermCache = null;
 
 const _sidebarMenuItems = [
@@ -2032,7 +2233,7 @@ function renderHomeModules(filter = '') {
     wrap.innerHTML = `
       <header class="home-hero">
         <div class="home-hero-content">
-          <h1 class="home-hero-title">Bem vindo a Blue Eventos</h1>
+          <h1 class="home-hero-title">Bem vindo ao Blue Group</h1>
           <p class="home-hero-sub">Acesse rapidamente os módulos e recursos do sistema</p>
         </div>
         <div class="home-hero-search">
@@ -2193,7 +2394,7 @@ const knownPages = new Set(['home','dashboard','crm','clientes','calendario','co
 const pageConfig = {
   home: {
     title: 'Home',
-    subtitle: 'Bem-vindo ao Blue Eventos',
+    subtitle: 'Bem-vindo ao Blue Group',
     primary: 'Novo cliente',
     primaryIcon: 'plus'
   },
@@ -7437,11 +7638,13 @@ function refreshDashboard() {
   const { start, end } = getPeriodRange();
   // Aplicar filtro de centro de custo
   let filteredLeads = leads;
+  const isAdmin = isCurrentUserAdmin();
   if (dashCcFilter !== 'all') {
-    filteredLeads = leads.filter(l => l._centroCustoId === dashCcFilter);
+    filteredLeads = filteredLeads.filter(l => l._centroCustoId === dashCcFilter);
+  } else if (!isAdmin && currentUser.centro_custo_ids && currentUser.centro_custo_ids.length > 0) {
+    filteredLeads = filteredLeads.filter(l => currentUser.centro_custo_ids.includes(l._centroCustoId));
   }
   // Se NÃO é Administrador, filtrar apenas leads do próprio usuário
-  const isAdmin = _userPermCache && _userPermCache.perfil === 'Administrador';
   if (!isAdmin) {
     const userId = getCurrentUserId();
     if (userId) {
@@ -10018,16 +10221,20 @@ function initDashCcFilter() {
 
 function populateDashCcFilter() {
   const dropdown = document.getElementById('dashCcDropdown');
-  
+  if (!dropdown) return;
+
+  const isAdmin = isCurrentUserAdmin();
+  const empresas = isAdmin
+    ? centrosCustoData
+    : (centrosCustoData || []).filter(cc => currentUser.centro_custo_ids?.includes(cc.id));
+
   let html = '<button class="filter-dropdown-item" data-cc="all">Todos</button>';
-  
-  if (centrosCustoData) {
-    centrosCustoData.forEach(cc => {
-      html += `<button class="filter-dropdown-item" data-cc="${cc.id}">${escapeHtml(cc.nome)}</button>`;
-    });
-  }
-  
-  if (dropdown) dropdown.innerHTML = html;
+
+  empresas.forEach(cc => {
+    html += `<button class="filter-dropdown-item" data-cc="${cc.id}">${escapeHtml(cc.nome)}</button>`;
+  });
+
+  dropdown.innerHTML = html;
 }
 
 /* ── Hook: filtrar leads por centro de custo no dashboard ── */
@@ -10103,6 +10310,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('[Boot] Centros de custo carregados:', centrosCustoData.length);
   } catch (err) {
     console.error('[Boot] Erro ao carregar centros de custo:', err);
+  }
+
+  // Carregar identidade visual (logo + favicon) do banco
+  try {
+    await loadBranding();
+    console.log('[Boot] Branding carregado.');
+  } catch (err) {
+    console.error('[Boot] Erro ao carregar branding:', err);
   }
 
   // Carregar vínculos de serviços por empresa
