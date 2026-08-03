@@ -3,8 +3,14 @@
    Configuração e helpers para integração
    ============================================ */
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://wozwysgubvqxczyjrmtn.supabase.co';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indvend5c2d1YnZxeGN6eWpybXRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0OTY0NzcsImV4cCI6MjA5NjA3MjQ3N30.JjcYLaCBhtoVpbjmRs6vQN4V8lUZ00hgU92f0o0T-IM';
+// Acceso seguro a variáveis de ambiente: import.meta.env só existe quando o
+// arquivo é processado/bundlado pelo Vite. Este guard evita o crash
+// "Cannot read properties of undefined (reading 'VITE_SUPABASE_URL')" caso o
+// arquivo seja servido sem passar pelo build. Em produção, o Vite substitui
+// import.meta.env.VITE_* pelos valores reais; os valores abaixo são fallback.
+const _env = (typeof import.meta !== 'undefined' && import.meta.env) || {};
+const SUPABASE_URL = _env.VITE_SUPABASE_URL || 'https://wozwysgubvqxczyjrmtn.supabase.co';
+const SUPABASE_ANON_KEY = _env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inbod5c2d1YnJxeGN6yJybXRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0OTY0NzcsImV4cCI6MjA5NjA3MjQ3N30.JjcYLaCBhtoVpbjmIs6vQN4V8lUZ00hgU92f0o0T-IM';
 
 let _supabase = null;
 if (window.supabase && window.supabase.createClient) {
