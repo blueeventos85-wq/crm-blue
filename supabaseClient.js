@@ -9,6 +9,7 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJ
 let _supabase = null;
 if (window.supabase && window.supabase.createClient) {
   _supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  window._supabase = _supabase;
   console.log('[Supabase] Cliente inicializado com sucesso');
 } else {
   console.error('[Supabase] CDN não carregou! Verifique sua conexão ou desative bloqueadores.');
@@ -1094,4 +1095,34 @@ async function testarSupabase() {
   }
 }
 
+// Exposição global de funções utilitárias para compatibilidade com app.js
+window.fetchCadenciasMap = fetchCadenciasMap;
+window.rebuildCadenciaMaps = rebuildCadenciaMaps;
+window.parseBrazilianCurrency = parseBrazilianCurrency;
+window.validateForeignKeys = validateForeignKeys;
+window.fetchLeadsSupabase = fetchLeadsSupabase;
+window.insertLeadSupabase = insertLeadSupabase;
+window.insertEventoSupabase = insertEventoSupabase;
+window.updateEventoSupabase = updateEventoSupabase;
+window.deleteEventoSupabase = deleteEventoSupabase;
+window.fetchEventosSupabase = fetchEventosSupabase;
+window.fetchProximosEventos = fetchProximosEventos;
+window.fetchClientsSupabase = fetchClientsSupabase;
+window.seedServicos = seedServicos;
+window.fetchServicosSupabase = fetchServicosSupabase;
+window.updateLeadSupabase = updateLeadSupabase;
+window.fetchRotinas = fetchRotinas;
+window.insertRotina = insertRotina;
+window.updateRotina = updateRotina;
+window.deleteRotina = deleteRotina;
+window.detectarDispositivo = detectarDispositivo;
+window.registrarAuditoria = registrarAuditoria;
+window.buscarAuditoria = buscarAuditoria;
+window.contarAuditoria = contarAuditoria;
+window.contarAcoesHoje = contarAcoesHoje;
+window.contarUsuariosAtivosHoje = contarUsuariosAtivosHoje;
+window.fetchCentrosCusto = fetchCentrosCusto;
+window.insertCentroCusto = insertCentroCusto;
+window.deleteCentroCusto = deleteCentroCusto;
+window.invalidateCentrosCustoCache = invalidateCentrosCustoCache;
 window.testarSupabase = testarSupabase;
