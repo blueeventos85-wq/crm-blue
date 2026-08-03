@@ -19,7 +19,9 @@ let currentUser = {
   authUserId: null,
   nome: 'Usuário',
   perfil: 'Atendente',
-  centro_custo_id: null
+  centro_custo_id: null,
+  centro_custo_ids: [],
+  foto_url: null
 };
 
 /* ============================================
@@ -71,6 +73,8 @@ function resetAuthState() {
   currentUser.authUserId = null;
   currentUser.nome = 'Usuário';
   currentUser.centro_custo_id = null;
+  currentUser.centro_custo_ids = [];
+  currentUser.foto_url = null;
   currentUser.role = 'admin';
   activePage = 'home';
 
@@ -91,7 +95,13 @@ async function loadMemberFromAuth(authUserId, authEmail) {
     // Primary: lookup by auth_user_id
     const { data, error } = await _supabase.from('membros')
       .select('*').eq('auth_user_id', authUserId).maybeSingle();
-    if (data) return data;
+    if (data) {
+      // Load multiple centros de custo from pivot table
+      const { data: ccData } = await _supabase.from('membro_centros_custo')
+        .select('centro_custo_id').eq('membro_id', data.id);
+      data._centro_custo_ids = (ccData || []).map(r => r.centro_custo_id);
+      return data;
+    }
     if (error) console.warn('[Auth] loadMemberFromAuth lookup by auth_user_id failed:', error.message);
 
     // Fallback: lookup by email (in case auth_user_id was never linked)
@@ -101,6 +111,10 @@ async function loadMemberFromAuth(authUserId, authEmail) {
       if (byEmail) {
         console.warn('[Auth] Member found by email fallback, linking auth_user_id...');
         await _supabase.from('membros').update({ auth_user_id: authUserId }).eq('id', byEmail.id);
+        // Load multiple centros de custo from pivot table
+        const { data: ccData } = await _supabase.from('membro_centros_custo')
+          .select('centro_custo_id').eq('membro_id', byEmail.id);
+        byEmail._centro_custo_ids = (ccData || []).map(r => r.centro_custo_id);
         return byEmail;
       }
       if (emailErr) console.warn('[Auth] Email fallback also failed:', emailErr.message);
@@ -127,6 +141,8 @@ async function initAuth() {
       currentUser.id = member.id;
       currentUser.nome = member.nome || session.user.email?.split('@')[0] || 'Usuário';
       currentUser.centro_custo_id = member.centro_custo_id || null;
+      currentUser.centro_custo_ids = member._centro_custo_ids || [];
+      currentUser.foto_url = member.foto_url || null;
     } else {
       // Don't overwrite currentUser.id if already set — loadUserPermissions will resolve it
       if (!currentUser.id) {
@@ -165,6 +181,8 @@ async function initAuth() {
       currentUser.id = member.id;
       currentUser.nome = member.nome || session.user.email?.split('@')[0] || 'Usuário';
       currentUser.centro_custo_id = member.centro_custo_id || null;
+      currentUser.centro_custo_ids = member._centro_custo_ids || [];
+      currentUser.foto_url = member.foto_url || null;
     } else if (!currentUser.id) {
       // Only set nome if we can't resolve — loadUserPermissions will try to find member
       currentUser.nome = session.user.user_metadata?.nome || session.user.email?.split('@')[0] || 'Usuário';
@@ -268,6 +286,8 @@ function bindAuthForms() {
 }
 
 async function onAuthReady() {
+  _settingsBound = false;
+
   const userNameEl = document.getElementById('sidebarUserName');
   const userAvatarEl = document.getElementById('sidebarUserAvatar');
   const pageSubtitle = document.getElementById('pageSubtitle');
@@ -276,6 +296,11 @@ async function onAuthReady() {
   if (userAvatarEl) {
     const initials = (currentUser.nome || 'Usuário').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
     userAvatarEl.textContent = initials;
+    userAvatarEl.style.background = '';
+    if (currentUser.foto_url) {
+      userAvatarEl.innerHTML = `<img src="${currentUser.foto_url}" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover" />`;
+      userAvatarEl.style.background = 'none';
+    }
   }
   if (pageSubtitle) pageSubtitle.textContent = `Bem-vindo de volta, ${(currentUser.nome || 'Usuário').split(' ')[0]} ✨`;
 
@@ -313,6 +338,7 @@ let _empresaEditingId = null;
 let _empresaDeleteId = null;
 let _empresaOriginalServicoIds = [];
 let _empresaOriginalMembroIds = [];
+let _empresaOriginalCadenciaIds = [];
 
 
 function initAdminView() {
@@ -469,12 +495,17 @@ function closeDeleteModal() {
 function resetMemberForm() {
   const ids = ['adminMemberId','adminMemberName','adminMemberEmail','adminMemberPassword','adminMemberCPF','adminMemberBirth','adminMemberPhone'];
   ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  const selects = ['adminMemberRole','adminMemberTeam','adminMemberCentroCusto'];
+  const selects = ['adminMemberRole','adminMemberTeam'];
   selects.forEach(id => { const el = document.getElementById(id); if (el) el.selectedIndex = 0; });
   document.getElementById('adminMemberPessoa').value = 'Pessoa Física';
   ['adminMemberNotifEmail','adminMemberNotifWhats','adminMemberNotifSound'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = 'Sim';
   });
+  // Reset CC checkboxes
+  const ccSection = document.getElementById('adminMemberCcSection');
+  if (ccSection) ccSection.style.display = 'none';
+  const container = document.getElementById('adminMemberCcChecks');
+  if (container) container.innerHTML = '';
 }
 
 function setMemberFormMode(mode) {
@@ -512,7 +543,6 @@ function fillMemberForm(member) {
   document.getElementById('adminMemberPassword').value = '';
   setSelectValue('adminMemberRole', member.cargo);
   setSelectValue('adminMemberTeam', member.equipe);
-  setSelectValue('adminMemberCentroCusto', member.centro_custo_id || '');
   document.getElementById('adminMemberPessoa').value = member.pessoa || 'Pessoa Física';
   document.getElementById('adminMemberCPF').value = member.cpf || '';
   // Converter dd/mm/aaaa para YYYY-MM-DD se necessário (dados antigos)
@@ -526,6 +556,17 @@ function fillMemberForm(member) {
   setSelectValue('adminMemberNotifEmail', member.notificacao_email !== false ? 'Sim' : 'Não');
   setSelectValue('adminMemberNotifWhats', member.notificacao_whatsapp !== false ? 'Sim' : 'Não');
   setSelectValue('adminMemberNotifSound', member.notificacao_som !== false ? 'Sim' : 'Não');
+  // Preencher checkboxes de centros de custo (pivot)
+  const ccSection = document.getElementById('adminMemberCcSection');
+  const container = document.getElementById('adminMemberCcChecks');
+  if (ccSection && container) {
+    const memberCcIds = member._centro_custo_ids || [];
+    container.innerHTML = centrosCustoData.map(cc => {
+      const checked = memberCcIds.includes(cc.id);
+      return `<label class="perm-check"><input type="checkbox" class="member-cc-cb" value="${cc.id}" ${checked ? 'checked' : ''} /> ${escapeHtml(cc.nome)}</label>`;
+    }).join('');
+    ccSection.style.display = '';
+  }
 }
 
 function setSelectValue(id, val) {
@@ -554,9 +595,8 @@ async function handleMemberSave() {
   const notifEmail = document.getElementById('adminMemberNotifEmail')?.value;
   const notifWhats = document.getElementById('adminMemberNotifWhats')?.value;
   const notifSound = document.getElementById('adminMemberNotifSound')?.value;
-  const centroCustoId = document.getElementById('adminMemberCentroCusto')?.value || null;
 
-  console.log('[Admin] Dados do form:', { name, email, role, team, centroCustoId });
+  console.log('[Admin] Dados do form:', { name, email, role, team });
 
   // Validação
   if (!name || !email) { toast('Preencha nome e e-mail', 'error'); return; }
@@ -577,14 +617,34 @@ async function handleMemberSave() {
         data_aniversario: birth, telefone: phone || '',
         notificacao_email: notifEmail === 'Sim',
         notificacao_whatsapp: notifWhats === 'Sim',
-        notificacao_som: notifSound === 'Sim',
-        centro_custo_id: centroCustoId
+        notificacao_som: notifSound === 'Sim'
       };
 
       const { data, error } = await _supabase.from('membros').update(payload).eq('id', _adminEditingId).select();
       if (error) {
         console.error('[Admin] Erro ao atualizar:', error.message, error.code, error.details, error.hint);
         throw error;
+      }
+
+      // Atualizar vínculos de centros de custo (pivot)
+      const selectedCcIds = Array.from(document.querySelectorAll('.member-cc-cb:checked')).map(cb => cb.value);
+      // Buscar vínculos atuais
+      const { data: currentVinculos } = await _supabase.from('membro_centros_custo')
+        .select('centro_custo_id').eq('membro_id', _adminEditingId);
+      const currentCcIds = (currentVinculos || []).map(r => r.centro_custo_id);
+
+      // Remover desmarcados
+      const toRemove = currentCcIds.filter(id => !selectedCcIds.includes(id));
+      if (toRemove.length > 0) {
+        await _supabase.from('membro_centros_custo').delete()
+          .eq('membro_id', _adminEditingId)
+          .in('centro_custo_id', toRemove);
+      }
+
+      // Adicionar novos
+      const toAdd = selectedCcIds.filter(id => !currentCcIds.includes(id));
+      for (const ccId of toAdd) {
+        await _supabase.from('membro_centros_custo').insert([{ membro_id: _adminEditingId, centro_custo_id: ccId }]);
       }
 
       console.log('[Admin] Membro atualizado:', data);
@@ -597,7 +657,7 @@ async function handleMemberSave() {
 
       const payload = {
         name, email, password, role, team, pessoa, cpf, birth, phone,
-        notifEmail, notifWhats, notifSound, centro_custo_id: centroCustoId
+        notifEmail, notifWhats, notifSound
       };
 
       const { data, error } = await _supabase.functions.invoke('create-member', {
@@ -676,7 +736,6 @@ function bindRowActions(row, member) {
       fillMemberForm(member);
       setMemberFormMode('edit');
       openMemberModal();
-      setSelectValue('adminMemberCentroCusto', member.centro_custo_id || '');
     });
   }
 
@@ -724,6 +783,22 @@ async function loadMembersFromSupabase() {
 
     console.log('[Admin] Membros encontrados:', data?.length || 0, data);
     _adminMembersCache = data || [];
+
+    // Carregar vínculos de centros de custo para cada membro
+    if (_adminMembersCache.length > 0) {
+      const { data: vinculos } = await _supabase.from('membro_centros_custo').select('*');
+      if (vinculos) {
+        const ccMap = {};
+        vinculos.forEach(v => {
+          if (!ccMap[v.membro_id]) ccMap[v.membro_id] = [];
+          ccMap[v.membro_id].push(v.centro_custo_id);
+        });
+        _adminMembersCache.forEach(m => {
+          m._centro_custo_ids = ccMap[m.id] || [];
+        });
+      }
+    }
+
     const tbody = document.getElementById('adminUsersBody');
     if (!tbody) { console.error('[Admin] adminUsersBody não encontrado'); return; }
     tbody.innerHTML = '';
@@ -786,7 +861,7 @@ function applyPerfilDefaults(perfil) {
       home:true, dashboard:true, crm:true, cliente_base:true, calendario:true,
       rotina_blue:false, pomodoro:false, conversas:false, configuracoes:true,
       auditoria:true, administrador:false,
-      calibragem: true,
+      calibragem: false,
       delete_telefone: true
     }
   };
@@ -1045,19 +1120,46 @@ async function loadEmpresasAdmin() {
 
   const { data: membros, error: errMem } = await _supabase
     .from('membros')
-    .select('id, nome, centro_custo_id')
+    .select('id, nome')
     .order('nome');
   if (errMem) { console.error('[Empresas] Erro ao buscar membros:', errMem); }
 
-  renderEmpresasTable(empresas || [], vinculoMap, servicoMap, membros || []);
+  // Carregar vínculos de membros com centros de custo
+  const { data: membrosCc, error: errMemCc } = await _supabase
+    .from('membro_centros_custo')
+    .select('*');
+  if (errMemCc) { console.error('[Empresas] Erro ao buscar vínculos membro-cc:', errMemCc); }
+
+  const membroCcMap = {};
+  if (membrosCc) {
+    membrosCc.forEach(v => {
+      if (!membroCcMap[v.centro_custo_id]) membroCcMap[v.centro_custo_id] = [];
+      membroCcMap[v.centro_custo_id].push(v.membro_id);
+    });
+  }
+
+  const { data: vinculosCad, error: errCad } = await _supabase
+    .from('centro_custo_cadencias')
+    .select('*');
+  if (errCad) { console.error('[Empresas] Erro ao buscar vínculos de cadências:', errCad); }
+
+  const cadenciaMap = {};
+  if (vinculosCad) {
+    vinculosCad.forEach(v => {
+      if (!cadenciaMap[v.centro_custo_id]) cadenciaMap[v.centro_custo_id] = [];
+      cadenciaMap[v.centro_custo_id].push(v.cadencia_id);
+    });
+  }
+
+  renderEmpresasTable(empresas || [], vinculoMap, servicoMap, membros || [], cadenciaMap, membroCcMap || {});
 }
 
-function renderEmpresasTable(empresas, vinculoMap, servicoMap, membros) {
+function renderEmpresasTable(empresas, vinculoMap, servicoMap, membros, cadenciaMap, membroCcMap) {
   const tbody = document.getElementById('adminEmpresasBody');
   if (!tbody) return;
 
   if (empresas.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted-text)">Nenhuma empresa cadastrada</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted-text)">Nenhuma empresa cadastrada</td></tr>';
     return;
   }
 
@@ -1065,17 +1167,24 @@ function renderEmpresasTable(empresas, vinculoMap, servicoMap, membros) {
   empresas.forEach(emp => {
     const servicoNomes = (vinculoMap[emp.id] || []).map(sid => servicoMap[sid]).filter(Boolean);
     const servicoStr = servicoNomes.length > 0 ? servicoNomes.join(', ') : '—';
-    const membrosDaEmpresa = membros.filter(m => m.centro_custo_id === emp.id);
+    const membroIdsDaEmpresa = (membroCcMap[emp.id] || []);
+    const membrosDaEmpresa = membros.filter(m => membroIdsDaEmpresa.includes(m.id));
     const membroStr = membrosDaEmpresa.length > 0
       ? membrosDaEmpresa.map(m => m.nome).join(', ')
       : '—';
+    const cadenciaNomes = (cadenciaMap[emp.id] || []).map(cid => {
+      const found = cadences.find(c => c.id === cid);
+      return found ? found.label : cid;
+    }).filter(Boolean);
+    const cadenciaStr = cadenciaNomes.length > 0 ? cadenciaNomes.join(', ') : '—';
     const created = emp.created_at ? new Date(emp.created_at).toLocaleDateString('pt-BR') : '—';
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><strong>${escapeHtml(emp.nome)}</strong></td>
-      <td style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(servicoStr)}">${escapeHtml(servicoStr)}</td>
-      <td style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(membroStr)}">${escapeHtml(membroStr)}</td>
+      <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(servicoStr)}">${escapeHtml(servicoStr)}</td>
+      <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(cadenciaStr)}">${escapeHtml(cadenciaStr)}</td>
+      <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(membroStr)}">${escapeHtml(membroStr)}</td>
       <td>${created}</td>
       <td class="admin-actions-cell">
         <button class="btn-icon" title="Editar" data-emp-edit="${emp.id}"><i data-lucide="pencil"></i></button>
@@ -1085,7 +1194,7 @@ function renderEmpresasTable(empresas, vinculoMap, servicoMap, membros) {
 
     const editBtn = tr.querySelector('[data-emp-edit]');
     if (editBtn) {
-      editBtn.addEventListener('click', () => openEmpresaModal(emp, vinculoMap, membros));
+      editBtn.addEventListener('click', () => openEmpresaModal(emp, vinculoMap, membros, cadenciaMap, membroCcMap));
     }
     const delBtn = tr.querySelector('[data-emp-delete]');
     if (delBtn) {
@@ -1095,7 +1204,7 @@ function renderEmpresasTable(empresas, vinculoMap, servicoMap, membros) {
   initIcons();
 }
 
-async function openEmpresaModal(emp, vinculoMap, membros) {
+async function openEmpresaModal(emp, vinculoMap, membros, cadenciaMap, membroCcMap) {
   const overlay = document.getElementById('empresaModalOverlay');
   const modal = document.getElementById('empresaModal');
   if (!overlay || !modal) return;
@@ -1130,12 +1239,12 @@ async function openEmpresaModal(emp, vinculoMap, membros) {
     });
   }
 
-  // Carregar membros checados
+  // Carregar membros checados (pivot)
   const membrosCheckContainer = document.getElementById('empresaMembrosChecks');
   if (membrosCheckContainer) {
-    const { data: allMembros } = await _supabase.from('membros').select('id, nome, centro_custo_id').order('nome');
+    const { data: allMembros } = await _supabase.from('membros').select('id, nome').order('nome');
     const linkedMembroIds = emp
-      ? (allMembros || []).filter(m => m.centro_custo_id === emp.id).map(m => m.id)
+      ? (membroCcMap[emp.id] || [])
       : [];
     _empresaOriginalMembroIds = [...linkedMembroIds];
     membrosCheckContainer.innerHTML = '';
@@ -1145,6 +1254,21 @@ async function openEmpresaModal(emp, vinculoMap, membros) {
       label.className = 'perm-check';
       label.innerHTML = `<input type="checkbox" class="empresa-membro-cb" value="${m.id}" ${checked ? 'checked' : ''} /> ${escapeHtml(m.nome)}`;
       membrosCheckContainer.appendChild(label);
+    });
+  }
+
+  // Carregar cadências checadas
+  const cadenciasCheckContainer = document.getElementById('empresaCadenciasChecks');
+  if (cadenciasCheckContainer) {
+    const linkedCadencias = emp ? (cadenciaMap[emp.id] || []) : [];
+    _empresaOriginalCadenciaIds = [...linkedCadencias];
+    cadenciasCheckContainer.innerHTML = '';
+    cadences.forEach(c => {
+      const checked = linkedCadencias.includes(c.id);
+      const label = document.createElement('label');
+      label.className = 'perm-check';
+      label.innerHTML = `<input type="checkbox" class="empresa-cadencia-cb" value="${c.id}" ${checked ? 'checked' : ''} /> ${escapeHtml(c.label)}`;
+      cadenciasCheckContainer.appendChild(label);
     });
   }
 
@@ -1199,25 +1323,41 @@ async function handleEmpresaSave() {
       await _supabase.from('centro_custo_servicos').insert([{ centro_custo_id: empresaId, servico_id: svcId }]);
     }
 
-    // ── Gerenciar vínculo de membros (coluna centro_custo_id na tabela membros) ──
+    // ── Gerenciar vínculo de membros (pivot membro_centros_custo) ──
     const selectedMembroIds = Array.from(document.querySelectorAll('.empresa-membro-cb:checked')).map(cb => cb.value);
 
-    // Membros desmarcados que antes pertenciam a esta empresa → NULL
+    // Membros desmarcados que antes pertenciam a esta empresa → remover da pivot
     const membrosToRemove = _empresaOriginalMembroIds.filter(id => !selectedMembroIds.includes(id));
-    for (const mid of membrosToRemove) {
-      await _supabase.from('membros').update({ centro_custo_id: null }).eq('id', mid);
+    if (membrosToRemove.length > 0 && empresaId) {
+      await _supabase.from('membro_centros_custo').delete()
+        .eq('centro_custo_id', empresaId)
+        .in('membro_id', membrosToRemove);
     }
 
-    // Membros marcados agora → centro_custo_id = empresaId
+    // Membros marcados agora → inserir na pivot
     const membrosToAdd = selectedMembroIds.filter(id => !_empresaOriginalMembroIds.includes(id));
     for (const mid of membrosToAdd) {
-      await _supabase.from('membros').update({ centro_custo_id: empresaId }).eq('id', mid);
+      await _supabase.from('membro_centros_custo').insert([{ membro_id: mid, centro_custo_id: empresaId }]);
+    }
+
+    // ── Gerenciar vínculo de cadências (pivot centro_custo_cadencias) ──
+    const selectedCadenciaIds = Array.from(document.querySelectorAll('.empresa-cadencia-cb:checked')).map(cb => cb.value);
+
+    const cadenciasToRemove = _empresaOriginalCadenciaIds.filter(id => !selectedCadenciaIds.includes(id));
+    if (cadenciasToRemove.length > 0 && empresaId) {
+      await _supabase.from('centro_custo_cadencias').delete().eq('centro_custo_id', empresaId).in('cadencia_id', cadenciasToRemove);
+    }
+
+    const cadenciasToAdd = selectedCadenciaIds.filter(id => !_empresaOriginalCadenciaIds.includes(id));
+    for (const cid of cadenciasToAdd) {
+      await _supabase.from('centro_custo_cadencias').insert([{ centro_custo_id: empresaId, cadencia_id: cid }]);
     }
 
     toast(_empresaEditingId ? 'Empresa atualizada com sucesso!' : 'Empresa criada com sucesso!');
 
     // Invalidar cache global para forçar recarga
     if (typeof invalidateCentrosCustoCache === 'function') invalidateCentrosCustoCache();
+    await loadVinculosCadencias();
 
     closeEmpresaModal();
     await loadEmpresasAdmin();
@@ -1259,8 +1399,8 @@ async function handleEmpresaDelete() {
   try {
     // Remover vínculos de serviços
     await _supabase.from('centro_custo_servicos').delete().eq('centro_custo_id', _empresaDeleteId);
-    // Remover vínculo dos membros
-    await _supabase.from('membros').update({ centro_custo_id: null }).eq('centro_custo_id', _empresaDeleteId);
+    // Remover vínculo dos membros (pivot)
+    await _supabase.from('membro_centros_custo').delete().eq('centro_custo_id', _empresaDeleteId);
     // Deletar a empresa
     await _supabase.from('centros_custo').delete().eq('id', _empresaDeleteId);
 
@@ -1457,6 +1597,207 @@ async function handleServicoDelete() {
 }
 
 /* ============================================
+   CONFIGURAÇÕES · Perfil, Avatar, Equipe
+   ============================================ */
+
+let _settingsBound = false;
+
+function showSettingsTab(tab) {
+  $$('.settings-content > .card').forEach(c => c.style.display = '');
+  if (tab === 'perfil') {
+    $$('.settings-content > .card')[0].style.display = '';
+    $$('.settings-content > .card')[1].style.display = '';
+  } else if (tab === 'equipe') {
+    $$('.settings-content > .card')[0].style.display = 'none';
+    $$('.settings-content > .card')[1].style.display = '';
+  } else {
+    $$('.settings-content > .card').forEach(c => c.style.display = 'none');
+  }
+}
+
+async function uploadAvatar(file) {
+  if (!_supabase || !currentUser.id) return null;
+  const ext = file.name.split('.').pop();
+  const filePath = `avatar-${currentUser.id}-${Date.now()}.${ext}`;
+
+  const { data: uploadData, error: uploadError } = await _supabase.storage
+    .from('avatars')
+    .upload(filePath, file, { cacheControl: '3600', upsert: true });
+
+  if (uploadError) {
+    console.error('[Settings] Erro ao fazer upload do avatar:', uploadError.message);
+    toast('Erro ao fazer upload da imagem.', 'error');
+    return null;
+  }
+
+  const { data: urlData } = _supabase.storage.from('avatars').getPublicUrl(filePath);
+  const fotoUrl = urlData?.publicUrl || null;
+
+  if (!fotoUrl) {
+    toast('Erro ao obter URL pública da imagem.', 'error');
+    return null;
+  }
+
+  const { error: updateError } = await _supabase
+    .from('membros')
+    .update({ foto_url: fotoUrl })
+    .eq('id', currentUser.id);
+
+  if (updateError) {
+    console.error('[Settings] Erro ao atualizar foto_url:', updateError.message);
+    toast('Erro ao salvar a foto no perfil.', 'error');
+    return null;
+  }
+
+  return fotoUrl;
+}
+
+function updateAvatarUI(fotoUrl) {
+  const settingsAvatar = document.getElementById('settingsAvatar');
+  const sidebarAvatar = document.getElementById('sidebarUserAvatar');
+  if (fotoUrl) {
+    const imgHtml = `<img src="${fotoUrl}" alt="Avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover" />`;
+    if (settingsAvatar) settingsAvatar.innerHTML = imgHtml;
+    if (sidebarAvatar) {
+      const initials = (currentUser.nome || 'Usuário').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+      sidebarAvatar.innerHTML = imgHtml;
+      sidebarAvatar.style.background = 'none';
+    }
+  } else {
+    const initials = (currentUser.nome || 'Usuário').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+    if (settingsAvatar) { settingsAvatar.textContent = initials; settingsAvatar.style.background = ''; }
+    if (sidebarAvatar) { sidebarAvatar.textContent = initials; sidebarAvatar.style.background = ''; }
+  }
+}
+
+async function loadCurrentUserProfile() {
+  if (!_supabase || !currentUser.id) return;
+  const { data, error } = await _supabase
+    .from('membros')
+    .select('nome, email, telefone, cargo, bio, foto_url, data_aniversario')
+    .eq('id', currentUser.id)
+    .maybeSingle();
+
+  if (error || !data) {
+    console.warn('[Settings] Erro ao carregar perfil:', error?.message);
+    return;
+  }
+
+  const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+  setVal('settingsNome', data.nome);
+  setVal('settingsCargo', data.cargo);
+  setVal('settingsEmail', data.email);
+  setVal('settingsTelefone', data.telefone);
+  setVal('settingsBio', data.bio);
+
+  updateAvatarUI(data.foto_url);
+}
+
+async function loadTeamMembers() {
+  if (!_supabase) return;
+  const list = document.getElementById('settingsTeamList');
+  if (!list) return;
+
+  const isAdmin = isCurrentUserAdmin();
+
+  let query = _supabase.from('membros').select('id, nome, email, cargo, foto_url');
+
+  if (!isAdmin && currentUser.centro_custo_ids && currentUser.centro_custo_ids.length > 0) {
+    const { data: vinculos } = await _supabase
+      .from('membro_centros_custo')
+      .select('membro_id')
+      .in('centro_custo_id', currentUser.centro_custo_ids);
+    const memberIds = [...new Set((vinculos || []).map(v => v.membro_id))];
+    if (memberIds.length > 0) {
+      query = query.in('id', memberIds);
+    } else {
+      list.innerHTML = '<li style="padding:16px;text-align:center;color:var(--muted-text)">Nenhum membro encontrado na mesma empresa.</li>';
+      return;
+    }
+  }
+
+  const { data: members, error } = await query.order('nome');
+  if (error) {
+    console.error('[Settings] Erro ao carregar equipe:', error.message);
+    list.innerHTML = '<li style="padding:16px;text-align:center;color:var(--error)">Erro ao carregar equipe.</li>';
+    return;
+  }
+
+  if (!members || members.length === 0) {
+    list.innerHTML = '<li style="padding:16px;text-align:center;color:var(--muted-text)">Nenhum membro encontrado.</li>';
+    return;
+  }
+
+  list.innerHTML = members.map(m => {
+    const initials = (m.nome || '').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+    const badgeClass = m.cargo === 'Administrador' ? 'tag-blue' :
+      m.cargo === 'Marketing' ? 'tag-purple' : 'tag-green';
+    const avatarContent = m.foto_url
+      ? `<img src="${m.foto_url}" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover" />`
+      : initials;
+    const avatarStyle = m.foto_url ? 'background:none' : '';
+    return `<li class="team-item">
+      <div class="avatar ${badgeClass}" style="${avatarStyle}">${avatarContent}</div>
+      <div>
+        <p class="client-name">${escapeHtml(m.nome || '')}</p>
+        <p class="client-cnpj">${escapeHtml(m.email || '')}</p>
+      </div>
+      <span class="tag ${badgeClass}">${escapeHtml(m.cargo || 'Membro')}</span>
+    </li>`;
+  }).join('');
+}
+
+function initConfiguracoes() {
+  loadCurrentUserProfile();
+  loadTeamMembers();
+
+  if (_settingsBound) return;
+  _settingsBound = true;
+
+  const avatarBtn = document.getElementById('settingsAvatarBtn');
+  const avatarInput = document.getElementById('settingsAvatarInput');
+  if (avatarBtn && avatarInput) {
+    avatarBtn.addEventListener('click', () => avatarInput.click());
+    avatarInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const fotoUrl = await uploadAvatar(file);
+      if (fotoUrl) {
+        updateAvatarUI(fotoUrl);
+        toast('Foto de perfil atualizada com sucesso!');
+      }
+      avatarInput.value = '';
+    });
+  }
+
+  const saveBtn = document.querySelector('.settings-content .btn-primary');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      const getVal = (id) => (document.getElementById(id)?.value || '').trim();
+      const payload = {
+        nome: getVal('settingsNome'),
+        cargo: getVal('settingsCargo'),
+        email: getVal('settingsEmail'),
+        telefone: getVal('settingsTelefone'),
+        bio: getVal('settingsBio')
+      };
+      const { error } = await _supabase
+        .from('membros')
+        .update(payload)
+        .eq('id', currentUser.id);
+      if (error) {
+        toast('Erro ao salvar perfil: ' + error.message, 'error');
+      } else {
+        currentUser.nome = payload.nome;
+        const sidebarName = document.getElementById('sidebarUserName');
+        if (sidebarName) sidebarName.textContent = payload.nome;
+        toast('Perfil atualizado com sucesso!');
+      }
+    });
+  }
+}
+
+/* ============================================
    SIDEBAR · REBUILD DINÂMICO POR PERMISSÕES
    ============================================ */
 let _userPermCache = null;
@@ -1503,18 +1844,20 @@ async function loadUserPermissions() {
     }
     // Try by auth_user_id
     const { data: byAuth } = await _supabase.from('membros')
-      .select('id, nome, email').eq('auth_user_id', authUser.id).maybeSingle();
+      .select('id, nome, email, foto_url').eq('auth_user_id', authUser.id).maybeSingle();
     if (byAuth) {
       currentUser.id = byAuth.id;
       currentUser.nome = currentUser.nome || byAuth.nome;
+      currentUser.foto_url = byAuth.foto_url || null;
       console.log('[Perm] Resolved member by auth_user_id:', byAuth.id);
     } else {
       // Try by email
       const { data: byEmail } = await _supabase.from('membros')
-        .select('id, nome, email').eq('email', authUser.email).maybeSingle();
+        .select('id, nome, email, foto_url').eq('email', authUser.email).maybeSingle();
       if (byEmail) {
         currentUser.id = byEmail.id;
         currentUser.nome = currentUser.nome || byEmail.nome;
+        currentUser.foto_url = byEmail.foto_url || null;
         // Link auth_user_id for future lookups
         await _supabase.from('membros').update({ auth_user_id: authUser.id }).eq('id', byEmail.id);
         console.log('[Perm] Resolved member by email and linked auth_user_id:', byEmail.id);
@@ -1561,7 +1904,11 @@ function renderSidebar() {
   console.log('[Sidebar] Rendering, _userPermCache =', _userPermCache ? 'loaded' : 'null');
 
   const allowedMenu = _sidebarMenuItems.filter(m => isPageAllowed(m.page, _userPermCache));
-  const allowedShortcuts = _sidebarShortcuts.filter(m => isPageAllowed(m.page, _userPermCache));
+  // Calibragem: exclusivo do Administrador (sobresai permissão do banco)
+  const isAdmin = _userPermCache && _userPermCache.perfil === 'Administrador';
+  const allowedShortcuts = _sidebarShortcuts.filter(m =>
+    m.page === 'calibragem' ? (isAdmin && isPageAllowed(m.page, _userPermCache)) : isPageAllowed(m.page, _userPermCache)
+  );
 
   console.log('[Sidebar] Allowed menu items:', allowedMenu.map(m => m.page).join(', '));
   console.log('[Sidebar] Allowed shortcuts:', allowedShortcuts.map(m => m.page).join(', '));
@@ -2087,6 +2434,9 @@ function setActivePage(page) {
   if (page === 'calibragem') {
     initCalibragem();
   }
+  if (page === 'configuracoes') {
+    initConfiguracoes();
+  }
   if (page === 'centros-custo') {
     initCentrosCusto();
   }
@@ -2108,20 +2458,44 @@ const statusMap = {
 
 const ALL_EVENT_SERVICES = [];
 
-function populateServiceFilter() {
+async function populateServiceFilter() {
   const dropdown = $('#servicoDropdown');
   if (!dropdown) return;
 
-  const allSvcs = new Set();
-  clientsData.forEach(c => c.services.forEach(s => allSvcs.add(s)));
+  const allServicos = await fetchServicosSupabase();
 
-  const sorted = [...allSvcs].sort();
+  const isAdmin = _userPermCache && _userPermCache.perfil === 'Administrador';
+  let empresaId = null;
+  if (isAdmin) {
+    empresaId = clienteCcFilter !== 'all' ? clienteCcFilter : null;
+  } else {
+    empresaId = currentUser.centro_custo_ids?.[0] || null;
+  }
+
+  let servicos = [];
+  if (empresaId) {
+    const linkedSvcIds = vinculosServicos
+      .filter(v => v.centro_custo_id === empresaId)
+      .map(v => v.servico_id);
+    servicos = allServicos.filter(s => linkedSvcIds.includes(s.id));
+  } else {
+    // Non-admin with multiple CCs: show services from all linked CCs
+    if (!isAdmin && currentUser.centro_custo_ids?.length > 1) {
+      const linkedSvcIds = vinculosServicos
+        .filter(v => currentUser.centro_custo_ids.includes(v.centro_custo_id))
+        .map(v => v.servico_id);
+      servicos = allServicos.filter(s => linkedSvcIds.includes(s.id));
+    } else {
+      servicos = allServicos;
+    }
+  }
+
   dropdown.innerHTML = '<button class="filter-dropdown-item" data-svc="all">Todos</button>';
-  sorted.forEach(svc => {
+  servicos.forEach(s => {
     const btn = document.createElement('button');
     btn.className = 'filter-dropdown-item';
-    btn.dataset.svc = svc;
-    btn.textContent = svc;
+    btn.dataset.svc = s.nome;
+    btn.textContent = s.nome;
     dropdown.appendChild(btn);
   });
 }
@@ -2130,17 +2504,8 @@ function populateCadenceFilter() {
   const dropdown = $('#cadenciaDropdown');
   if (!dropdown) return;
 
-  const cadenceMap = {};
-  cadences.forEach(c => { cadenceMap[c.id] = c.label; });
-
-  const usedIds = new Set();
-  clientsData.forEach(c => {
-    if (c._cadenciaId && cadenceMap[c._cadenciaId]) usedIds.add(c._cadenciaId);
-  });
-
-  const sorted = cadences.filter(c => usedIds.has(c.id));
   dropdown.innerHTML = '<button class="filter-dropdown-item" data-cad="all">Todas</button>';
-  sorted.forEach(c => {
+  getVisibleCadences().forEach(c => {
     const btn = document.createElement('button');
     btn.className = 'filter-dropdown-item';
     btn.dataset.cad = c.id;
@@ -2168,7 +2533,7 @@ function initCadenceFilter() {
     clienteCadenceFilter = val;
     dropdown.classList.remove('open');
 
-    const label = val === 'all' ? 'Cadência' : (cadences.find(c => c.id === val)?.label || 'Cadência');
+    const label = val === 'all' ? 'Cadência' : (getVisibleCadences().find(c => c.id === val)?.label || 'Cadência');
     btn.innerHTML = `<i data-lucide="git-branch"></i> ${label} <i data-lucide="chevron-down"></i>`;
     initIcons();
 
@@ -2189,14 +2554,30 @@ function initCadenceFilter() {
 function populateEmpresaFilter() {
   const dropdown = $('#clienteCcDropdown');
   if (!dropdown) return;
-  dropdown.innerHTML = '<button class="filter-dropdown-item" data-cc="all">Todas as Empresas</button>';
-  centrosCustoData.forEach(cc => {
+  const isAdmin = _userPermCache && _userPermCache.perfil === 'Administrador';
+  const empresas = isAdmin
+    ? centrosCustoData
+    : centrosCustoData.filter(cc => currentUser.centro_custo_ids?.includes(cc.id));
+  dropdown.innerHTML = (isAdmin || empresas.length > 1)
+    ? '<button class="filter-dropdown-item" data-cc="all">Todas as Empresas</button>'
+    : '';
+  empresas.forEach(cc => {
     const btn = document.createElement('button');
     btn.className = 'filter-dropdown-item';
     btn.dataset.cc = cc.id;
     btn.textContent = cc.nome;
     dropdown.appendChild(btn);
   });
+  // Se for membro com apenas uma empresa, já seleciona e atualiza o botão
+  if (!isAdmin && empresas.length === 1) {
+    const cc = empresas[0];
+    clienteCcFilter = cc.id;
+    const btn = $('#clienteCcFilterBtn');
+    if (btn) {
+      btn.innerHTML = `<i data-lucide="building-2"></i> ${cc.nome} <i data-lucide="chevron-down"></i>`;
+      initIcons();
+    }
+  }
 }
 
 function initEmpresaFilter() {
@@ -2237,6 +2618,7 @@ function initEmpresaFilter() {
       badge.hidden = true;
       badge.style.display = 'none!important';
     }
+    populateServiceFilter();
     renderClients();
   });
 }
@@ -2258,11 +2640,12 @@ function getFilteredClients() {
     if (clienteCadenceFilter !== 'all' && c._cadenciaId !== clienteCadenceFilter) return false;
     if (clienteCcFilter !== 'all' && c._centroCustoId !== clienteCcFilter) return false;
     
-    // Se não é admin, filtrar apenas clientes do próprio usuário (membro_id ou qualificador_id)
+    // Se não é admin, filtrar apenas clientes do próprio usuário (membro_id, qualificador_id, owner_id ou created_by)
     if (!canViewAll && userId) {
-      const membroId = c._membroId;
+      const membroId = c._membroId || c._ownerId || c._createdBy;
       const qualificadorId = c._qualificadorId;
-      if (membroId !== userId && qualificadorId !== userId) return false;
+      if (membroId === userId || qualificadorId === userId) return true;
+      return false;
     }
     return true;
   });
@@ -2375,23 +2758,37 @@ function removeLeadService(leadId, svcName) {
   }, 50);
 }
 
+let _clientsLoaded = false;
+
 function renderClients() {
   const grid = $('#clientGrid');
   if (!grid) return;
 
   if (clientsData.length === 0) {
-    grid.innerHTML = `
-      <div class="client-loading">
-        <div class="skeleton-card"></div>
-        <div class="skeleton-card"></div>
-        <div class="skeleton-card"></div>
-        <div class="skeleton-card"></div>
-        <div class="skeleton-card"></div>
-        <div class="skeleton-card"></div>
-      </div>
-    `;
-    const summary = $('#clienteBaseSummary');
-    if (summary) summary.innerHTML = '<p class="summary-text">Carregando clientes...</p>';
+    if (!_clientsLoaded) {
+      grid.innerHTML = `
+        <div class="client-loading">
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+        </div>
+      `;
+      const summary = $('#clienteBaseSummary');
+      if (summary) summary.innerHTML = '<p class="summary-text">Carregando clientes...</p>';
+    } else {
+      grid.innerHTML = `
+        <div class="empty-state">
+          <i data-lucide="users"></i>
+          <p>Nenhum cliente encontrado</p>
+        </div>
+      `;
+      const summary = $('#clienteBaseSummary');
+      if (summary) summary.innerHTML = '<p class="summary-text">0 clientes encontrados</p>';
+      if (window.initIcons) initIcons();
+    }
     return;
   }
 
@@ -2470,7 +2867,7 @@ function renderClients() {
 function populateClientTransferSelect(sel, currentMembroId) {
   if (!_membersCache) {
     _supabase.from('membros')
-      .select('id, nome, email, centro_custo_id')
+      .select('id, nome, email')
       .eq('status', 'Ativo')
       .order('nome')
       .then(({ data, error }) => {
@@ -2497,12 +2894,13 @@ function fillMemberOptions(sel, currentMembroId) {
 }
 
 async function transferSingleClient(clientId, memberId) {
+  if (!isCurrentUserAdmin()) { toast('Apenas administradores podem transferir leads', 'error'); return; }
   const member = _membersCache?.find(m => m.id === memberId);
   const memberName = member?.nome || 'Membro';
 
   try {
     const { error } = await _supabase.from('leads')
-      .update({ membro_id: memberId, centro_custo_id: member?.centro_custo_id || null })
+      .update({ membro_id: memberId })
       .eq('id', String(clientId));
 
     if (error) throw error;
@@ -2510,7 +2908,6 @@ async function transferSingleClient(clientId, memberId) {
     const client = clientsData.find(c => String(c.id) === String(clientId));
     if (client) {
       client._membroId = memberId;
-      client._centroCustoId = member?.centro_custo_id || null;
     }
 
     selectedClientIds.delete(String(clientId));
@@ -2595,7 +2992,7 @@ async function loadMembersForClientBar(select) {
   if (!_supabase) return;
   try {
     const { data, error } = await _supabase.from('membros')
-      .select('id, nome, email, centro_custo_id')
+      .select('id, nome, email')
       .eq('status', 'Ativo')
       .order('nome');
     if (error || !data) return;
@@ -2638,6 +3035,7 @@ function bindClientMassBar() {
 }
 
 async function saveMassTransfer() {
+  if (!isCurrentUserAdmin()) { toast('Apenas administradores podem transferir leads', 'error'); return; }
   const memberSelect = $('#massNewMember');
   const qualSelect = $('#massNewQualificador');
   const lostSel = $('#massLostReason');
@@ -2661,7 +3059,6 @@ async function saveMassTransfer() {
     if (memberId) {
       updates.membro_id = memberId;
       member = _membersCache?.find(m => m.id === memberId);
-      if (member?.centro_custo_id) updates.centro_custo_id = member.centro_custo_id;
     }
     if (lostReason) updates.status = lostReason;
 
@@ -2684,7 +3081,6 @@ async function saveMassTransfer() {
       if (client) {
         if (memberId) {
           client._membroId = memberId;
-          client._centroCustoId = member?.centro_custo_id || null;
         }
       }
     });
@@ -2888,6 +3284,7 @@ function meetingTypeLabel(type) {
 let calView = (sessionStorage.getItem('calViewMode') || 'month'); // day | week | month
 let calCurrentDate = new Date();  // always tracks the "focus" date
 let calNavBusy = false;
+let calEmpresaFilter = 'all';     // empresa filter for calendar
 
 let calendarEvents = {};
 function rebuildCalendarEvents() {
@@ -2898,6 +3295,15 @@ function rebuildCalendarEvents() {
   });
 }
 rebuildCalendarEvents();
+
+function getFilteredMeetings() {
+  if (calEmpresaFilter === 'all') return meetings;
+  return meetings.filter(m => {
+    if (!m.leadId) return false;
+    const lead = leads.find(l => String(l.id) === String(m.leadId));
+    return lead && lead._centroCustoId === calEmpresaFilter;
+  });
+}
 
 const MONTH_NAMES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const WEEKDAY_HEADERS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
@@ -2985,6 +3391,39 @@ function calGoToday() {
 }
 
 /* ---- RENDER ---- */
+
+function initCalEmpresaFilter() {
+  const select = document.getElementById('calEmpresaFilter');
+  if (!select) return;
+
+  const isAdmin = _userPermCache && _userPermCache.perfil === 'Administrador';
+  const empresas = isAdmin
+    ? centrosCustoData
+    : centrosCustoData.filter(cc => currentUser.centro_custo_ids?.includes(cc.id));
+
+  select.innerHTML = '<option value="all">Todas as Empresas</option>';
+  empresas.forEach(cc => {
+    const opt = document.createElement('option');
+    opt.value = cc.id;
+    opt.textContent = cc.nome;
+    select.appendChild(opt);
+  });
+
+  if (!isAdmin && empresas.length === 1) {
+    calEmpresaFilter = empresas[0].id;
+    select.value = empresas[0].id;
+  }
+
+  if (!select._calEmpresaBound) {
+    select._calEmpresaBound = true;
+    select.addEventListener('change', () => {
+      calEmpresaFilter = select.value;
+      renderCalendar();
+      renderCalUpcoming();
+    });
+  }
+}
+
 function renderCalendar() {
   const grid = $('#calGrid');
   const weekdays = $('#calWeekdays');
@@ -2992,13 +3431,20 @@ function renderCalendar() {
 
   updateCalTitle();
 
-  if (calView === 'month') renderMonthView(grid, weekdays);
-  else if (calView === 'week') renderWeekView(grid, weekdays);
-  else renderDayView(grid, weekdays);
+  const filteredMs = getFilteredMeetings();
+  const filteredEvents = {};
+  filteredMs.forEach(m => {
+    if (!filteredEvents[m.iso]) filteredEvents[m.iso] = [];
+    filteredEvents[m.iso].push({ id: m.id, color: m.color || meetingColor(m.type), title: m.title });
+  });
+
+  if (calView === 'month') renderMonthView(grid, weekdays, filteredEvents);
+  else if (calView === 'week') renderWeekView(grid, weekdays, filteredEvents, filteredMs);
+  else renderDayView(grid, weekdays, filteredEvents, filteredMs);
 }
 
 /* -- Month View -- */
-function renderMonthView(grid, weekdays) {
+function renderMonthView(grid, weekdays, eventsMap) {
   weekdays.style.display = '';
   const y = calCurrentDate.getFullYear();
   const m = calCurrentDate.getMonth();
@@ -3019,7 +3465,7 @@ function renderMonthView(grid, weekdays) {
   grid.className = 'cal-grid';
   grid.innerHTML = cells.map(c => {
     const isToday = c.iso === todayIso;
-    const events = c.iso ? calendarEvents[c.iso] || [] : [];
+    const events = c.iso ? (eventsMap || calendarEvents)[c.iso] || [] : [];
     const eventsHtml = events.map(e =>
       `<span class="cal-event" role="button" tabindex="0" data-iso="${c.iso}" data-meeting-id="${e.id}" style="background:${e.color}">${e.title}</span>`
     ).join('');
@@ -3029,7 +3475,7 @@ function renderMonthView(grid, weekdays) {
 }
 
 /* -- Week View -- */
-function renderWeekView(grid, weekdays) {
+function renderWeekView(grid, weekdays, eventsMap, ms) {
   weekdays.style.display = 'none';
   const weekStart = getWeekStart(calCurrentDate);
   const todayIso = getTodayIso();
@@ -3045,14 +3491,17 @@ function renderWeekView(grid, weekdays) {
   }
   html += '</div><div class="cal-week-body">';
 
+  const evtSource = eventsMap || calendarEvents;
+  const meetingSource = ms || meetings;
+
   for (const h of hours) {
     html += `<div class="cal-week-row"><div class="cal-week-time-gutter">${h}</div>`;
     for (let i = 0; i < 7; i++) {
       const d = new Date(weekStart); d.setDate(d.getDate()+i);
       const iso = isoFromDate(d);
       const hourNum = parseInt(h);
-      const evts = (calendarEvents[iso] || []).filter(e => {
-        const meeting = meetings.find(m => iso === m.iso && m.title === e.title);
+      const evts = (evtSource[iso] || []).filter(e => {
+        const meeting = meetingSource.find(m => iso === m.iso && m.title === e.title);
         if (!meeting || !meeting.time) return hourNum === 9;
         return parseInt(meeting.time.split(':')[0]) === hourNum;
       });
@@ -3066,10 +3515,12 @@ function renderWeekView(grid, weekdays) {
 }
 
 /* -- Day View -- */
-function renderDayView(grid, weekdays) {
+function renderDayView(grid, weekdays, eventsMap, ms) {
   weekdays.style.display = 'none';
   const iso = isoFromDate(calCurrentDate);
-  const events = calendarEvents[iso] || [];
+  const evtSource = eventsMap || calendarEvents;
+  const events = evtSource[iso] || [];
+  const meetingSource = ms || meetings;
   const hours = HOUR_LABELS;
 
   grid.className = 'cal-grid cal-grid-day';
@@ -3077,7 +3528,7 @@ function renderDayView(grid, weekdays) {
   for (const h of hours) {
     const hourNum = parseInt(h);
     const evts = events.filter(e => {
-      const meeting = meetings.find(m => m.iso === iso && m.title === e.title);
+      const meeting = meetingSource.find(m => m.iso === iso && m.title === e.title);
       if (!meeting || !meeting.time) return hourNum === 9;
       return parseInt(meeting.time.split(':')[0]) === hourNum;
     });
@@ -3317,17 +3768,14 @@ function initInteractions() {
     });
   });
 
-  // Toggles (settings)
-  $$('.switch').forEach(sw => {
-    sw.addEventListener('click', () => sw.classList.toggle('on'));
-  });
-
   // Settings nav
   $$('.settings-link').forEach(link => {
     link.addEventListener('click', (e) => {
       e.preventDefault();
       $$('.settings-link').forEach(l => l.classList.remove('active'));
       link.classList.add('active');
+      const tab = link.dataset.settingsTab;
+      if (tab) showSettingsTab(tab);
     });
   });
 
@@ -3384,6 +3832,12 @@ function initSidebarSwipe() {
 
   // Menu hamburger abre/fecha
   menuToggle?.addEventListener('click', () => {
+    if (isOpen()) closeSidebar(); else openSidebar();
+  });
+
+  // Pomodoro menu button
+  const pomoMenu = document.getElementById('pomoMenuToggle');
+  pomoMenu?.addEventListener('click', () => {
     if (isOpen()) closeSidebar(); else openSidebar();
   });
 
@@ -3590,9 +4044,23 @@ const cadences = [
   { id: 'pos-vendas',          label: 'GERAÇÃO DE CONTRATO',       short: 'Geração de Contrato' }
 ];
 
+function getVisibleCadences(centroCustoId) {
+  let visible = isCurrentUserAdmin() ? cadences : cadences.filter(c => c.id !== 'dados-ia');
+  if (centroCustoId && centroCustoId !== 'all') {
+    const linkedIds = vinculosCadencias
+      .filter(v => v.centro_custo_id === centroCustoId)
+      .map(v => v.cadencia_id);
+    if (linkedIds.length > 0) {
+      visible = visible.filter(c => linkedIds.includes(c.id));
+    }
+  }
+  return visible;
+}
+
 // Leads são carregados do Supabase na inicialização (ver boot)
 let leads = [];
 let vinculosServicos = [];
+let vinculosCadencias = [];
 
 /* ============================================
    CRM · SERVIÇOS DINÂMICOS
@@ -3603,20 +4071,27 @@ async function loadVinculosServicos() {
   if (error) { console.error('[Vinculos] Erro ao carregar vínculos:', error); return; }
   vinculosServicos = data || [];
 }
+
+async function loadVinculosCadencias() {
+  if (!_supabase) return;
+  const { data, error } = await _supabase.from('centro_custo_cadencias').select('*');
+  if (error) { console.error('[Vinculos] Erro ao carregar vínculos de cadências:', error); return; }
+  vinculosCadencias = data || [];
+}
 let _servicosLoaded = false;
 
-async function loadServiceChips() {
+async function loadServiceChips(empresaId) {
   const container = document.getElementById('leadServiceChips');
   if (!container) return;
 
   const servicos = await fetchServicosSupabase();
 
-  // Determinar qual empresa usar para filtrar os serviços
-  let empresaId = null;
-  if (currentUser.perfil === 'Administrador') {
-    empresaId = currentCrmEmpresaFilter !== 'all' ? currentCrmEmpresaFilter : null;
-  } else {
-    empresaId = currentUser.centro_custo_id;
+  if (!empresaId) {
+    if (currentUser.perfil === 'Administrador') {
+      empresaId = currentCrmEmpresaFilter !== 'all' ? currentCrmEmpresaFilter : null;
+    } else {
+empresaId = currentUser.centro_custo_ids?.[0] || null;
+    }
   }
 
   let filteredServicos = servicos;
@@ -3698,6 +4173,22 @@ function getActiveServiceChips() {
   return Array.from(container.querySelectorAll('.chip-toggle.active')).map(c => c.dataset.value);
 }
 
+function populateLeadEmpresaSelect() {
+  const select = document.getElementById('leadEmpresa');
+  if (!select) return;
+  const isAdmin = _userPermCache && _userPermCache.perfil === 'Administrador';
+  const empresas = isAdmin
+    ? centrosCustoData
+    : centrosCustoData.filter(cc => currentUser.centro_custo_ids?.includes(cc.id));
+  select.innerHTML = '<option value="">Selecione uma empresa...</option>';
+  empresas.forEach(cc => {
+    const opt = document.createElement('option');
+    opt.value = cc.id;
+    opt.textContent = cc.nome;
+    select.appendChild(opt);
+  });
+}
+
 let activeCadenceFilter = null;
 let currentCrmEmpresaFilter = 'all';
 let leadSearchQuery = '';
@@ -3744,7 +4235,7 @@ function getVisibleLeads() {
 
 function cadencesSummary() {
   const allLeads = getSearchFilteredLeads();
-  return cadences.map(c => {
+  return getVisibleCadences(currentCrmEmpresaFilter).map(c => {
     const list = allLeads.filter(l => l.status === c.id);
     const value = list.reduce((s, l) => s + (l.honorarios || 0), 0);
     return { id: c.id, label: c.short, count: list.length, value };
@@ -3815,27 +4306,63 @@ function getSearchFilteredLeads() {
 }
 
 function initCrmEmpresaFilter() {
-  const select = document.getElementById('crmEmpresaFilter');
-  if (!select) return;
+  const btn = document.getElementById('crmEmpresaFilterBtn');
+  const dropdown = document.getElementById('crmEmpresaDropdown');
+  if (!btn || !dropdown) return;
 
-  const currentVal = select.value;
-  select.innerHTML = '<option value="all">Todas as Empresas</option>';
-  centrosCustoData.forEach(cc => {
-    const opt = document.createElement('option');
-    opt.value = cc.id;
-    opt.textContent = cc.nome;
-    select.appendChild(opt);
+  const isAdmin = _userPermCache && _userPermCache.perfil === 'Administrador';
+  const empresas = isAdmin
+    ? centrosCustoData
+    : centrosCustoData.filter(cc => currentUser.centro_custo_ids?.includes(cc.id));
+
+  // Membro com uma única empresa: já define a empresa vinculada ao perfil
+  if (!isAdmin && empresas.length === 1) {
+    currentCrmEmpresaFilter = empresas[0].id;
+  } else if (currentCrmEmpresaFilter !== 'all' && !empresas.some(cc => cc.id === currentCrmEmpresaFilter)) {
+    currentCrmEmpresaFilter = 'all';
+  }
+
+  dropdown.innerHTML = (isAdmin || empresas.length !== 1)
+    ? '<button class="filter-dropdown-item" data-cc="all">Todas as Empresas</button>'
+    : '';
+  empresas.forEach(cc => {
+    const item = document.createElement('button');
+    item.className = 'filter-dropdown-item';
+    item.dataset.cc = cc.id;
+    item.textContent = cc.nome;
+    dropdown.appendChild(item);
   });
-  select.value = currentVal;
 
-  if (!select._crmEmpresaBound) {
-    select._crmEmpresaBound = true;
-    select.addEventListener('change', () => {
-      currentCrmEmpresaFilter = select.value;
+  const label = currentCrmEmpresaFilter === 'all'
+    ? 'Todas as Empresas'
+    : (centrosCustoData.find(cc => cc.id === currentCrmEmpresaFilter)?.nome || 'Todas as Empresas');
+  btn.innerHTML = `<i data-lucide="building-2"></i> ${label} <i data-lucide="chevron-down"></i>`;
+
+  if (!btn._crmEmpresaBound) {
+    btn._crmEmpresaBound = true;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      $$('.filter-dropdown').forEach(d => { if (d !== dropdown) d.classList.remove('open'); });
+      dropdown.classList.toggle('open');
+    });
+    dropdown.addEventListener('click', (e) => {
+      const item = e.target.closest('.filter-dropdown-item');
+      if (!item) return;
+      e.stopPropagation();
+      const val = item.dataset.cc || 'all';
+      currentCrmEmpresaFilter = val;
+      dropdown.classList.remove('open');
+
+      const newLabel = val === 'all'
+        ? 'Todas as Empresas'
+        : (centrosCustoData.find(cc => cc.id === val)?.nome || 'Todas as Empresas');
+      btn.innerHTML = `<i data-lucide="building-2"></i> ${newLabel} <i data-lucide="chevron-down"></i>`;
+      initIcons();
       loadServiceChips();
       renderAll();
     });
   }
+  initIcons();
 }
 
 let _membersCache = null;
@@ -3846,7 +4373,7 @@ async function loadMembersForTransfer(currentMembroId) {
 
   if (!_membersCache) {
     const { data, error } = await _supabase.from('membros')
-      .select('id, nome, email, centro_custo_id')
+      .select('id, nome, email')
       .eq('status', 'Ativo')
       .order('nome');
     if (error || !data) {
@@ -3873,6 +4400,7 @@ async function loadMembersForTransfer(currentMembroId) {
 }
 
 async function transferLead() {
+  if (!isCurrentUserAdmin()) { toast('Apenas administradores podem transferir leads', 'error'); return; }
   const select = $('#leadTransferMember');
   const newOwnerId = select?.value;
   if (!newOwnerId || !currentLeadId) return;
@@ -3892,13 +4420,12 @@ async function transferLead() {
 
   try {
     const { error } = await _supabase.from('leads')
-      .update({ membro_id: newOwnerId, centro_custo_id: newMember?.centro_custo_id || null })
+      .update({ membro_id: newOwnerId })
       .eq('id', String(currentLeadId));
 
     if (error) throw error;
 
     lead._membroId = newOwnerId;
-    lead._centroCustoId = newMember?.centro_custo_id || null;
     lead.responsavel = newMemberName;
     lead.lastTouch = new Date().toLocaleDateString('pt-BR');
     if (!lead.history) lead.history = [];
@@ -3941,7 +4468,7 @@ function renderKanban() {
 
   const allLeads = getSearchFilteredLeads();
 
-  board.innerHTML = cadences.map(c => {
+  board.innerHTML = getVisibleCadences(currentCrmEmpresaFilter).map(c => {
     const list = allLeads.filter(l => l.status === c.id);
     const total = list.length;
     const isHighlighted = activeCadenceFilter === c.id;
@@ -4284,6 +4811,28 @@ function openNewLeadModal() {
   loadServiceChips();
   setServiceChipsActive([]);
 
+  // Popula dropdown de empresa
+  populateLeadEmpresaSelect();
+  const empresaSelect = $('#leadEmpresa');
+  if (empresaSelect) {
+    let preSelected = null;
+    if (currentCrmEmpresaFilter !== 'all') {
+      preSelected = currentCrmEmpresaFilter;
+    } else if (currentUser.centro_custo_ids?.length > 0) {
+      preSelected = currentUser.centro_custo_ids[0];
+    }
+    if (preSelected && [...empresaSelect.options].some(o => o.value === preSelected)) {
+      empresaSelect.value = preSelected;
+      loadServiceChips(preSelected);
+    }
+    if (!empresaSelect._leadEmpresaBound) {
+      empresaSelect._leadEmpresaBound = true;
+      empresaSelect.addEventListener('change', () => {
+        loadServiceChips(empresaSelect.value || undefined);
+      });
+    }
+  }
+
   // Limpa erros
   $$('.form-error').forEach(e => e.textContent = '');
   $$('.invalid').forEach(e => e.classList.remove('invalid'));
@@ -4386,6 +4935,22 @@ function openLeadModal(id) {
 
   // Bind honorários mask
   bindHonMask();
+
+  // Popula dropdown de empresa e seleciona a do lead
+  populateLeadEmpresaSelect();
+  const empresaSelect = $('#leadEmpresa');
+  if (empresaSelect) {
+    const leadEmpresaId = lead._centroCustoId || '';
+    if (leadEmpresaId && [...empresaSelect.options].some(o => o.value === leadEmpresaId)) {
+      empresaSelect.value = leadEmpresaId;
+    }
+    if (!empresaSelect._leadEmpresaBound) {
+      empresaSelect._leadEmpresaBound = true;
+      empresaSelect.addEventListener('change', () => {
+        loadServiceChips(empresaSelect.value || undefined);
+      });
+    }
+  }
 
   // Chip groups — serviços dinâmicos (recarrega com filtro de empresa)
   loadServiceChips().then(() => {
@@ -4579,6 +5144,7 @@ async function saveLead() {
   if (!fields.telefone)       errors.telefone = 'Obrigatório';
   else if (!validarTelefone(fields.telefone)) errors.telefone = 'Telefone inválido';
   if (!fields.dataEvento)     errors.dataEvento = 'Obrigatório';
+  if (!fields.empresaId)      errors.empresaId = 'Selecione uma empresa';
   if (!fields.tiposServico || fields.tiposServico.length === 0) {
     errors.tiposServico = 'Selecione ao menos um serviço';
   }
@@ -4647,7 +5213,7 @@ async function saveLead() {
       _ownerId: currentUser.id || null,
       _createdBy: currentUser.id || null,
       _membroId: null,
-      _centroCustoId: currentUser.centro_custo_id || null,
+      _centroCustoId: fields.empresaId || null,
       status: 'dados-ia',
       thermal: fields.thermal || 'frio',
       honorarios: fields.honorarios,
@@ -4697,7 +5263,7 @@ async function saveLead() {
         tipo_servico_id: newLead._tipoServicoIds.length > 0 ? newLead._tipoServicoIds : null,
         cadencia_id: newLead._cadenciaId || null,
         owner_id: currentUser.id || null,
-        centro_custo_id: currentUser.centro_custo_id || null
+        centro_custo_id: fields.empresaId || null
       });
       if (result && result[0] && result[0].id) {
         newLead.id = result[0].id;
@@ -5593,7 +6159,7 @@ function renderCalUpcoming() {
   if (!wrap) return;
   const today = new Date(); today.setHours(0,0,0,0);
   const weekLater = new Date(today); weekLater.setDate(weekLater.getDate() + 7);
-  const items = meetings
+  const items = getFilteredMeetings()
     .filter(m => { const d = parseISODate(m.iso); return d >= today && d <= weekLater; })
     .sort((a,b) => (a.iso+a.time).localeCompare(b.iso+b.time))
     .slice(0, 8);
@@ -5718,6 +6284,19 @@ function renderDashAll(force = false) {
     if (dashCcFilter !== 'all') {
       filteredLeads = leads.filter(l => l._centroCustoId === dashCcFilter);
     }
+    // Se NÃO é Administrador, filtrar apenas leads do próprio usuário
+    const isAdmin = _userPermCache && _userPermCache.perfil === 'Administrador';
+    if (!isAdmin) {
+      const userId = getCurrentUserId();
+      if (userId) {
+        filteredLeads = filteredLeads.filter(l => {
+          const membroId = l._membroId || l._ownerId || l._createdBy;
+          const qualificadorId = l._qualificadorId;
+          if (membroId === userId || qualificadorId === userId) return true;
+          return false;
+        });
+      }
+    }
     const metrics = computeAllMetrics(filteredLeads);
     payload = {
       ...metrics,
@@ -5765,7 +6344,7 @@ function populateFilterSelects() {
   const selR = document.getElementById('dashFilterResponsavel');
   if (selR) selR.innerHTML = '<option value="">Todos os responsáveis</option>' + resps.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join('');
   const selC = document.getElementById('dashFilterCadencia');
-  if (selC) selC.innerHTML = '<option value="">Todas as cadências</option>' + cadences.map(c => `<option value="${c.id}">${escapeHtml(c.label)}</option>`).join('');
+  if (selC) selC.innerHTML = '<option value="">Todas as cadências</option>' + getVisibleCadences().map(c => `<option value="${c.id}">${escapeHtml(c.label)}</option>`).join('');
   _selectsPopulated = true;
 }
 
@@ -6850,7 +7429,20 @@ function refreshDashboard() {
   if (dashCcFilter !== 'all') {
     filteredLeads = leads.filter(l => l._centroCustoId === dashCcFilter);
   }
-  const filtered = applyPeriod(filteredLeads, { start, end });
+  // Se NÃO é Administrador, filtrar apenas leads do próprio usuário
+  const isAdmin = _userPermCache && _userPermCache.perfil === 'Administrador';
+  if (!isAdmin) {
+    const userId = getCurrentUserId();
+    if (userId) {
+      filteredLeads = filteredLeads.filter(l => {
+        const membroId = l._membroId || l._ownerId || l._createdBy;
+        const qualificadorId = l._qualificadorId;
+        if (membroId === userId || qualificadorId === userId) return true;
+        return false;
+      });
+    }
+  }
+  // KPIs: filtrados pelo período selecionado (para todos os perfis)
   const metrics = computeAllMetrics(filteredLeads);
   const fm = metrics.metrics;
   renderKpiTotal(fm.total);
@@ -6858,6 +7450,7 @@ function refreshDashboard() {
   renderKpiAndamento(fm.andamento, fm.total);
   renderKpiPendentes(fm.pendente, fm.total);
   renderSparkTotal(fm.total.count);
+  // Gráficos: sempre filtrados por período
   renderFunnel(computeCadenceFunnel(metrics.current));
   renderOrigins(computeOrigins(metrics.current));
   renderTemperatura(computeTemperatures(metrics.current));
@@ -7239,8 +7832,8 @@ function rotinaGetFiltered() {
     if (i.done && !rotinaFilters.concluido) return false;
     if (!i.done && !rotinaFilters[i.type]) return false;
     
-    // Se não é admin, filtrar apenas rotinas do próprio usuário (assumindo que o campo membro_id existe)
-    if (!canViewAll && userId && i._membroId && i._membroId !== userId) return false;
+    // Se não é admin, exibir apenas rotinas associadas ao próprio usuário
+    if (!canViewAll && userId && i._membroId !== userId) return false;
     return true;
   });
 }
@@ -8494,6 +9087,11 @@ let _calibSelectedMember = null;
 let _calibMembersCache = [];
 
 function initCalibragem() {
+  if (!isCurrentUserAdmin()) {
+    console.warn('[Calibragem] Acesso negado: usuário não é Administrador');
+    setActivePage('home');
+    return;
+  }
   loadCalibragemMembers();
   bindCalibragemTabs();
   bindCalibragemReport();
@@ -9409,20 +10007,16 @@ function initDashCcFilter() {
 
 function populateDashCcFilter() {
   const dropdown = document.getElementById('dashCcDropdown');
-  const adminSelect = document.getElementById('adminMemberCentroCusto');
   
   let html = '<button class="filter-dropdown-item" data-cc="all">Todos</button>';
-  let selectHtml = '<option value="">Selecione um Centro de Custo (Opcional)</option>';
   
   if (centrosCustoData) {
     centrosCustoData.forEach(cc => {
       html += `<button class="filter-dropdown-item" data-cc="${cc.id}">${escapeHtml(cc.nome)}</button>`;
-      selectHtml += `<option value="${cc.id}">${escapeHtml(cc.nome)}</option>`;
     });
   }
   
   if (dropdown) dropdown.innerHTML = html;
-  if (adminSelect) adminSelect.innerHTML = selectHtml;
 }
 
 /* ── Hook: filtrar leads por centro de custo no dashboard ── */
@@ -9508,8 +10102,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('[Boot] Erro ao carregar vínculos de serviços:', err);
   }
 
+  // Carregar vínculos de cadências por empresa
+  try {
+    await loadVinculosCadencias();
+    console.log('[Boot] Vínculos de cadências carregados:', vinculosCadencias.length);
+  } catch (err) {
+    console.error('[Boot] Erro ao carregar vínculos de cadências:', err);
+  }
+
   // Inicializar filtro de empresa no CRM
   initCrmEmpresaFilter();
+
+  // Inicializar filtro de empresa no Calendário
+  initCalEmpresaFilter();
 
   // Carregar chips de serviços no modal
   try {
@@ -9548,6 +10153,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch (err) {
     console.error('[Boot] Erro ao carregar clientes do Supabase:', err);
   }
+  _clientsLoaded = true;
 
   populateServiceFilter();
   populateCadenceFilter();

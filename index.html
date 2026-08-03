@@ -415,9 +415,15 @@
                   <i data-lucide="search"></i>
                   <input id="crmSearch" type="text" placeholder="Buscar lead por nome ou telefone..." />
                 </div>
-                <select id="crmEmpresaFilter" style="height:36px;border-radius:8px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);padding:0 12px;font-size:13px;cursor:pointer;min-width:180px;max-width:220px">
-                  <option value="all">Todas as Empresas</option>
-                </select>
+                <div class="filter-dropdown-wrap">
+                  <button class="filter-btn" id="crmEmpresaFilterBtn" data-filter-trigger="empresa">
+                    <i data-lucide="building-2"></i> Todas as Empresas
+                    <i data-lucide="chevron-down"></i>
+                  </button>
+                  <div class="filter-dropdown" id="crmEmpresaDropdown">
+                    <button class="filter-dropdown-item" data-cc="all">Todas as Empresas</button>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="cadence-grid" id="cadenceGrid">
@@ -561,8 +567,11 @@
               <button class="icon-btn" id="calNext" aria-label="Próximo mês"><i data-lucide="chevron-right"></i></button>
               <button class="link-btn" id="calToday">Hoje</button>
             </div>
-            <div class="cal-views">
-              <div class="seg-control" role="tablist" aria-label="Modo de visualização">
+      <div class="cal-views">
+        <select id="calEmpresaFilter" class="cal-empresa-filter" aria-label="Filtrar por empresa">
+          <option value="all">Todas as Empresas</option>
+        </select>
+        <div class="seg-control" role="tablist" aria-label="Modo de visualização">
                 <button class="seg" role="tab" data-view="day" aria-label="Mostrar dia">Dia</button>
                 <button class="seg" role="tab" data-view="week" aria-label="Mostrar semana">Semana</button>
                 <button class="seg active" role="tab" data-view="month" aria-selected="true" aria-label="Mostrar mês">Mês</button>
@@ -739,22 +748,19 @@
         <section class="page" id="page-configuracoes">
           <div class="settings-layout">
             <aside class="settings-nav">
-              <a href="#" class="settings-link active">
+              <a href="#" class="settings-link active" data-settings-tab="perfil">
                 <i data-lucide="user"></i> Perfil
               </a>
-              <a href="#" class="settings-link">
+              <a href="#" class="settings-link" data-settings-tab="equipe">
                 <i data-lucide="users-round"></i> Equipe
               </a>
-              <a href="#" class="settings-link">
-                <i data-lucide="bell"></i> Notificações
-              </a>
-              <a href="#" class="settings-link">
+              <a href="#" class="settings-link" data-settings-tab="contabeis" style="display:none">
                 <i data-lucide="calculator"></i> Parâmetros contábeis
               </a>
-              <a href="#" class="settings-link">
+              <a href="#" class="settings-link" data-settings-tab="seguranca" style="display:none">
                 <i data-lucide="shield"></i> Segurança
               </a>
-              <a href="#" class="settings-link">
+              <a href="#" class="settings-link" data-settings-tab="plano" style="display:none">
                 <i data-lucide="credit-card"></i> Plano
               </a>
             </aside>
@@ -770,30 +776,31 @@
 
                 <div class="profile-row">
                   <div class="profile-photo">
-                    <div class="big-avatar">CS</div>
-                    <button class="link-btn"><i data-lucide="camera"></i> Alterar foto</button>
+                    <div class="big-avatar" id="settingsAvatar">CS</div>
+                    <button class="link-btn" id="settingsAvatarBtn"><i data-lucide="camera"></i> Alterar foto</button>
+                    <input type="file" id="settingsAvatarInput" accept="image/*" style="display:none" />
                   </div>
                   <div class="profile-form">
                     <div class="form-grid">
                       <div class="form-group">
                         <label>Nome completo</label>
-                        <input type="text" value="Camila Souza" />
+                        <input type="text" id="settingsNome" placeholder="Seu nome" />
                       </div>
                       <div class="form-group">
                         <label>Cargo</label>
-                        <input type="text" value="Contadora Sênior" />
+                        <input type="text" id="settingsCargo" placeholder="Seu cargo" />
                       </div>
                       <div class="form-group">
                         <label>E-mail</label>
-                        <input type="email" value="camila@bluecontabilidade.com.br" />
+                        <input type="email" id="settingsEmail" placeholder="seu@email.com" />
                       </div>
                       <div class="form-group">
                         <label>Telefone</label>
-                        <input type="tel" value="(11) 98765-4321" />
+                        <input type="tel" id="settingsTelefone" placeholder="(11) 99999-9999" />
                       </div>
                       <div class="form-group full">
                         <label>Bio</label>
-                        <textarea rows="3">Contadora apaixonada por transformar números em decisões estratégicas. Atendimento consultivo para PMEs.</textarea>
+                        <textarea id="settingsBio" rows="3" placeholder="Fale sobre você..."></textarea>
                       </div>
                     </div>
                     <div class="form-actions">
@@ -804,90 +811,22 @@
                 </div>
               </div>
 
-              <div class="card">
+              <div class="card" id="settingsTeamCard">
                 <div class="card-header">
                   <div>
                     <h3 class="card-title">Equipe</h3>
                     <p class="card-sub">Gerencie quem tem acesso ao CRM</p>
                   </div>
-                  <button class="btn-primary small">
+                  <button class="btn-primary small" id="settingsConviteBtn" style="display:none">
                     <i data-lucide="user-plus"></i> Convidar
                   </button>
                 </div>
-                <ul class="team-list">
-                  <li class="team-item">
-                    <div class="avatar avatar-blue">CS</div>
-                    <div>
-                      <p class="client-name">Camila Souza</p>
-                      <p class="client-cnpj">camila@bluecontabilidade.com.br</p>
-                    </div>
-                    <span class="tag tag-blue">Admin</span>
-                  </li>
-                  <li class="team-item">
-                    <div class="avatar avatar-green">RF</div>
-                    <div>
-                      <p class="client-name">Rafaela Ferreira</p>
-                      <p class="client-cnpj">rafaela@bluecontabilidade.com.br</p>
-                    </div>
-                    <span class="tag tag-green">Contadora</span>
-                  </li>
-                  <li class="team-item">
-                    <div class="avatar avatar-amber">JP</div>
-                    <div>
-                      <p class="client-name">João Pedro</p>
-                      <p class="client-cnpj">joao@bluecontabilidade.com.br</p>
-                    </div>
-                    <span class="tag tag-amber">Auxiliar</span>
-                  </li>
-                  <li class="team-item">
-                    <div class="avatar avatar-purple">MA</div>
-                    <div>
-                      <p class="client-name">Marina Alves</p>
-                      <p class="client-cnpj">marina@bluecontabilidade.com.br</p>
-                    </div>
-                    <span class="tag tag-purple">Atendimento</span>
-                  </li>
+                <ul class="team-list" id="settingsTeamList">
+                  <div class="client-loading" style="padding:24px;text-align:center;color:var(--muted-text)">Carregando equipe...</div>
                 </ul>
               </div>
 
-              <div class="card">
-                <div class="card-header">
-                  <div>
-                    <h3 class="card-title">Notificações</h3>
-                    <p class="card-sub">Como você quer ser avisado</p>
-                  </div>
-                </div>
-                <ul class="toggle-list">
-                  <li class="toggle-item">
-                    <div>
-                      <p class="toggle-title">E-mail · Vencimentos de obrigações</p>
-                      <p class="toggle-desc">Receber alerta 3 dias antes de cada obrigação</p>
-                    </div>
-                    <label class="switch on"><span></span></label>
-                  </li>
-                  <li class="toggle-item">
-                    <div>
-                      <p class="toggle-title">WhatsApp · Novos clientes</p>
-                      <p class="toggle-desc">Avisar quando um cliente entrar em implantação</p>
-                    </div>
-                    <label class="switch on"><span></span></label>
-                  </li>
-                  <li class="toggle-item">
-                    <div>
-                      <p class="toggle-title">Sistema · Reuniões do dia</p>
-                      <p class="toggle-desc">Resumo diário às 08:00 com a agenda</p>
-                    </div>
-                    <label class="switch on"><span></span></label>
-                  </li>
-                  <li class="toggle-item">
-                    <div>
-                      <p class="toggle-title">E-mail · Inadimplência</p>
-                      <p class="toggle-desc">Notificar clientes com mais de 15 dias em atraso</p>
-                    </div>
-                    <label class="switch"><span></span></label>
-                  </li>
-                </ul>
-              </div>
+
             </div>
           </div>
         </section>
@@ -898,7 +837,7 @@
             <!-- Integrated Header -->
             <header class="pomo-header">
               <div class="pomo-header-left">
-                <button class="pomo-hdr-btn" title="Menu">
+                <button class="pomo-hdr-btn" id="pomoMenuToggle" title="Menu">
                   <i data-lucide="menu"></i>
                 </button>
                 <div>
@@ -1394,6 +1333,7 @@
                   <tr>
                     <th>Nome da Empresa</th>
                     <th>Serviços</th>
+                    <th>Cadências</th>
                     <th>Membros</th>
                     <th>Criação</th>
                     <th>Ações</th>
@@ -1459,14 +1399,23 @@
                 <p class="perm-group-label">Marque os serviços que pertencem a esta empresa</p>
                 <div class="perm-checks-grid" id="empresaServicosChecks">
                   <!-- preenchido via JS -->
-                </div>
               </div>
+            </div>
 
               <!-- Vínculo de Membros -->
               <div class="admin-form-section">
                 <h3 class="admin-form-section-title">Vínculo de Membros</h3>
                 <p class="perm-group-label">Marque os membros que pertencem a esta empresa</p>
                 <div class="perm-checks-grid" id="empresaMembrosChecks">
+                  <!-- preenchido via JS -->
+                </div>
+              </div>
+
+              <!-- Vínculo de Cadências -->
+              <div class="admin-form-section">
+                <h3 class="admin-form-section-title">Vínculo de Cadências</h3>
+                <p class="perm-group-label">Marque as cadências (etapas do funil) vinculadas a esta empresa</p>
+                <div class="perm-checks-grid" id="empresaCadenciasChecks">
                   <!-- preenchido via JS -->
                 </div>
               </div>
@@ -1626,12 +1575,11 @@
                       <option value="TI">TI</option>
                     </select>
                   </div>
-                  <div class="form-group full">
-                    <label>Centro de Custo</label>
-                    <select id="adminMemberCentroCusto">
-                      <option value="">Selecione um Centro de Custo (Opcional)</option>
-                      <!-- Preenchido via JS -->
-                    </select>
+                  <div class="form-group full" id="adminMemberCcSection" style="display:none">
+                    <label>Vínculo de Empresas</label>
+                    <div class="perm-checks-grid" id="adminMemberCcChecks">
+                      <!-- Preenchido via JS no modo edição -->
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2294,6 +2242,14 @@
             <label>Data do Evento <span class="req">*</span></label>
             <input type="date" name="dataEvento" required />
             <span class="form-error" data-error="dataEvento"></span>
+          </div>
+
+          <div class="form-group full">
+            <label>Empresa <span class="req">*</span></label>
+            <select name="empresaId" id="leadEmpresa" required>
+              <option value="">Selecione uma empresa...</option>
+            </select>
+            <span class="form-error" data-error="empresaId"></span>
           </div>
 
           <div class="form-group full">

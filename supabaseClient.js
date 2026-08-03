@@ -3,8 +3,8 @@
    Configuração e helpers para integração
    ============================================ */
 
-const SUPABASE_URL = 'https://wozwysgubvqxczyjrmtn.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indvend5c2d1YnZxeGN6eWpybXRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0OTY0NzcsImV4cCI6MjA5NjA3MjQ3N30.JjcYLaCBhtoVpbjmRs6vQN4V8lUZ00hgU92f0o0T-IM';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://wozwysgubvqxczyjrmtn.supabase.co';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indvend5c2d1YnZxeGN6eWpybXRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0OTY0NzcsImV4cCI6MjA5NjA3MjQ3N30.JjcYLaCBhtoVpbjmRs6vQN4V8lUZ00hgU92f0o0T-IM';
 
 let _supabase = null;
 if (window.supabase && window.supabase.createClient) {
@@ -183,8 +183,8 @@ async function fetchLeadsSupabase(filterMemberId) {
     .order('created_at', { ascending: false });
 
   if (filterMemberId) {
-    console.log('[Supabase] Filtrando leads por membro_id/qualificador_id:', filterMemberId);
-    q = q.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId);
+    console.log('[Supabase] Filtrando leads por membro_id/qualificador_id/owner_id/created_by:', filterMemberId);
+    q = q.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId + ',owner_id.eq.' + filterMemberId + ',created_by.eq.' + filterMemberId);
   }
 
   let { data, error } = await q;
@@ -518,8 +518,8 @@ async function fetchClientsSupabase(filterMemberId) {
   let leadsQuery = _supabase.from('leads').select('*, membros!membro_id(nome)').order('created_at', { ascending: false });
 
   if (filterMemberId) {
-    console.log('[Supabase-Clientes] Aplicando filtro membro_id/qualificador_id:', filterMemberId);
-    leadsQuery = leadsQuery.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId);
+    console.log('[Supabase-Clientes] Aplicando filtro membro_id/qualificador_id/owner_id/created_by:', filterMemberId);
+    leadsQuery = leadsQuery.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId + ',owner_id.eq.' + filterMemberId + ',created_by.eq.' + filterMemberId);
   } else {
     console.log('[Supabase-Clientes] SEM FILTRO — retornando TODOS os leads');
   }
@@ -587,6 +587,9 @@ async function fetchClientsSupabase(filterMemberId) {
       observacoes: row.observacoes || '',
       _membroId: row.membro_id || null,
       _membroNome: membroNome,
+      _qualificadorId: row.qualificador_id || null,
+      _ownerId: row.owner_id || null,
+      _createdBy: row.created_by || null,
       _cadenciaId: row.cadencia_id || null,
       _centroCustoId: row.centro_custo_id || null,
       _centroCustoNome: ''

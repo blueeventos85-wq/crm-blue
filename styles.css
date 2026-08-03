@@ -1348,11 +1348,13 @@ svg.lucide.lg { width: 22px; height: 22px; }
   top: calc(100% + 6px);
   left: 0;
   min-width: 240px;
+  width: max-content;
+  max-width: min(90vw, 340px);
   background: var(--card-bg);
   border: 1px solid var(--gray-200);
   border-radius: var(--radius);
   box-shadow: var(--shadow-lg);
-  z-index: 50;
+  z-index: 100;
   display: none;
   flex-direction: column;
   padding: 6px;
@@ -1370,6 +1372,15 @@ svg.lucide.lg { width: 22px; height: 22px; }
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.12s;
+  white-space: nowrap;
+}
+
+/* Dropdown de empresas do CRM: ancorado à direita do botão (expande para a
+   esquerda), evitando o corte pela borda direita da tela */
+#crmEmpresaDropdown {
+  left: auto;
+  right: 0;
+  z-index: 100;
 }
 .filter-dropdown-item:hover { background: var(--primary-blue-soft); color: var(--primary-blue); }
 .filter-dropdown-item[data-svc="all"] { font-weight: 600; border-bottom: 1px solid var(--gray-100); margin-bottom: 2px; }
@@ -1446,11 +1457,14 @@ svg.lucide.lg { width: 22px; height: 22px; }
   flex-direction: row;
   align-items: center;
   padding: 14px 20px;
-  gap: 16px;
+  gap: 20px;
+}
+.client-grid.client-grid-list .client-card.has-admin-actions {
+  padding-right: 195px;
 }
 .client-grid.client-grid-list .client-card-head {
-  flex: 0 0 auto;
-  min-width: 220px;
+  flex: 0 0 180px;
+  min-width: 0;
 }
 .client-grid.client-grid-list .client-card-meta {
   flex: 1;
@@ -1458,10 +1472,30 @@ svg.lucide.lg { width: 22px; height: 22px; }
   margin-top: 0;
   padding: 0;
   flex-direction: row;
-  gap: 24px;
+  align-items: center;
+  gap: 20px;
+  min-width: 0;
 }
 .client-grid.client-grid-list .client-card-meta .row {
   flex: 0 0 auto;
+}
+.client-grid.client-grid-list .client-card-meta .row:nth-child(1) {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 280px;
+}
+.client-grid.client-grid-list .client-card-meta .row:nth-child(2) {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.client-grid.client-grid-list .client-card-meta .client-card-svc-val {
+  justify-content: flex-start;
+}
+.client-grid.client-grid-list .lead-card-member-badge {
+  flex: 0 0 auto;
+  margin-top: 0;
+  margin-left: auto;
+  white-space: nowrap;
 }
 .client-grid.client-grid-list .client-card-foot {
   margin-top: 0;
@@ -1631,6 +1665,22 @@ svg.lucide.lg { width: 22px; height: 22px; }
 }
 
 .cal-views { display: flex; gap: 12px; align-items: center; }
+
+.cal-empresa-filter {
+  padding: 8px 12px;
+  border: 1px solid var(--gray-300);
+  border-radius: 8px;
+  background: white;
+  font: 500 13px 'Inter', sans-serif;
+  color: var(--gray-700);
+  cursor: pointer;
+  outline: none;
+  min-width: 160px;
+}
+.cal-empresa-filter:focus {
+  border-color: var(--primary-blue);
+  box-shadow: 0 0 0 3px rgba(22, 91, 255, 0.12);
+}
 
 .seg-control {
   display: inline-flex;
@@ -2353,7 +2403,7 @@ svg.lucide.lg { width: 22px; height: 22px; }
 .cadence-section {
   margin-bottom: 32px;
   max-width: 100%;
-  overflow-x: auto;
+  overflow-x: visible;
 }
 .kanban-section { margin-bottom: 32px; }
 
@@ -8010,7 +8060,8 @@ textarea:focus-visible,
   border-radius: var(--radius);
   box-shadow: var(--shadow-lg);
   z-index: 100;
-  overflow: hidden;
+  max-height: 320px;
+  overflow-y: auto;
 }
 
 .filter-dropdown.open { display: block; }

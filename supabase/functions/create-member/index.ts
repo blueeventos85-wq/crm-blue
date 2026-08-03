@@ -12,9 +12,9 @@ serve(async (req) => {
   }
 
   try {
-    const { name, email, password, role, team, pessoa, cpf, birth, phone, notifEmail, notifWhats, notifSound, centro_custo_id } = await req.json()
+    const { name, email, password, role, team, pessoa, cpf, birth, phone, notifEmail, notifWhats, notifSound } = await req.json()
 
-    console.log('[create-member] Payload recebido:', { name, email, role, team, centro_custo_id })
+    console.log('[create-member] Payload recebido:', { name, email, role, team })
 
     if (!name || !email || !password) {
       return new Response(JSON.stringify({ error: 'Nome, e-mail e senha são obrigatórios' }), {
@@ -50,7 +50,7 @@ serve(async (req) => {
     const userId = authData.user.id
     console.log('[create-member] Novo usuário criado no Auth:', userId)
 
-    // 2. Inserir registro na tabela membros com o NOVO userId
+    // 2. Inserir registro na tabela membros com o NOVO userId (sem centro_custo_id)
     const memberPayload = {
       nome: name,
       email,
@@ -64,8 +64,7 @@ serve(async (req) => {
       notificacao_whatsapp: notifWhats === 'Sim',
       notificacao_som: notifSound === 'Sim',
       status: 'Ativo',
-      auth_user_id: userId,
-      centro_custo_id: centro_custo_id || null
+      auth_user_id: userId
     }
 
     const { data: inserted, error: insertError } = await supabaseAdmin
