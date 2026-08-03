@@ -1868,6 +1868,20 @@ async function loadUserPermissions() {
     }
   }
 
+  // Popula currentUser.centro_custo_ids a partir do pivot caso ainda esteja
+  // vazio (loadMemberFromAuth pode ter falhado e a resolução acima ter sido a
+  // única fonte). Sem isso os filtros de empresa ficam vazios.
+  if (currentUser.id && (!currentUser.centro_custo_ids || currentUser.centro_custo_ids.length === 0)) {
+    const { data: ccData, error: ccErr } = await _supabase.from('membro_centros_custo')
+      .select('centro_custo_id').eq('membro_id', currentUser.id);
+    if (ccErr) {
+      console.warn('[Perm] Erro ao carregar centros de custo do membro:', ccErr.message);
+    } else {
+      currentUser.centro_custo_ids = (ccData || []).map(r => r.centro_custo_id);
+      console.log('[Perm] currentUser.centro_custo_ids populados:', currentUser.centro_custo_ids);
+    }
+  }
+
   // Step 2: Query permissions
   console.log('[Perm] Querying membros_permissoes for membro_id:', currentUser.id);
   try {
@@ -1883,6 +1897,7 @@ async function loadUserPermissions() {
     }
     console.log('[Perm] Permissions loaded:', JSON.stringify(data));
     _userPermCache = data;
+    currentUser.perfil = data.perfil || currentUser.perfil;
     return data;
   } catch (err) {
     console.error('[Perm] Exception:', err);
@@ -2554,7 +2569,7 @@ function initCadenceFilter() {
 function populateEmpresaFilter() {
   const dropdown = $('#clienteCcDropdown');
   if (!dropdown) return;
-  const isAdmin = _userPermCache && _userPermCache.perfil === 'Administrador';
+  const isAdmin = isCurrentUserAdmin();
   const empresas = isAdmin
     ? centrosCustoData
     : centrosCustoData.filter(cc => currentUser.centro_custo_ids?.includes(cc.id));
@@ -3396,7 +3411,7 @@ function initCalEmpresaFilter() {
   const select = document.getElementById('calEmpresaFilter');
   if (!select) return;
 
-  const isAdmin = _userPermCache && _userPermCache.perfil === 'Administrador';
+  const isAdmin = isCurrentUserAdmin();
   const empresas = isAdmin
     ? centrosCustoData
     : centrosCustoData.filter(cc => currentUser.centro_custo_ids?.includes(cc.id));
@@ -4176,7 +4191,7 @@ function getActiveServiceChips() {
 function populateLeadEmpresaSelect() {
   const select = document.getElementById('leadEmpresa');
   if (!select) return;
-  const isAdmin = _userPermCache && _userPermCache.perfil === 'Administrador';
+  const isAdmin = isCurrentUserAdmin();
   const empresas = isAdmin
     ? centrosCustoData
     : centrosCustoData.filter(cc => currentUser.centro_custo_ids?.includes(cc.id));
@@ -4261,13 +4276,9 @@ function renderCadenceGrid() {
 }
 
 function isCurrentUserAdmin() {
-  if (!_userPermCache) {
-    console.log('[DEBUG-ADMIN] _userPermCache is NULL → returning false');
-    return false;
-  }
-  const result = _userPermCache.perfil === 'Administrador';
-  console.log('[DEBUG-ADMIN] perfil:', _userPermCache.perfil, '→ isAdmin:', result);
-  return result;
+  const permIsAdmin = _userPermCache && _userPermCache.perfil === 'Administrador';
+  const currentPerfilIsAdmin = currentUser && currentUser.perfil === 'Administrador';
+  return !!permIsAdmin || !!currentPerfilIsAdmin;
 }
 
 function isUserProfile(perfil) {
@@ -4310,7 +4321,7 @@ function initCrmEmpresaFilter() {
   const dropdown = document.getElementById('crmEmpresaDropdown');
   if (!btn || !dropdown) return;
 
-  const isAdmin = _userPermCache && _userPermCache.perfil === 'Administrador';
+  const isAdmin = isCurrentUserAdmin();
   const empresas = isAdmin
     ? centrosCustoData
     : centrosCustoData.filter(cc => currentUser.centro_custo_ids?.includes(cc.id));
