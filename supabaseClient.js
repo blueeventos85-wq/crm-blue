@@ -3,6 +3,20 @@
    Configuração e helpers para integração
    ============================================ */
 
+/* --- Console override: desativar logs em produção --- */
+(function() {
+  if (window.location.hostname !== 'localhost' && !window.location.hostname.startsWith('127.')) {
+    const noop = function() {};
+    console.log   = noop;
+    console.info  = noop;
+    console.warn  = noop;
+    console.dir   = noop;
+    console.debug = noop;
+    console.trace = noop;
+    console.table = noop;
+  }
+})();
+
 // Credenciais fixadas diretamente (chave publica anon suporta RLs; segura no
 // frontend). Nao usa import.meta.env para evitar o crash no build.
 const SUPABASE_URL = 'https://wozwysgubvqxczyjrmtn.supabase.co';
@@ -46,7 +60,7 @@ async function fetchCadenciasMap() {
 
   const { data, error } = await _supabase
     .from('cadencias')
-    .select('*');
+    .select('id, nome, slug, col_id');
 
   if (error) {
     console.error('[Supabase] Erro ao buscar cadências:', error.message, error.code);
@@ -1069,7 +1083,7 @@ async function fetchCentrosCusto() {
 
   const { data, error } = await _supabase
     .from('centros_custo')
-    .select('*')
+    .select('id, nome, cor')
     .order('nome');
 
   if (error) {
@@ -1129,7 +1143,7 @@ async function fetchCadenciaVisibility() {
   if (!_supabase) return [];
   const { data, error } = await _supabase
     .from('cadencia_visibility')
-    .select('*')
+    .select('id, perfil, cadencia_uuid, visible, created_at')
     .order('created_at', { ascending: false });
   if (error) {
     console.error('[Supabase] Erro ao buscar visibilidade de cadências:', error.message, error.code);

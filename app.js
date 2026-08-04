@@ -94,7 +94,7 @@ async function loadMemberFromAuth(authUserId, authEmail) {
   try {
     // Primary: lookup by auth_user_id
     const { data, error } = await _supabase.from('membros')
-      .select('*').eq('auth_user_id', authUserId).maybeSingle();
+      .select('id, nome, email, cargo, foto_url, centro_custo_id, auth_user_id, centro_custo_ids').eq('auth_user_id', authUserId).maybeSingle();
     if (data) {
       // Load multiple centros de custo from pivot table
       const { data: ccData } = await _supabase.from('membro_centros_custo')
@@ -107,7 +107,7 @@ async function loadMemberFromAuth(authUserId, authEmail) {
     // Fallback: lookup by email (in case auth_user_id was never linked)
     if (authEmail) {
       const { data: byEmail, error: emailErr } = await _supabase.from('membros')
-        .select('*').eq('email', authEmail).maybeSingle();
+        .select('id, nome, email, cargo, foto_url, centro_custo_id, auth_user_id, centro_custo_ids').eq('email', authEmail).maybeSingle();
       if (byEmail) {
         console.warn('[Auth] Member found by email fallback, linking auth_user_id...');
         await _supabase.from('membros').update({ auth_user_id: authUserId }).eq('id', byEmail.id);
@@ -776,7 +776,7 @@ async function loadMembersFromSupabase() {
   console.log('[Admin] loadMembersFromSupabase called');
   if (!_supabase) { console.error('[Admin] _supabase é null!'); return; }
   try {
-    const { data, error } = await _supabase.from('membros').select('*').order('created_at', { ascending: false });
+    const { data, error } = await _supabase.from('membros').select('id, nome, email, cargo, foto_url, centro_custo_id, auth_user_id, centro_custo_ids, created_at').order('created_at', { ascending: false });
     if (error) {
       console.error('[Admin] Erro ao buscar membros:', error.message, error.code, error.details, error.hint);
       return;
@@ -1227,7 +1227,7 @@ async function openEmpresaModal(emp, vinculoMap, membros, cadenciaMap, membroCcM
   // Carregar serviços checados
   const servicosCheckContainer = document.getElementById('empresaServicosChecks');
   if (servicosCheckContainer) {
-    const { data: servicos } = await _supabase.from('servicos').select('*').order('nome');
+    const { data: servicos } = await _supabase.from('servicos').select('id, nome').order('nome');
     const linkedServicos = emp ? (vinculoMap[emp.id] || []) : [];
     _empresaOriginalServicoIds = [...linkedServicos];
     servicosCheckContainer.innerHTML = '';
@@ -1469,7 +1469,7 @@ async function loadServicosAdmin() {
 
   const { data: servicos, error } = await _supabase
     .from('servicos')
-    .select('*')
+    .select('id, nome, tipo_servico_id')
     .order('nome');
   if (error) { console.error('[Servicos] Erro ao buscar serviços:', error); return; }
 
@@ -9551,7 +9551,7 @@ function initCalibragem() {
 async function loadCalibragemMembers() {
   if (!_supabase) return;
   try {
-    const { data, error } = await _supabase.from('membros').select('*').order('nome');
+    const { data, error } = await _supabase.from('membros').select('id, nome, cargo, foto_url').order('nome');
     if (error) throw error;
     _calibMembersCache = data || [];
     renderCalibMemberTabs();
@@ -9781,7 +9781,7 @@ async function loadConversasChats() {
 
     let query = _supabase
       .from('chats')
-      .select('*')
+      .select('id, contact_name, contact_phone, status, assigned_to, lead_id, last_message, last_message_at, created_at')
       .order('last_message_at', { ascending: false, nullsFirst: false });
 
     if (!canViewAll && userId) {
@@ -9905,7 +9905,7 @@ async function loadConversasMessages(chatId) {
   try {
     const { data, error } = await _supabase
       .from('messages')
-      .select('*')
+      .select('id, chat_id, content, sender_type, sender_name, created_at')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true });
 
