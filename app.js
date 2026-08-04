@@ -4278,6 +4278,10 @@ let leads = [];
 let vinculosServicos = [];
 let vinculosCadencias = [];
 
+// Mapas de referência para cadências e serviços (preenchidos durante a inicialização)
+let _cadenciaColToUuid = {};
+let _servicosByName = {};
+
 /* ============================================
    CRM · SERVIÇOS DINÂMICOS
    ============================================ */
@@ -4301,6 +4305,8 @@ async function loadServiceChips(empresaId) {
   if (!container) return;
 
   const servicos = await fetchServicosSupabase();
+  _servicosByName = {};
+  (servicos || []).forEach(s => { _servicosByName[s.nome] = s; });
 
   if (!empresaId) {
     if (currentUser.perfil === 'Administrador') {
@@ -6371,8 +6377,19 @@ function renderCalUpcoming() {
   if (!wrap) return;
   const today = new Date(); today.setHours(0,0,0,0);
   const weekLater = new Date(today); weekLater.setDate(weekLater.getDate() + 7);
-  const items = getFilteredMeetings()
-    .filter(m => { const d = parseISODate(m.iso); return d >= today && d <= weekLater; })
+  const isAdmin = isCurrentUserAdmin();
+  const userId = getCurrentUserId();
+  let items = getFilteredMeetings()
+    .filter(m => { const d = parseISODate(m.iso); return d >= today && d <= weekLater; });
+  if (!isAdmin && userId) {
+    items = items.filter(m => {
+      const lead = leads.find(l => String(l.id) === String(m.leadId));
+      if (!lead) return false;
+      const membroId = lead._membroId || lead._ownerId || lead._createdBy;
+      return membroId === userId;
+    });
+  }
+  items = items
     .sort((a,b) => (a.iso+a.time).localeCompare(b.iso+b.time))
     .slice(0, 8);
   if (!items.length) { wrap.innerHTML = '<li class="empty-state"><i data-lucide="inbox"></i><p>Sem eventos próximos</p></li>'; if (window.initIcons) window.initIcons(); return; }
