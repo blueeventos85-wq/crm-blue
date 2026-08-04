@@ -6,11 +6,11 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>Blue Eventos · CRM</title>
-  <link rel="icon" type="image/png" sizes="32x32" href="assets/blue-eventos-logo.png" />
-  <link rel="icon" type="image/png" sizes="64x64" href="assets/blue-eventos-logo.png" />
-  <link rel="shortcut icon" href="assets/blue-eventos-logo.png" />
-  <link rel="apple-touch-icon" href="assets/blue-eventos-logo.png" />
+  <title>Blue Group · CRM</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/blue-group.png?v=2" />
+  <link rel="icon" type="image/png" sizes="64x64" href="assets/blue-group.png?v=2" />
+  <link rel="shortcut icon" href="assets/blue-group.png?v=2" />
+  <link rel="apple-touch-icon" href="assets/blue-group.png?v=2" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -26,7 +26,7 @@
     <div class="auth-card" id="authCard">
       <!-- Logo -->
       <div class="auth-logo">
-        <img src="assets/blue-eventos-logo.png" alt="Blue Eventos" class="auth-brand-img" id="authBrandImg" />
+        <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Blue Group" class="auth-brand-img" id="authBrandImg" />
         <p class="auth-tagline" id="authTagline">Acesse sua conta para gerenciar o CRM.</p>
       </div>
 
@@ -89,7 +89,7 @@
     <!-- ============ SIDEBAR ============ -->
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <img src="assets/blue-eventos-logo.png" alt="Blue Eventos" class="brand-img" id="sidebarBrandImg" />
+        <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Blue Group" class="brand-img" id="sidebarBrandImg" />
       </div>
 
       <nav class="sidebar-nav">
@@ -211,7 +211,7 @@
             <i data-lucide="bell"></i>
             <span class="dot" id="notifDot" hidden></span>
           </button>
-          <button class="icon-btn" title="Mensagens">
+          <button class="icon-btn" id="topbarChatBtn" title="Mensagens">
             <i data-lucide="message-square"></i>
           </button>
           <button class="btn-primary" id="primaryAction">
@@ -1308,6 +1308,7 @@
             <button class="admin-tab" data-admin-tab="permissoes"><i data-lucide="shield"></i> Permissões</button>
             <button class="admin-tab" data-admin-tab="empresas"><i data-lucide="building-2"></i> Empresas</button>
             <button class="admin-tab" data-admin-tab="servicos"><i data-lucide="briefcase"></i> Serviços</button>
+            <button class="admin-tab" data-admin-tab="cadencias"><i data-lucide="columns-3"></i> Cadências</button>
           </div>
 
           <!-- ══════ TAB: Membros ══════ -->
@@ -1406,6 +1407,30 @@
                   </tr>
                 </thead>
                 <tbody id="adminServicosBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ══════ TAB: Cadências ══════ -->
+          <div class="admin-tab-content" id="adminTabCadencias">
+            <div class="admin-section-header">
+              <div>
+                <p class="admin-section-text">Controle quais cadências aparecem no CRM para cada perfil de usuário.</p>
+                <p style="font-size:12px;color:var(--gray-400);margin-top:2px">Administradores sempre veem todas as cadências.</p>
+              </div>
+            </div>
+            <div class="admin-table-wrap">
+              <table class="admin-table" id="cadenciaVisTable">
+                <thead>
+                  <tr>
+                    <th>Cadência</th>
+                    <th style="text-align:center">Administrador</th>
+                    <th style="text-align:center">Membro</th>
+                    <th style="text-align:center">Pré Vendas</th>
+                    <th style="text-align:center">Atendente</th>
+                  </tr>
+                </thead>
+                <tbody id="adminCadenciaVisBody"></tbody>
               </table>
             </div>
           </div>
@@ -2229,43 +2254,8 @@
       </div>
     </div>
 
-    <!-- Barra de progresso da jornada -->
-    <div class="lead-journey">
-      <div class="journey-step done" data-step="1">
-        <span class="journey-dot"></span>
-        <span class="journey-label">Dados IA</span>
-      </div>
-      <span class="journey-arrow"></span>
-      <div class="journey-step done" data-step="2">
-        <span class="journey-dot"></span>
-        <span class="journey-label">Coletados</span>
-      </div>
-      <span class="journey-arrow"></span>
-      <div class="journey-step done" data-step="3">
-        <span class="journey-dot"></span>
-        <span class="journey-label">Qualificado</span>
-      </div>
-      <span class="journey-arrow"></span>
-      <div class="journey-step active" data-step="4">
-        <span class="journey-dot"></span>
-        <span class="journey-label">Em atendimento</span>
-      </div>
-      <span class="journey-arrow"></span>
-      <div class="journey-step" data-step="5">
-        <span class="journey-dot"></span>
-        <span class="journey-label">Diagnóstico grátis</span>
-      </div>
-      <span class="journey-arrow"></span>
-      <div class="journey-step" data-step="6">
-        <span class="journey-dot"></span>
-        <span class="journey-label">Reunião realizada</span>
-      </div>
-      <span class="journey-arrow"></span>
-      <div class="journey-step" data-step="7">
-        <span class="journey-dot"></span>
-        <span class="journey-label">Contrato</span>
-      </div>
-    </div>
+    <!-- Barra de progresso da jornada (renderizada via JS) -->
+    <div class="lead-journey" id="leadJourneyBar"></div>
 
     <div class="modal-body">
       <!-- Aba de edição (padrão) -->
@@ -2283,8 +2273,8 @@
             <span class="form-error" data-error="telefone"></span>
           </div>
           <div class="form-group">
-            <label>Data do Evento <span class="req">*</span></label>
-            <input type="date" name="dataEvento" required />
+            <label>Data do Evento</label>
+            <input type="date" name="dataEvento" />
             <span class="form-error" data-error="dataEvento"></span>
           </div>
 
@@ -2430,7 +2420,14 @@
           <span class="form-error" data-error="calType"></span>
         </div>
 
-        <!-- Linha 2: Cliente + Telefone -->
+        <!-- Linha 2: Empresa + Cliente / Lead -->
+        <div class="form-group">
+          <label>Empresa</label>
+          <select name="calEmpresaId" id="calEventEmpresa">
+            <option value="">Selecione uma empresa...</option>
+          </select>
+        </div>
+
         <div class="form-group">
           <label>Cliente / Lead</label>
           <div class="autocomplete-wrap">

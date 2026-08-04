@@ -362,6 +362,7 @@ function initAdminView() {
       if (target === 'permissoes') loadPermissionsFromSupabase();
       if (target === 'empresas') loadEmpresasAdmin();
       if (target === 'servicos') loadServicosAdmin();
+      if (target === 'cadencias') loadCadenciaVisibilityAdmin();
       initIcons();
     });
   });
@@ -1597,6 +1598,84 @@ async function handleServicoDelete() {
 }
 
 /* ============================================
+   ADMIN · ABA CADÊNCIAS (Visibilidade por Perfil)
+   ============================================ */
+const CADENCIA_VIS_PERFIS = ['Administrador', 'Membro', 'Pré Vendas', 'Atendente'];
+
+async function loadCadenciaVisibilityAdmin() {
+  if (!_supabase) return;
+  const tbody = document.getElementById('adminCadenciaVisBody');
+  if (!tbody) return;
+
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--muted-text)">Carregando...</td></tr>';
+
+  const visData = await fetchCadenciaVisibility();
+
+  // Build cadence list using mapaCadencias for UUID lookup
+  const allCadences = cadences.map(c => ({
+    slug: c.id,
+    uuid: mapaCadencias[c.id] || null,
+    label: c.label || c.short || c.id,
+    visMap: {}
+  }));
+
+  // Match visibility records by UUID
+  visData.forEach(v => {
+    const cad = allCadences.find(c => c.uuid === v.cadencia_id);
+    if (cad) cad.visMap[v.perfil] = v.visible;
+  });
+
+  renderCadenciaVisibilityTable(allCadences);
+}
+
+function renderCadenciaVisibilityTable(allCadences) {
+  const tbody = document.getElementById('adminCadenciaVisBody');
+  if (!tbody) return;
+
+  if (allCadences.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted-text)">Nenhuma cadência encontrada</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = '';
+  allCadences.forEach(cad => {
+    if (!cad.uuid) {
+      console.warn('[CadVis] Cadência sem UUID mapeado:', cad.slug, cad.label);
+    }
+    const tr = document.createElement('tr');
+    const checksHtml = CADENCIA_VIS_PERFIS.map(perfil => {
+      const checked = perfil === 'Administrador' || cad.visMap[perfil] === true;
+      const disabled = perfil === 'Administrador';
+      return `<td style="text-align:center">
+        <input type="checkbox" class="cad-vis-check" data-cadencia-uuid="${cad.uuid || ''}" data-perfil="${perfil}" ${checked ? 'checked' : ''} ${disabled ? 'disabled title="Administrador sempre vê todas"' : ''} ${!cad.uuid ? 'disabled title="Cadência não encontrada no banco"' : ''} />
+      </td>`;
+    }).join('');
+    tr.innerHTML = `<td><strong>${escapeHtml(cad.label)}</strong><span style="color:var(--gray-400);font-size:11px;margin-left:6px">${cad.slug}</span></td>${checksHtml}`;
+    tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll('.cad-vis-check').forEach(cb => {
+    cb.addEventListener('change', async (e) => {
+      const cadenciaUuid = e.target.dataset.cadenciaUuid;
+      const perfil = e.target.dataset.perfil;
+      const visible = e.target.checked;
+      if (!cadenciaUuid) {
+        toast('Cadência não encontrada no banco de dados', 'error');
+        e.target.checked = !e.target.checked;
+        return;
+      }
+      try {
+        await upsertCadenciaVisibility(cadenciaUuid, perfil, visible);
+        console.log('[CadVis] Salvo:', cadenciaUuid, perfil, visible);
+      } catch (err) {
+        console.error('[CadVis] Erro ao salvar:', err);
+        toast('Erro ao salvar visibilidade', 'error');
+      }
+    });
+  });
+}
+
+/* ============================================
    CONFIGURAÇÕES · Perfil, Avatar, Equipe
    ============================================ */
 
@@ -1804,9 +1883,14 @@ function initConfiguracoes() {
 
 const BRANDING_BUCKET = 'branding';
 const BRANDING_SEED_ID = '00000000-0000-0000-0000-000000000000';
+const BRANDING_DEFAULT_LOGO = 'assets/blue-group.png?v=2';
+const BRANDING_DEFAULT_FAVICON = 'assets/blue-group.png?v=2';
 
 async function loadBranding() {
-  if (!_supabase) return;
+  if (!_supabase) {
+    applyBranding(null, null, null);
+    return;
+  }
   try {
     const { data, error } = await _supabase
       .from('configuracoes_sistema')
@@ -1815,38 +1899,37 @@ async function loadBranding() {
       .maybeSingle();
     if (error) {
       console.warn('[Branding] Erro ao carregar configuracoes:', error.message);
+      applyBranding(null, null, null);
       return;
     }
-    if (!data) return;
-    applyBranding(data.logo_url || null, data.favicon_url || null, data.login_logo_url || null);
+    applyBranding(data?.logo_url || null, data?.favicon_url || null, data?.login_logo_url || null);
   } catch (err) {
     console.error('[Branding] Erro ao carregar branding:', err.message);
+    applyBranding(null, null, null);
   }
 }
 
 function applyBranding(logoUrl, faviconUrl, loginLogoUrl) {
-  if (logoUrl) {
-    const img = document.getElementById('sidebarBrandImg');
-    if (img) img.src = logoUrl;
-  }
-  if (faviconUrl) {
-    const links = document.querySelectorAll(
-      'link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]'
-    );
-    links.forEach(link => {
-      link.href = faviconUrl;
-    });
-    if (links.length === 0) {
-      const link = document.createElement('link');
-      link.rel = 'icon';
-      link.type = 'image/png';
-      link.href = faviconUrl;
-      document.head.appendChild(link);
-    }
-  }
-  if (loginLogoUrl) {
-    const img = document.getElementById('authBrandImg');
-    if (img) img.src = loginLogoUrl;
+  const finalLogo = logoUrl || BRANDING_DEFAULT_LOGO;
+  const finalFavicon = faviconUrl || BRANDING_DEFAULT_FAVICON;
+  const finalLoginLogo = loginLogoUrl || finalLogo;
+
+  const sidebarImg = document.getElementById('sidebarBrandImg');
+  if (sidebarImg) sidebarImg.src = finalLogo;
+
+  const authImg = document.getElementById('authBrandImg');
+  if (authImg) authImg.src = finalLoginLogo;
+
+  const links = document.querySelectorAll(
+    'link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]'
+  );
+  links.forEach(link => { link.href = finalFavicon; });
+  if (links.length === 0 && finalFavicon) {
+    const link = document.createElement('link');
+    link.rel = 'icon';
+    link.type = 'image/png';
+    link.href = finalFavicon;
+    document.head.appendChild(link);
   }
 }
 
@@ -2197,13 +2280,13 @@ function maskPhone(v) {
 }
 
 function canEditEvent(event) {
-  if (currentUser.role === 'admin') return true;
-  if (currentUser.role === 'editor') return event.leadId === currentUser.id || !event.leadId;
+  if (currentUser.perfil === 'Administrador') return true;
+  if (event.createdBy && String(event.createdBy) === String(currentUser.id)) return true;
   return false;
 }
 
 function canDeleteEvent(event) {
-  return currentUser.role === 'admin';
+  return currentUser.perfil === 'Administrador';
 }
 
 function isReadOnly(event) {
@@ -2615,6 +2698,13 @@ function setActivePage(page) {
   }
   if (icon) initIcons();
 
+  // Ocultar botões de ação do topbar na Home, Dashboard, Calendário, Rotina e Pomodoro
+  const chatBtn = $('#topbarChatBtn');
+  const primaryBtn = $('#primaryAction');
+  const hideTopbarActions = page === 'home' || page === 'dashboard' || page === 'calendario' || page === 'rotina' || page === 'pomodoro' || page === 'conversas' || page === 'configuracoes' || page === 'auditoria' || page === 'administrador' || page === 'calibragem';
+  if (chatBtn) chatBtn.style.display = hideTopbarActions ? 'none' : '';
+  if (primaryBtn) primaryBtn.style.display = hideTopbarActions ? 'none' : '';
+
   // Inicializa coisas específicas da página
   if (page === 'dashboard') {
     initDashboardPeriod();
@@ -2856,9 +2946,9 @@ function getFilteredClients() {
     if (clienteCadenceFilter !== 'all' && c._cadenciaId !== clienteCadenceFilter) return false;
     if (clienteCcFilter !== 'all' && c._centroCustoId !== clienteCcFilter) return false;
     
-    // Se não é admin, filtrar apenas clientes do próprio usuário (membro_id, qualificador_id, owner_id ou created_by)
+    // Se não é admin, filtrar apenas clientes do próprio usuário (membro_id, qualificador_id, owner_id)
     if (!canViewAll && userId) {
-      const membroId = c._membroId || c._ownerId || c._createdBy;
+      const membroId = c._membroId || c._ownerId;
       const qualificadorId = c._qualificadorId;
       if (membroId === userId || qualificadorId === userId) return true;
       return false;
@@ -4243,6 +4333,7 @@ function initTimeTracker() {
    CRM · DADOS
    ============================================ */
 const cadences = [
+  { id: 'novo-lead',           label: 'NOVO LEAD',                  short: 'Novo Lead' },
   { id: 'dados-ia',            label: 'DADOS IA',                  short: 'Dados IA' },
   { id: 'coletados-frio',      label: 'COLETADOS FRIOS',           short: 'Coletados Frios' },
   { id: 'qualificado',         label: 'QUALIFICADO IA',            short: 'Qualificado IA' },
@@ -4260,8 +4351,54 @@ const cadences = [
   { id: 'pos-vendas',          label: 'GERAÇÃO DE CONTRATO',       short: 'Geração de Contrato' }
 ];
 
+// Mapeamento fixo: slug da coluna Kanban → UUID real da tabela cadencias no Supabase
+// IMPORTANTE: Execute migration_novo_lead_cadencia.sql e substitua o UUID abaixo
+const mapaCadencias = {
+  "novo-lead":           "50dafcf2-00d1-491d-9297-98bf0906f5c4",
+  "dados-ia":            "3cf00875-b5e8-471b-8dd7-c389f8c9d22a",
+  "coletados-frio":      "509aa84e-5bcb-43f6-ba63-96ceee4adf3b",
+  "qualificado":         "0ec70bba-f34b-4658-a95a-1463ed621d86",
+  "aguardando-resposta": "1a18bc95-3aaf-4de1-8d9e-efab7762fee0",
+  "em-atendimento":      "61182408-299b-49cc-9ce6-91bf9b4be190",
+  "geladeira":           "74426e6b-e5cb-40bd-9c01-04f8a71a8b27",
+  "stand-by":            "2b543a5f-eeba-4256-8043-84e8a93ed469",
+  "diagnostico-gratis":  "8c58c670-7cdc-486d-88dd-1f746d2e554d",
+  "follow-up-1":         "4847febb-1a1c-4a0c-a988-85d72309bce2",
+  "follow-up-2":         "8c58c670-7cdc-486d-88dd-1f746d2e554d",
+  "follow-up-3":         "4e1eee02-ede7-433a-bf7b-60144ed496b8",
+  "follow-up-4":         "ac1c4d91-3964-44cc-b375-3f67e2252a7f",
+  "reuniao-agendada":    "4e1eee02-ede7-433a-bf7b-60144ed496b8",
+  "reuniao-realizada":   "ac1c4d91-3964-44cc-b375-3f67e2252a7f",
+  "contrato-enviado":    "87fdfa17-c356-4363-b036-b703fcdf8a24",
+  "contrato-fechado":    "87fdfa17-c356-4363-b036-b703fcdf8a24",
+  "cobranca-enviada":    "2b543a5f-eeba-4256-8043-84e8a93ed469",
+  "pagamento-recebido":  "74426e6b-e5cb-40bd-9c01-04f8a71a8b27",
+  "servico-executado":   "a914c5c0-c5cc-4bca-9a13-91eb827abf0d",
+  "acompanhamento":      "a914c5c0-c5cc-4bca-9a13-91eb827abf0d",
+  "pos-vendas":          "1c8d3c69-442a-49bf-9eef-9840f4e8d415",
+  "geracao-de-contrato": "1c8d3c69-442a-49bf-9eef-9840f4e8d415"
+};
+
 function getVisibleCadences(centroCustoId) {
-  let visible = isCurrentUserAdmin() ? cadences : cadences.filter(c => c.id !== 'dados-ia');
+  // Admin sees everything
+  let visible = isCurrentUserAdmin() ? cadences : cadences.slice();
+
+  // Filter by visibility settings for non-admins
+  if (!isCurrentUserAdmin() && _cadenciaVisibilityData.length > 0) {
+    const perfil = currentUser.perfil || 'Atendente';
+    const allowedUuids = _cadenciaVisibilityData
+      .filter(v => v.perfil === perfil && v.visible)
+      .map(v => v.cadencia_id);
+    if (allowedUuids.length > 0) {
+      // Convert cadence slugs to UUIDs using mapaCadencias, then check against allowed UUIDs
+      visible = visible.filter(c => {
+        const uuid = mapaCadencias[c.id];
+        return uuid && allowedUuids.includes(uuid);
+      });
+    }
+  }
+
+  // Filter by centro de custo (empresa) if selected
   if (centroCustoId && centroCustoId !== 'all') {
     const linkedIds = vinculosCadencias
       .filter(v => v.centro_custo_id === centroCustoId)
@@ -4277,9 +4414,10 @@ function getVisibleCadences(centroCustoId) {
 let leads = [];
 let vinculosServicos = [];
 let vinculosCadencias = [];
+let _cadenciaVisibilityData = []; // cache de visibilidade por perfil
 
 // Mapas de referência para cadências e serviços (preenchidos durante a inicialização)
-let _cadenciaColToUuid = {};
+// _cadenciaColToUri é definido em supabaseClient.js e exposto em window
 let _servicosByName = {};
 
 /* ============================================
@@ -4377,16 +4515,39 @@ function setServiceChipsActive(values) {
   });
 }
 
-async function loadCalServiceChips() {
+async function loadCalServiceChips(empresaId, selectedNames) {
   const container = document.getElementById('calEventServices');
   if (!container) return;
 
   const servicos = await fetchServicosSupabase();
   if (servicos.length === 0) return;
 
-  container.innerHTML = servicos.map(s =>
+  let filtered = servicos;
+  if (empresaId) {
+    const linkedSvcIds = vinculosServicos
+      .filter(v => v.centro_custo_id === empresaId)
+      .map(v => v.servico_id);
+    filtered = servicos.filter(s => linkedSvcIds.includes(s.id));
+  }
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<span class="chip-empty" style="font-size:11px;color:var(--muted-text);">Nenhum serviço vinculado a esta empresa</span>';
+    return;
+  }
+
+  container.innerHTML = filtered.map(s =>
     `<button type="button" class="chip-toggle" data-value="${escapeHtml(s.nome)}" data-svc-id="${s.id}">${escapeHtml(s.nome)}</button>`
   ).join('');
+
+  if (selectedNames && selectedNames.length > 0) {
+    container.querySelectorAll('.chip-toggle').forEach(chip => {
+      chip.classList.toggle('active', selectedNames.includes(chip.dataset.value));
+    });
+  }
+
+  container.querySelectorAll('.chip-toggle').forEach(chip => {
+    chip.onclick = () => chip.classList.toggle('active');
+  });
 }
 
 function getActiveServiceChips() {
@@ -4511,7 +4672,7 @@ function getSearchFilteredLeads() {
     
     // Se não é admin, filtrar apenas leads do próprio usuário (membro_id ou qualificador_id)
     if (!canViewAll && userId) {
-      const membroId = l._membroId || l._ownerId || l._createdBy;
+      const membroId = l._membroId || l._ownerId;
       const qualificadorId = l._qualificadorId;
       if (membroId !== userId && qualificadorId !== userId) return false;
     }
@@ -5092,6 +5253,29 @@ function openNewLeadModal() {
   }, 50);
 }
 
+function renderJourneyBar(activeId) {
+  const bar = $('#leadJourneyBar');
+  if (!bar) return;
+  bar.innerHTML = '';
+  const activeIdx = cadences.findIndex(c => c.id === activeId);
+  cadences.forEach((c, i) => {
+    const chevron = document.createElement('div');
+    chevron.className = 'journey-chevron';
+    chevron.title = c.label;
+    chevron.textContent = c.short;
+    if (activeIdx === -1) {
+      chevron.classList.add('pending');
+    } else if (i < activeIdx) {
+      chevron.classList.add('done');
+    } else if (i === activeIdx) {
+      chevron.classList.add('active');
+    } else {
+      chevron.classList.add('pending');
+    }
+    bar.appendChild(chevron);
+  });
+}
+
 function openLeadModal(id) {
   const lead = leads.find(l => String(l.id) === String(id));
   if (!lead) return;
@@ -5176,13 +5360,8 @@ function openLeadModal(id) {
     setServiceChipsActive(svcValues);
   });
 
-  // Journey bar: define steps done/active conforme status
-  const cadenceIdx = cadences.findIndex(c => c.id === lead.status);
-  $$('.journey-step').forEach((step, i) => {
-    step.classList.remove('done', 'active');
-    if (i < cadenceIdx) step.classList.add('done');
-    else if (i === cadenceIdx) step.classList.add('active');
-  });
+  // Journey bar: renderizar chevrons conforme cadência atual
+  renderJourneyBar(lead.status);
 
   // Transfer tab: show only for admins
   const transferTab = $('#leadTransferTab');
@@ -5331,7 +5510,7 @@ function recordInteraction(id, title, icon, desc) {
    Campos obrigatórios do formulário:
      - Nome (empresa) *
      - Número (telefone) *
-     - Data do Evento (dataEvento) *
+     - Data do Evento (dataEvento) (opcional)
      - Tipo de Serviço (tiposServico) *  →  ao menos 1 chip selecionado
    Campos opcionais:
      - Endereço do Evento, Quantidade de Horas, Valor de Faturamento, Observações
@@ -5361,7 +5540,7 @@ async function saveLead() {
   if (!fields.empresa)        errors.empresa = 'Obrigatório';
   if (!fields.telefone)       errors.telefone = 'Obrigatório';
   else if (!validarTelefone(fields.telefone)) errors.telefone = 'Telefone inválido';
-  if (!fields.dataEvento)     errors.dataEvento = 'Obrigatório';
+
   if (!fields.empresaId)      errors.empresaId = 'Selecione uma empresa';
   if (!fields.tiposServico || fields.tiposServico.length === 0) {
     errors.tiposServico = 'Selecione ao menos um serviço';
@@ -5429,17 +5608,16 @@ async function saveLead() {
       email: '',
       responsavel: currentUser.nome || 'Camila',
       _ownerId: currentUser.id || null,
-      _createdBy: currentUser.id || null,
       _membroId: null,
       _centroCustoId: fields.empresaId || null,
-      status: 'dados-ia',
+      status: 'novo-lead',
       thermal: fields.thermal || 'frio',
       honorarios: fields.honorarios,
       servicos: [],
       dataEvento: fields.dataEvento,
       tiposServico: fields.tiposServico,
       _tipoServicoIds: fields.tiposServico.map(name => _servicosByName[name]?.id).filter(Boolean),
-      _cadenciaId: _cadenciaColToUuid['dados-ia'] || null,
+      _cadenciaId: _cadenciaColToUuid['novo-lead'] || null,
       enderecoEvento: fields.enderecoEvento || '',
       quantidadeHoras: fields.quantidadeHoras,
       cidade: '',
@@ -5701,6 +5879,7 @@ function initCRM() {
 
 // ----- Constantes de status / cadência / temperatura
 const STATUS_CATEGORY = {
+  'novo-lead':          'pendente',
   'dados-ia':           'pendente',
   'coletados-frio':     'pendente',
   'geladeira':          'pendente',
@@ -6385,7 +6564,7 @@ function renderCalUpcoming() {
     items = items.filter(m => {
       const lead = leads.find(l => String(l.id) === String(m.leadId));
       if (!lead) return false;
-      const membroId = lead._membroId || lead._ownerId || lead._createdBy;
+      const membroId = lead._membroId || lead._ownerId;
       return membroId === userId;
     });
   }
@@ -6519,7 +6698,7 @@ function renderDashAll(force = false) {
       const userId = getCurrentUserId();
       if (userId) {
         filteredLeads = filteredLeads.filter(l => {
-          const membroId = l._membroId || l._ownerId || l._createdBy;
+          const membroId = l._membroId || l._ownerId;
           const qualificadorId = l._qualificadorId;
           if (membroId === userId || qualificadorId === userId) return true;
           return false;
@@ -6894,12 +7073,9 @@ function openCalEventModal(isoDate, meetingId) {
       } else {
         $('#calEventDuration').value = '';
       }
-      // Services chips — resolve UUIDs to names
+      // Services chips — resolve UUIDs to names (deferred to after loadCalServiceChips)
       const rawServices = m.servicos || m.services || [];
-      const svcList = rawServices.map(s => _servicosById[s] ? _servicosById[s].nome : s);
-      $$('#calEventServices .chip-toggle').forEach(chip => {
-        chip.classList.toggle('active', svcList.includes(chip.dataset.value));
-      });
+      window._calEventEditSvcNames = rawServices.map(s => window._servicosById && window._servicosById[s] ? window._servicosById[s].nome : s);
     }
   } else {
     // Clear form
@@ -6910,12 +7086,48 @@ function openCalEventModal(isoDate, meetingId) {
       else el.value = '';
     });
     $$('#calEventServices .chip-toggle').forEach(c => c.classList.remove('active'));
+    window._calEventEditSvcNames = [];
     $('#calEventDuration').value = '';
     // Reset color to default
     $('#calEventColor').value = '#2F80ED';
     $$('#calEventColorPicker .color-swatch').forEach(s => {
       s.setAttribute('aria-checked', s.dataset.color === '#2F80ED');
     });
+  }
+
+  // Populate empresa dropdown
+  const empresaSelect = $('#calEventEmpresa');
+  if (empresaSelect) {
+    const isAdmin = isCurrentUserAdmin();
+    const empresas = isAdmin
+      ? centrosCustoData
+      : centrosCustoData.filter(cc => currentUser.centro_custo_ids?.includes(cc.id));
+    empresaSelect.innerHTML = '<option value="">Selecione uma empresa...</option>';
+    empresas.forEach(cc => {
+      const opt = document.createElement('option');
+      opt.value = cc.id;
+      opt.textContent = cc.nome;
+      empresaSelect.appendChild(opt);
+    });
+
+    if (isEdit) {
+      const m = meetings.find(ev => String(ev.id) === String(calEventEditId));
+      if (m && m.empresa_id) {
+        empresaSelect.value = m.empresa_id;
+      }
+    }
+
+    // On change: filter services and clear previously selected chips
+    empresaSelect.onchange = () => {
+      const selectedId = empresaSelect.value;
+      $$('#calEventServices .chip-toggle').forEach(c => c.classList.remove('active'));
+      loadCalServiceChips(selectedId || undefined);
+    };
+
+    // Load initial services based on selected empresa (with edit pre-selection if applicable)
+    const editSvcNames = window._calEventEditSvcNames || [];
+    delete window._calEventEditSvcNames;
+    loadCalServiceChips(empresaSelect.value || undefined, editSvcNames.length > 0 ? editSvcNames : undefined);
   }
 
   // Bind honorários mask
@@ -7382,6 +7594,7 @@ function saveCalEvent() {
   const payload = {
     title,
     type,
+    empresa_id: $('#calEventEmpresa').value || null,
     cliente: $('#calEventClient').value,
     leadId: $('#calEventClientId').value || null,
     phone: $('#calEventPhone').value,
@@ -7396,7 +7609,8 @@ function saveCalEvent() {
     honorarios,
     notes: $('#calEventNotes').value,
     color: $('#calEventColor').value || '#2F80ED',
-    status: 'agendada'
+    status: 'agendada',
+    createdBy: currentUser.id || null
   };
 
   const saveBtn = $('#calEventSaveBtn');
@@ -7666,7 +7880,7 @@ function refreshDashboard() {
     const userId = getCurrentUserId();
     if (userId) {
       filteredLeads = filteredLeads.filter(l => {
-        const membroId = l._membroId || l._ownerId || l._createdBy;
+        const membroId = l._membroId || l._ownerId;
         const qualificadorId = l._qualificadorId;
         if (membroId === userId || qualificadorId === userId) return true;
         return false;
@@ -7909,8 +8123,14 @@ function renderDonutFin(finCount, totalCount) {
 function renderProximosEventos(start, end) {
   const el = document.getElementById('eventosList');
   if (!el) return;
+
   const events = meetings
-    .filter(m => { const d = parseISODate(m.iso); return d >= start && d <= end; })
+    .filter(m => {
+      const d = parseISODate(m.iso);
+      if (d < start || d > end) return false;
+      if (dashCcFilter !== 'all' && m.empresa_id !== dashCcFilter) return false;
+      return true;
+    })
     .sort((a, b) => (a.iso + a.time).localeCompare(b.iso + b.time))
     .slice(0, 5);
   if (!events.length) {
@@ -10264,6 +10484,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
   // Auth first - shows login screen or hides it
   bindAuthForms();
+  await loadBranding();
   await initAuth();
 
   initTheme();
@@ -10329,14 +10550,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('[Boot] Erro ao carregar centros de custo:', err);
   }
 
-  // Carregar identidade visual (logo + favicon) do banco
-  try {
-    await loadBranding();
-    console.log('[Boot] Branding carregado.');
-  } catch (err) {
-    console.error('[Boot] Erro ao carregar branding:', err);
-  }
-
   // Carregar vínculos de serviços por empresa
   try {
     await loadVinculosServicos();
@@ -10353,6 +10566,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('[Boot] Erro ao carregar vínculos de cadências:', err);
   }
 
+  // Carregar visibilidade de cadências por perfil
+  try {
+    _cadenciaVisibilityData = await fetchCadenciaVisibility();
+    console.log('[Boot] Visibilidade de cadências carregada:', _cadenciaVisibilityData.length);
+  } catch (err) {
+    console.error('[Boot] Erro ao carregar visibilidade de cadências:', err);
+  }
+
   // Inicializar filtro de empresa no CRM
   initCrmEmpresaFilter();
 
@@ -10362,7 +10583,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Carregar chips de serviços no modal
   try {
     await loadServiceChips();
-    await loadCalServiceChips();
+    // Cal service chips are loaded dynamically when the modal opens (filtered by empresa)
+    const calSvcContainer = document.getElementById('calEventServices');
+    if (calSvcContainer) calSvcContainer.innerHTML = '<span style="font-size:11px;color:var(--muted-text);">Selecione uma empresa para ver os serviços</span>';
   } catch (err) {
     console.error('[Boot] Erro ao carregar chips de serviços:', err);
   }

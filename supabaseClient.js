@@ -21,13 +21,13 @@ if (window.supabase && window.supabase.createClient) {
    MAPA: kanban column IDs (hardcoded no CRM)
    ============================================ */
 const KANBAN_COLUMN_IDS = [
-  'dados-ia', 'coletados-frio', 'qualificado', 'em-atendimento',
+  'novo-lead', 'dados-ia', 'coletados-frio', 'qualificado', 'em-atendimento',
   'geladeira', 'stand-by', 'diagnostico-gratis', 'reuniao-agendada',
   'reuniao-realizada', 'contrato-enviado', 'contrato-fechado',
   'cobranca-enviada', 'pagamento-recebido', 'servico-executado', 'pos-vendas'
 ];
 
-const DEFAULT_CADENCE_ID = KANBAN_COLUMN_IDS[0]; // 'dados-ia'
+const DEFAULT_CADENCE_ID = KANBAN_COLUMN_IDS[0]; // 'novo-lead'
 
 /* ============================================
    MAPAS GLOBAIS (preenchidos no boot)
@@ -61,6 +61,16 @@ async function fetchCadenciasMap() {
   console.log('[Supabase] Cadências encontradas:', data.length, data);
 
   const map = {};
+
+  // Helper: strip trailing 's'/'es' for plural/singular matching
+  function singularize(s) {
+    if (s.endsWith('oes')) return s.slice(0, -2);       // geladeoes -> gelade (unlikely but safe)
+    if (s.endsWith('oes')) return s.slice(0, -3) + 'ao';
+    if (s.endsWith('ges') || s.endsWith('ches') || s.endsWith('xes') || s.endsWith('zes')) return s.slice(0, -2);
+    if (s.endsWith('s') && s.length > 4) return s.slice(0, -1);
+    return s;
+  }
+
   data.forEach(row => {
     const uuid = row.id;
     const label = (row.nome || row.label || row.name || row.titulo || row.title || '').toLowerCase().trim();
@@ -68,19 +78,23 @@ async function fetchCadenciasMap() {
     const colId = (row.coluna || row.column || row.kanban_col || '').trim();
 
     const normalized = label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '-');
+    const normSingular = singularize(normalized);
+    const slugSingular = singularize(slug);
 
-    console.log('[Supabase] Cadência row:', { uuid, label, slug, colId, normalized, keys: Object.keys(row) });
+    console.log('[Supabase] Cadência row:', { uuid, label, slug, colId, normalized, normSingular, keys: Object.keys(row) });
 
     let matched = false;
 
+    // 1. Direct colId match
     if (colId && KANBAN_COLUMN_IDS.includes(colId)) {
       map[uuid] = colId;
       matched = true;
     }
 
+    // 2. Exact match: slug, label, or normalized against column IDs
     if (!matched) {
       for (const cid of KANBAN_COLUMN_IDS) {
-        if (slug === cid || label === cid || normalized === cid) {
+        if (slug === cid || label === cid || normalized === cid || normSingular === cid || slugSingular === cid) {
           map[uuid] = cid;
           matched = true;
           break;
@@ -88,9 +102,11 @@ async function fetchCadenciasMap() {
       }
     }
 
+    // 3. Starts-with match (handles "coletados-frios dos-ia" → "coletados-frio")
     if (!matched) {
       for (const cid of KANBAN_COLUMN_IDS) {
-        if (normalized.startsWith(cid + '-') || normalized.startsWith(cid) && normalized.charAt(cid.length) === '-') {
+        const normNext = normSingular.charAt(cid.length);
+        if (normSingular.startsWith(cid) && (normNext === '-' || normNext === '' || normNext === undefined)) {
           map[uuid] = cid;
           matched = true;
           break;
@@ -98,9 +114,30 @@ async function fetchCadenciasMap() {
       }
     }
 
+    // 4. Reverse: column ID includes the normalized cadência name
     if (!matched) {
       for (const cid of KANBAN_COLUMN_IDS) {
-        if (label.includes(cid) || cid.includes(label.replace(/\s+/g, '-'))) {
+        if (cid.includes(normSingular) || normSingular.includes(cid)) {
+          map[uuid] = cid;
+          matched = true;
+          break;
+        }
+        const slugNorm = label.replace(/\s+/g, '-');
+        if (cid.includes(slugNorm) || slugNorm.includes(cid)) {
+          map[uuid] = cid;
+          matched = true;
+          break;
+        }
+      }
+    }
+
+    // 5. Word-level matching: check if any significant words overlap
+    if (!matched) {
+      const labelWords = normSingular.split('-').filter(w => w.length > 3);
+      for (const cid of KANBAN_COLUMN_IDS) {
+        const cidWords = cid.split('-').filter(w => w.length > 3);
+        const overlap = labelWords.filter(w => cidWords.some(cw => cw.includes(w) || w.includes(cw)));
+        if (overlap.length >= Math.min(labelWords.length, cidWords.length) && overlap.length > 0) {
           map[uuid] = cid;
           matched = true;
           break;
@@ -117,6 +154,9 @@ async function fetchCadenciasMap() {
   _cadenciaUuidToCol = map;
   _cadenciaColToUuid = {};
   Object.entries(map).forEach(([uuid, colId]) => { _cadenciaColToUuid[colId] = uuid; });
+  // Expor no window para que app.js acesse o mesmo objeto
+  window._cadenciaColToUuid = _cadenciaColToUuid;
+  window._cadenciaUuidToCol = _cadenciaUuidToCol;
   console.log('[Supabase] Coluna→UUID:', _cadenciaColToUuid);
   return map;
 }
@@ -186,8 +226,8 @@ async function fetchLeadsSupabase(filterMemberId) {
     .order('created_at', { ascending: false });
 
   if (filterMemberId) {
-    console.log('[Supabase] Filtrando leads por membro_id/qualificador_id/owner_id/created_by:', filterMemberId);
-    q = q.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId + ',owner_id.eq.' + filterMemberId + ',created_by.eq.' + filterMemberId);
+    console.log('[Supabase] Filtrando leads por membro_id/qualificador_id/owner_id:', filterMemberId);
+    q = q.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId + ',owner_id.eq.' + filterMemberId);
   }
 
   let { data, error } = await q;
@@ -226,7 +266,6 @@ async function fetchLeadsSupabase(filterMemberId) {
       servicos: [],
       dataEvento: row.data_evento || '',
       _ownerId: row.owner_id || null,
-      _createdBy: row.created_by || null,
       _membroId: row.membro_id || null,
       tiposServico: (function() {
         const raw = row.tipo_servico_id;
@@ -321,6 +360,7 @@ async function insertEventoSupabase(data) {
   const payload = {
     titulo: data.titulo || data.title || '',
     tipo: data.tipo || data.type || '',
+    empresa_id: data.empresa_id || null,
     lead_id: data.lead_id || data.leadId || null,
     cliente_nome: data.cliente || data.cliente_nome || '',
     telefone: data.telefone || data.phone || '',
@@ -333,7 +373,8 @@ async function insertEventoSupabase(data) {
     temperatura: data.temperatura || data.temperature || '',
     honorarios: data.honorarios || 0,
     observacoes: data.observacoes || data.notes || '',
-    cor: data.cor || data.color || '#2F80ED'
+    cor: data.cor || data.color || '#2F80ED',
+    created_by: data.created_by || null
   };
 
   console.log('[Supabase] Inserindo evento:', payload);
@@ -365,6 +406,7 @@ async function updateEventoSupabase(id, data) {
   const payload = {};
   if (data.title !== undefined || data.titulo !== undefined) payload.titulo = data.titulo || data.title || '';
   if (data.type !== undefined || data.tipo !== undefined) payload.tipo = data.tipo || data.type || '';
+  if (data.empresa_id !== undefined) payload.empresa_id = data.empresa_id || null;
   if (data.leadId !== undefined || data.lead_id !== undefined) payload.lead_id = data.lead_id || data.leadId || null;
   if (data.cliente !== undefined || data.cliente_nome !== undefined) payload.cliente_nome = data.cliente || data.cliente_nome || '';
   if (data.phone !== undefined || data.telefone !== undefined) payload.telefone = data.telefone || data.phone || '';
@@ -445,6 +487,7 @@ async function fetchEventosSupabase() {
     id: row.id,
     title: row.titulo || '',
     type: row.tipo || '',
+    empresa_id: row.empresa_id || null,
     leadId: row.lead_id || null,
     lead: row.leads ? { id: row.leads.id, nome: row.leads.nome, telefone: row.leads.telefone } : null,
     cliente: row.cliente_nome || (row.leads ? row.leads.nome : ''),
@@ -459,6 +502,7 @@ async function fetchEventosSupabase() {
     honorarios: row.honorarios || 0,
     notes: row.observacoes || '',
     color: row.cor || meetingColor(row.tipo),
+    createdBy: row.created_by || null,
     status: 'agendada'
   }));
 }
@@ -492,6 +536,7 @@ async function fetchProximosEventos() {
     id: row.id,
     title: row.titulo || '',
     type: row.tipo || '',
+    empresa_id: row.empresa_id || null,
     leadId: row.lead_id || null,
     lead: row.leads ? { id: row.leads.id, nome: row.leads.nome, telefone: row.leads.telefone } : null,
     phone: row.telefone || '',
@@ -505,6 +550,7 @@ async function fetchProximosEventos() {
     honorarios: row.honorarios || 0,
     notes: row.observacoes || '',
     color: row.cor || meetingColor(row.tipo),
+    createdBy: row.created_by || null,
     status: 'agendada'
   }));
 }
@@ -521,8 +567,8 @@ async function fetchClientsSupabase(filterMemberId) {
   let leadsQuery = _supabase.from('leads').select('*, membros!membro_id(nome)').order('created_at', { ascending: false });
 
   if (filterMemberId) {
-    console.log('[Supabase-Clientes] Aplicando filtro membro_id/qualificador_id/owner_id/created_by:', filterMemberId);
-    leadsQuery = leadsQuery.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId + ',owner_id.eq.' + filterMemberId + ',created_by.eq.' + filterMemberId);
+    console.log('[Supabase-Clientes] Aplicando filtro membro_id/qualificador_id/owner_id:', filterMemberId);
+    leadsQuery = leadsQuery.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId + ',owner_id.eq.' + filterMemberId);
   } else {
     console.log('[Supabase-Clientes] SEM FILTRO — retornando TODOS os leads');
   }
@@ -592,7 +638,6 @@ async function fetchClientsSupabase(filterMemberId) {
       _membroNome: membroNome,
       _qualificadorId: row.qualificador_id || null,
       _ownerId: row.owner_id || null,
-      _createdBy: row.created_by || null,
       _cadenciaId: row.cadencia_id || null,
       _centroCustoId: row.centro_custo_id || null,
       _centroCustoNome: ''
@@ -652,7 +697,7 @@ async function seedServicos() {
 }
 
 async function fetchServicosSupabase() {
-  if (_servicosCache) return _servicosCache;
+  if (_servicosCache) { window._servicosById = _servicosById; return _servicosCache; }
   if (!_supabase) return [];
 
   const { data, error } = await _supabase
@@ -672,6 +717,7 @@ async function fetchServicosSupabase() {
     _servicosByName[s.nome] = s;
     _servicosById[s.id] = s;
   });
+  window._servicosById = _servicosById;
   console.log('[Supabase] Serviços carregados:', _servicosCache.length);
   return _servicosCache;
 }
@@ -1077,6 +1123,62 @@ function invalidateCentrosCustoCache() {
 }
 
 /* ============================================
+   HELPER: cadência visibility (perfis)
+   ============================================ */
+async function fetchCadenciaVisibility() {
+  if (!_supabase) return [];
+  const { data, error } = await _supabase
+    .from('cadencia_visibility')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) {
+    console.error('[Supabase] Erro ao buscar visibilidade de cadências:', error.message, error.code);
+    return [];
+  }
+  return data || [];
+}
+
+async function upsertCadenciaVisibility(cadenciaId, perfil, visible) {
+  if (!_supabase) throw new Error('Supabase client não inicializado.');
+  const { data, error } = await _supabase
+    .from('cadencia_visibility')
+    .upsert({ cadencia_id: cadenciaId, perfil, visible }, { onConflict: 'cadencia_id,perfil' })
+    .select();
+  if (error) {
+    console.error('[Supabase] Erro ao salvar visibilidade:', error.message, error.code);
+    throw error;
+  }
+  return data;
+}
+
+async function deleteCadenciaVisibility(id) {
+  if (!_supabase) throw new Error('Supabase client não inicializado.');
+  const { error } = await _supabase
+    .from('cadencia_visibility')
+    .delete()
+    .eq('id', id);
+  if (error) {
+    console.error('[Supabase] Erro ao deletar visibilidade:', error.message, error.code);
+    throw error;
+  }
+}
+
+// Busca cadências visíveis para um determinado perfil
+async function fetchVisibleCadencesForPerfil(perfil) {
+  if (!_supabase) return [];
+  const { data, error } = await _supabase
+    .from('cadencia_visibility')
+    .select('cadencia_id')
+    .eq('perfil', perfil)
+    .eq('visible', true);
+  if (error) {
+    console.error('[Supabase] Erro ao buscar cadências visíveis:', error.message, error.code);
+    return [];
+  }
+  return (data || []).map(r => r.cadencia_id);
+}
+
+/* ============================================
    TESTE: verificar conexão e permissões
    Rode no Console: testarSupabase()
    ============================================ */
@@ -1131,4 +1233,8 @@ window.fetchCentrosCusto = fetchCentrosCusto;
 window.insertCentroCusto = insertCentroCusto;
 window.deleteCentroCusto = deleteCentroCusto;
 window.invalidateCentrosCustoCache = invalidateCentrosCustoCache;
+window.fetchCadenciaVisibility = fetchCadenciaVisibility;
+window.upsertCadenciaVisibility = upsertCadenciaVisibility;
+window.deleteCadenciaVisibility = deleteCadenciaVisibility;
+window.fetchVisibleCadencesForPerfil = fetchVisibleCadencesForPerfil;
 window.testarSupabase = testarSupabase;
