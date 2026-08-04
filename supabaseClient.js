@@ -1083,7 +1083,7 @@ async function fetchCentrosCusto() {
 
   const { data, error } = await _supabase
     .from('centros_custo')
-    .select('id, nome, cor')
+    .select('id, nome')
     .order('nome');
 
   if (error) {
@@ -1143,7 +1143,7 @@ async function fetchCadenciaVisibility() {
   if (!_supabase) return [];
   const { data, error } = await _supabase
     .from('cadencia_visibility')
-    .select('id, perfil, cadencia_uuid, visible, created_at')
+    .select('id, perfil, cadencia_id, visible, created_at')
     .order('created_at', { ascending: false });
   if (error) {
     console.error('[Supabase] Erro ao buscar visibilidade de cadências:', error.message, error.code);

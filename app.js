@@ -94,7 +94,7 @@ async function loadMemberFromAuth(authUserId, authEmail) {
   try {
     // Primary: lookup by auth_user_id
     const { data, error } = await _supabase.from('membros')
-      .select('id, nome, email, cargo, foto_url, centro_custo_id, auth_user_id, centro_custo_ids').eq('auth_user_id', authUserId).maybeSingle();
+      .select('id, nome, email, cargo, foto_url, centro_custo_id, auth_user_id').eq('auth_user_id', authUserId).maybeSingle();
     if (data) {
       // Load multiple centros de custo from pivot table
       const { data: ccData } = await _supabase.from('membro_centros_custo')
@@ -107,7 +107,7 @@ async function loadMemberFromAuth(authUserId, authEmail) {
     // Fallback: lookup by email (in case auth_user_id was never linked)
     if (authEmail) {
       const { data: byEmail, error: emailErr } = await _supabase.from('membros')
-        .select('id, nome, email, cargo, foto_url, centro_custo_id, auth_user_id, centro_custo_ids').eq('email', authEmail).maybeSingle();
+        .select('id, nome, email, cargo, foto_url, centro_custo_id, auth_user_id').eq('email', authEmail).maybeSingle();
       if (byEmail) {
         console.warn('[Auth] Member found by email fallback, linking auth_user_id...');
         await _supabase.from('membros').update({ auth_user_id: authUserId }).eq('id', byEmail.id);
@@ -776,7 +776,7 @@ async function loadMembersFromSupabase() {
   console.log('[Admin] loadMembersFromSupabase called');
   if (!_supabase) { console.error('[Admin] _supabase é null!'); return; }
   try {
-    const { data, error } = await _supabase.from('membros').select('id, nome, email, cargo, foto_url, centro_custo_id, auth_user_id, centro_custo_ids, created_at').order('created_at', { ascending: false });
+    const { data, error } = await _supabase.from('membros').select('id, nome, email, cargo, foto_url, centro_custo_id, auth_user_id, created_at').order('created_at', { ascending: false });
     if (error) {
       console.error('[Admin] Erro ao buscar membros:', error.message, error.code, error.details, error.hint);
       return;
