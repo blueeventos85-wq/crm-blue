@@ -60,7 +60,7 @@ async function fetchCadenciasMap() {
 
   const { data, error } = await _supabase
     .from('cadencias')
-    .select('id, nome, slug, col_id');
+    .select('id, nome');
 
   if (error) {
     console.error('[Supabase] Erro ao buscar cadências:', error.message, error.code);
@@ -72,13 +72,9 @@ async function fetchCadenciasMap() {
     return {};
   }
 
-  console.log('[Supabase] Cadências encontradas:', data.length, data);
-
   const map = {};
 
-  // Helper: strip trailing 's'/'es' for plural/singular matching
   function singularize(s) {
-    if (s.endsWith('oes')) return s.slice(0, -2);       // geladeoes -> gelade (unlikely but safe)
     if (s.endsWith('oes')) return s.slice(0, -3) + 'ao';
     if (s.endsWith('ges') || s.endsWith('ches') || s.endsWith('xes') || s.endsWith('zes')) return s.slice(0, -2);
     if (s.endsWith('s') && s.length > 4) return s.slice(0, -1);
@@ -87,36 +83,22 @@ async function fetchCadenciasMap() {
 
   data.forEach(row => {
     const uuid = row.id;
-    const label = (row.nome || row.label || row.name || row.titulo || row.title || '').toLowerCase().trim();
-    const slug = (row.slug || row.codigo || row.code || '').toLowerCase().trim();
-    const colId = (row.coluna || row.column || row.kanban_col || '').trim();
-
+    const label = (row.nome || '').toLowerCase().trim();
     const normalized = label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '-');
     const normSingular = singularize(normalized);
-    const slugSingular = singularize(slug);
-
-    console.log('[Supabase] Cadência row:', { uuid, label, slug, colId, normalized, normSingular, keys: Object.keys(row) });
 
     let matched = false;
 
-    // 1. Direct colId match
-    if (colId && KANBAN_COLUMN_IDS.includes(colId)) {
-      map[uuid] = colId;
-      matched = true;
-    }
-
-    // 2. Exact match: slug, label, or normalized against column IDs
-    if (!matched) {
-      for (const cid of KANBAN_COLUMN_IDS) {
-        if (slug === cid || label === cid || normalized === cid || normSingular === cid || slugSingular === cid) {
-          map[uuid] = cid;
-          matched = true;
-          break;
-        }
+    // 1. Exact match: label or normalized against column IDs
+    for (const cid of KANBAN_COLUMN_IDS) {
+      if (label === cid || normalized === cid || normSingular === cid) {
+        map[uuid] = cid;
+        matched = true;
+        break;
       }
     }
 
-    // 3. Starts-with match (handles "coletados-frios dos-ia" → "coletados-frio")
+    // 2. Starts-with match
     if (!matched) {
       for (const cid of KANBAN_COLUMN_IDS) {
         const normNext = normSingular.charAt(cid.length);
@@ -128,7 +110,7 @@ async function fetchCadenciasMap() {
       }
     }
 
-    // 4. Reverse: column ID includes the normalized cadência name
+    // 3. Reverse: column ID includes the normalized cadência name
     if (!matched) {
       for (const cid of KANBAN_COLUMN_IDS) {
         if (cid.includes(normSingular) || normSingular.includes(cid)) {
@@ -145,7 +127,7 @@ async function fetchCadenciasMap() {
       }
     }
 
-    // 5. Word-level matching: check if any significant words overlap
+    // 4. Word-level matching
     if (!matched) {
       const labelWords = normSingular.split('-').filter(w => w.length > 3);
       for (const cid of KANBAN_COLUMN_IDS) {
@@ -160,7 +142,7 @@ async function fetchCadenciasMap() {
     }
 
     if (!matched) {
-      console.warn(`[Supabase] Cadência "${label || slug || uuid}" não mapeada para nenhuma coluna do Kanban`);
+      console.warn(`[Supabase] Cadência "${label || uuid}" não mapeada para nenhuma coluna do Kanban`);
     }
   });
 
@@ -272,7 +254,8 @@ async function fetchLeadsSupabase(filterMemberId) {
       empresa: row.nome || 'Sem nome',
       cnpj: '',
       telefone: row.telefone || '',
-      email: '',
+      cpf: row.cpf || '',
+      email: row.email || '',
       responsavel: respName,
       status: status,
       thermal: row.temperatura || 'frio',
@@ -303,6 +286,7 @@ async function fetchLeadsSupabase(filterMemberId) {
       _centroCustoId: row.centro_custo_id || null,
       _centroCustoNome: '',
       enderecoEvento: row.endereco_evento || '',
+      enderecoResidencial: row.endereco_residencial || '',
       quantidadeHoras: row.quantidade_horas || 0,
       cidade: '',
       estado: '',
@@ -331,7 +315,8 @@ async function insertLeadSupabase(data) {
 
   const { nome, telefone, data_evento, endereco_evento,
           quantidade_horas, temperatura, honorarios, observacoes,
-          tipo_servico_id, cadencia_id, owner_id, centro_custo_id } = data;
+          tipo_servico_id, cadencia_id, owner_id, centro_custo_id,
+          cpf, email, endereco_residencial } = data;
 
   console.log('[Supabase] Inserindo lead:', { nome, telefone, data_evento });
 
@@ -344,8 +329,11 @@ async function insertLeadSupabase(data) {
     temperatura,
     honorarios: parseBrazilianCurrency(honorarios),
     observacoes,
-    membro_id: null, // Começa sempre como null, conforme requisitos
-    centro_custo_id: centro_custo_id || null
+    membro_id: null,
+    centro_custo_id: centro_custo_id || null,
+    cpf: cpf || null,
+    email: email || null,
+    endereco_residencial: endereco_residencial || null
   };
   if (owner_id) payload.owner_id = owner_id;
   if (tipo_servico_id) payload.tipo_servico_id = Array.isArray(tipo_servico_id) ? tipo_servico_id : [tipo_servico_id];
@@ -645,7 +633,10 @@ async function fetchClientsSupabase(filterMemberId) {
       thermal: row.temperatura || 'frio',
       honorarios: row.honorarios || 0,
       telefone: row.telefone || '',
+      cpf: row.cpf || '',
+      email: row.email || '',
       enderecoEvento: row.endereco_evento || '',
+      enderecoResidencial: row.endereco_residencial || '',
       quantidadeHoras: row.quantidade_horas || 0,
       observacoes: row.observacoes || '',
       _membroId: row.membro_id || null,

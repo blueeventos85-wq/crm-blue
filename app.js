@@ -3605,9 +3605,10 @@ rebuildCalendarEvents();
 function getFilteredMeetings() {
   if (calEmpresaFilter === 'all') return meetings;
   return meetings.filter(m => {
+    if (m.empresa_id && String(m.empresa_id) === String(calEmpresaFilter)) return true;
     if (!m.leadId) return false;
     const lead = leads.find(l => String(l.id) === String(m.leadId));
-    return lead && lead._centroCustoId === calEmpresaFilter;
+    return lead && String(lead._centroCustoId) === String(calEmpresaFilter);
   });
 }
 
@@ -5086,13 +5087,14 @@ async function onDrop(e) {
   lead.lastTouch = new Date().toLocaleDateString('pt-BR');
   invalidateDashCache();
 
-  let newCadenciaUuid = _cadenciaColToUuid[newStatus] || null;
+  const _cadMap = window._cadenciaColToUuid || {};
+  let newCadenciaUuid = _cadMap[newStatus] || null;
 
-  if (!newCadenciaUuid && Object.keys(_cadenciaColToUuid).length === 0) {
+  if (!newCadenciaUuid && Object.keys(_cadMap).length === 0) {
     console.warn('[onDrop] Mapa cadência vazio, reconstruindo...');
     try {
       const rebuilt = await rebuildCadenciaMaps();
-      newCadenciaUuid = _cadenciaColToUuid[newStatus] || null;
+      newCadenciaUuid = (window._cadenciaColToUuid || {})[newStatus] || null;
     } catch {}
   }
 
@@ -5102,7 +5104,7 @@ async function onDrop(e) {
       .then(() => console.log('[Supabase] cadencia_id salvo:', newCadenciaUuid))
       .catch(err => console.error('[Supabase] Erro ao salvar cadencia_id:', err));
   } else {
-    console.warn('[onDrop] Não encontrou UUID para coluna:', newStatus, '| Mapa:', _cadenciaColToUuid);
+    console.warn('[onDrop] Não encontrou UUID para coluna:', newStatus, '| Mapa:', window._cadenciaColToUuid);
   }
 
   // visual feedback
@@ -5233,6 +5235,9 @@ function openNewLeadModal() {
   // Bind honorários mask
   bindHonMask();
 
+  // Bind CPF mask
+  bindCpfMask();
+
   // Hide transfer tab for new leads
   const transferTab = $('#leadTransferTab');
   const transferHeaderBtn = $('#leadTransferHeaderBtn');
@@ -5337,6 +5342,9 @@ function openLeadModal(id) {
 
   // Bind honorários mask
   bindHonMask();
+
+  // Bind CPF mask
+  bindCpfMask();
 
   // Popula dropdown de empresa e seleciona a do lead
   populateLeadEmpresaSelect();
@@ -5444,6 +5452,30 @@ function bindHonMask() {
     const raw = val > 0 ? String(Math.round(val * 100)) : '';
     newHonEl.value = raw;
     newHonEl.setSelectionRange(raw.length, raw.length);
+  });
+}
+
+function bindCpfMask() {
+  const cpfEl = $('#leadModal [name="cpf"]');
+  if (!cpfEl) return;
+
+  const newCpfEl = cpfEl.cloneNode(true);
+  cpfEl.parentNode.replaceChild(newCpfEl, cpfEl);
+
+  function formatCpf(v) {
+    v = v.replace(/\D/g, '').slice(0, 11);
+    if (v.length > 9) return v.replace(/(\d{3})(\d{3})(\d{3})(\d{1,2})/, '$1.$2.$3-$4');
+    if (v.length > 6) return v.replace(/(\d{3})(\d{3})(\d{1,3})/, '$1.$2.$3');
+    if (v.length > 3) return v.replace(/(\d{3})(\d{1,3})/, '$1.$2');
+    return v;
+  }
+
+  newCpfEl.addEventListener('input', () => {
+    const pos = newCpfEl.selectionStart;
+    const prevLen = newCpfEl.value.length;
+    newCpfEl.value = formatCpf(newCpfEl.value);
+    const diff = newCpfEl.value.length - prevLen;
+    newCpfEl.setSelectionRange(pos + diff, pos + diff);
   });
 }
 
@@ -5605,7 +5637,8 @@ async function saveLead() {
       empresa: fields.empresa,
       cnpj: '',
       telefone: fields.telefone,
-      email: '',
+      cpf: fields.cpf || '',
+      email: fields.email || '',
       responsavel: currentUser.nome || 'Camila',
       _ownerId: currentUser.id || null,
       _membroId: null,
@@ -5617,8 +5650,9 @@ async function saveLead() {
       dataEvento: fields.dataEvento,
       tiposServico: fields.tiposServico,
       _tipoServicoIds: fields.tiposServico.map(name => _servicosByName[name]?.id).filter(Boolean),
-      _cadenciaId: _cadenciaColToUuid['novo-lead'] || null,
+      _cadenciaId: (window._cadenciaColToUuid || {})['novo-lead'] || null,
       enderecoEvento: fields.enderecoEvento || '',
+      enderecoResidencial: fields.enderecoResidencial || '',
       quantidadeHoras: fields.quantidadeHoras,
       cidade: '',
       estado: '',
@@ -5652,6 +5686,7 @@ async function saveLead() {
         telefone: fields.telefone,
         data_evento: fields.dataEvento || null,
         endereco_evento: fields.enderecoEvento || '',
+        endereco_residencial: fields.enderecoResidencial || '',
         quantidade_horas: fields.quantidadeHoras || 0,
         temperatura: fields.thermal || 'frio',
         honorarios: fields.honorarios,
@@ -5659,7 +5694,9 @@ async function saveLead() {
         tipo_servico_id: newLead._tipoServicoIds.length > 0 ? newLead._tipoServicoIds : null,
         cadencia_id: newLead._cadenciaId || null,
         owner_id: currentUser.id || null,
-        centro_custo_id: fields.empresaId || null
+        centro_custo_id: fields.empresaId || null,
+        cpf: fields.cpf || '',
+        email: fields.email || ''
       });
       if (result && result[0] && result[0].id) {
         newLead.id = result[0].id;
@@ -5698,10 +5735,13 @@ if (typeof registrarAuditoria === 'function') {
         telefone: fields.telefone,
         data_evento: fields.dataEvento || null,
         endereco_evento: fields.enderecoEvento || '',
+        endereco_residencial: fields.enderecoResidencial || '',
         quantidade_horas: fields.quantidadeHoras || 0,
         temperatura: fields.thermal || 'frio',
         honorarios: fields.honorarios,
-        observacoes: fields.observacoes || ''
+        observacoes: fields.observacoes || '',
+        cpf: fields.cpf || '',
+        email: fields.email || ''
       };
 
       if (fields.tiposServico) {
@@ -5709,7 +5749,7 @@ if (typeof registrarAuditoria === 'function') {
         if (ids.length > 0) payload.tipo_servico_id = ids;
       }
 
-      const cadUuid = _cadenciaColToUuid[lead.status] || lead._cadenciaId;
+      const cadUuid = (window._cadenciaColToUuid || {})[lead.status] || lead._cadenciaId;
       if (cadUuid) payload.cadencia_id = cadUuid;
 
       console.log('[Edit] Payload para Supabase:', JSON.stringify(payload, null, 2));

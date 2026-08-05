@@ -2268,6 +2268,23 @@
           </div>
 
           <div class="form-group">
+            <label>CPF</label>
+            <input type="text" name="cpf" placeholder="000.000.000-00" maxlength="14" />
+            <span class="form-error" data-error="cpf"></span>
+          </div>
+          <div class="form-group">
+            <label>E-mail</label>
+            <input type="email" name="email" placeholder="email@exemplo.com" />
+            <span class="form-error" data-error="email"></span>
+          </div>
+
+          <div class="form-group full">
+            <label>Endereço Residencial</label>
+            <input type="text" name="enderecoResidencial" placeholder="Rua, número, bairro, cidade/UF" />
+            <span class="form-error" data-error="enderecoResidencial"></span>
+          </div>
+
+          <div class="form-group">
             <label>Número (telefone) <span class="req">*</span></label>
             <input type="tel" name="telefone" required placeholder="(11) 98765-4321" />
             <span class="form-error" data-error="telefone"></span>
