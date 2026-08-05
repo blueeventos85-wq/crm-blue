@@ -7650,7 +7650,7 @@ function saveCalEvent() {
     notes: $('#calEventNotes').value,
     color: $('#calEventColor').value || '#2F80ED',
     status: 'agendada',
-    createdBy: currentUser.id || null
+    created_by: currentUser.id || null
   };
 
   const saveBtn = $('#calEventSaveBtn');
@@ -8863,10 +8863,12 @@ function saveAndCloseRotinaCreate() {
       data_tarefa: rotinaScheduledDate || null,
       hora_tarefa: rotinaScheduledTime || null,
       tipo:        newType,
-      fixado:      false
+      fixado:      false,
+      membro_id:   currentUser.id || null
     };
 
     async function doInsert() {
+      let insertSuccess = false;
       try {
         const result = await insertRotina(payload);
         if (result && result[0]) {
@@ -8875,35 +8877,39 @@ function saveAndCloseRotinaCreate() {
         } else {
           payload.id = Date.now();
         }
+        insertSuccess = true;
       } catch (err) {
         console.error('[Rotina] Erro ao inserir no Supabase:', err);
-        payload.id = Date.now();
         toast('Erro ao salvar no Supabase: ' + (err.message || err), 'error');
+        return;
       }
 
-      const newItem = {
-        id:          payload.id,
-        type:        payload.tipo,
-        column:      payload.status,
-        title:       payload.titulo,
-        time:        payload.hora_tarefa,
-        date:        payload.data_tarefa,
-        assignees:   [],
-        pastel:      payload.cor,
-        done:        false,
-        desc:        payload.observacoes,
-        fixado:      payload.fixado,
-        _supabaseId: payload._supabaseId || payload.id
-      };
-      rotinaItems.push(newItem);
-      toast('Card criado com sucesso!');
-if (typeof registrarAuditoria === 'function') {
-    registrarAuditoria({ acao: 'Inclusões', caminho_url: '/rotina', modulo: 'Rotina Blue' });
-  }
-      renderRotinaKanban();
-      renderRotinaReminder();
-      bindRotinaCheckboxes();
-      bindRotinaCards();
+      if (insertSuccess) {
+        const newItem = {
+          id:          payload.id,
+          type:        payload.tipo,
+          column:      payload.status,
+          title:       payload.titulo,
+          time:        payload.hora_tarefa,
+          date:        payload.data_tarefa,
+          assignees:   [],
+          pastel:      payload.cor,
+          done:        false,
+          desc:        payload.observacoes,
+          fixado:      payload.fixado,
+          _supabaseId: payload._supabaseId || payload.id,
+          _membroId:   currentUser.id || null
+        };
+        rotinaItems.push(newItem);
+        toast('Card criado com sucesso!');
+        if (typeof registrarAuditoria === 'function') {
+          registrarAuditoria({ acao: 'Inclusões', caminho_url: '/rotina', modulo: 'Rotina Blue' });
+        }
+        renderRotinaKanban();
+        renderRotinaReminder();
+        bindRotinaCheckboxes();
+        bindRotinaCards();
+      }
     }
     doInsert();
   }

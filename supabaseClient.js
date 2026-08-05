@@ -831,7 +831,8 @@ async function insertRotina(data) {
     data_tarefa: data.data_tarefa || null,
     hora_tarefa: data.hora_tarefa || null,
     tipo:        data.tipo || 'tarefa',
-    fixado:      data.fixado || false
+    fixado:      data.fixado || false,
+    membro_id:   data.membro_id || null
   };
 
   console.log('[Supabase] Inserindo rotina:', payload);
