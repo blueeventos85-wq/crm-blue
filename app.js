@@ -1469,7 +1469,7 @@ async function loadServicosAdmin() {
 
   const { data: servicos, error } = await _supabase
     .from('servicos')
-    .select('id, nome, tipo_servico_id')
+    .select('id, nome, created_at')
     .order('nome');
   if (error) { console.error('[Servicos] Erro ao buscar serviços:', error); return; }
 
