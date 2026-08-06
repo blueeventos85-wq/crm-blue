@@ -4998,10 +4998,19 @@ function formatCnpj(c) {
 }
 
 function bindLeadCards() {
+  const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
   $$('.lead-card').forEach(card => {
     card.addEventListener('dragstart', onDragStart);
     card.addEventListener('dragend', onDragEnd);
   });
+
+  if (isTouchDevice) {
+    $$('.lead-card').forEach(card => {
+      card.setAttribute('draggable', 'false');
+    });
+  }
+
   $$('.lead-card [data-action]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -5010,8 +5019,23 @@ function bindLeadCards() {
       handleLeadAction(action, id);
     });
   });
+
+  let touchMoved = false;
+
   $$('.lead-card').forEach(card => {
-    card.addEventListener('dblclick', () => openLeadModal(card.dataset.leadId));
+    card.addEventListener('touchstart', () => {
+      touchMoved = false;
+    }, { passive: true });
+
+    card.addEventListener('touchmove', () => {
+      touchMoved = true;
+    }, { passive: true });
+
+    card.addEventListener('click', (e) => {
+      if (touchMoved) return;
+      if (e.detail === 0) return;
+      openLeadModal(card.dataset.leadId);
+    });
   });
 }
 

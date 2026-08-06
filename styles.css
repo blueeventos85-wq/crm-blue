@@ -2763,6 +2763,7 @@ svg.lucide.lg { width: 22px; height: 22px; }
   border-radius: var(--radius);
   padding: 12px;
   cursor: grab;
+  touch-action: manipulation;
   transition: all 0.18s ease;
   position: relative;
   box-shadow: var(--shadow-sm);
