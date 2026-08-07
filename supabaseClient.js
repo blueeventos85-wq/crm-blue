@@ -215,10 +215,9 @@ async function fetchLeadsSupabase(filterMemberId) {
 
   const cadenciaMap = await fetchCadenciasMap();
 
-  // Tentar com join de centros_custo; se a tabela não existir, fazer fallback
   let q = _supabase
     .from('leads')
-    .select('*, membros!membro_id(nome)')
+    .select('*')
     .order('created_at', { ascending: false });
 
   if (filterMemberId) {
@@ -240,14 +239,24 @@ async function fetchLeadsSupabase(filterMemberId) {
 
   console.log('[Supabase] Leads encontrados:', data.length);
 
+  const allOwnerIds = [...new Set(data.map(r => r.membro_id || r.owner_id).filter(Boolean))];
+  let memberMap = {};
+  if (allOwnerIds.length > 0) {
+    const { data: membrosData } = await _supabase
+      .from('membros')
+      .select('id, nome')
+      .in('id', allOwnerIds);
+    (membrosData || []).forEach(m => { memberMap[m.id] = m.nome; });
+  }
+
   return data.map(row => {
     const status = (row.cadencia_id && cadenciaMap[row.cadencia_id]) || DEFAULT_CADENCE_ID;
     const created = row.created_at ? new Date(row.created_at) : new Date();
     const nowStr = created.toLocaleString('pt-BR');
     const today = created.toLocaleDateString('pt-BR');
 
-    // Se houver membro_id, usar o nome do membro retornado no join
-    const respName = row.membros ? row.membros.nome : 'Camila';
+    const lookupId = row.membro_id || row.owner_id;
+    const respName = (lookupId && memberMap[lookupId]) || 'Sem atendente';
 
     return {
       id: row.id,
@@ -329,7 +338,7 @@ async function insertLeadSupabase(data) {
     temperatura,
     honorarios: parseBrazilianCurrency(honorarios),
     observacoes,
-    membro_id: null,
+    membro_id: owner_id || null,
     centro_custo_id: centro_custo_id || null,
     cpf: cpf || null,
     email: email || null,
@@ -566,7 +575,7 @@ async function fetchClientsSupabase(filterMemberId) {
 
   console.log('[Supabase-Clientes] filterMemberId recebido:', filterMemberId, '| tipo:', typeof filterMemberId);
 
-  let leadsQuery = _supabase.from('leads').select('*, membros!membro_id(nome)').order('created_at', { ascending: false });
+  let leadsQuery = _supabase.from('leads').select('*').order('created_at', { ascending: false });
 
   if (filterMemberId) {
     console.log('[Supabase-Clientes] Aplicando filtro membro_id/qualificador_id/owner_id:', filterMemberId);
@@ -597,6 +606,16 @@ async function fetchClientsSupabase(filterMemberId) {
   const leads = leadsRes.data || [];
   console.log('[Supabase] Clientes carregados:', leads.length);
 
+  const allOwnerIds = [...new Set(leads.map(r => r.membro_id || r.owner_id).filter(Boolean))];
+  let memberMap = {};
+  if (allOwnerIds.length > 0) {
+    const { data: membrosData } = await _supabase
+      .from('membros')
+      .select('id, nome')
+      .in('id', allOwnerIds);
+    (membrosData || []).forEach(m => { memberMap[m.id] = m.nome; });
+  }
+
   return leads.map(row => {
     const rawSvc = row.tipo_servico_id;
     let services = [];
@@ -610,7 +629,8 @@ async function fetchClientsSupabase(filterMemberId) {
 
     const nome = row.nome || 'Sem nome';
     const initials = nome.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
-    const membroNome = row.membros ? row.membros.nome : '';
+    const lookupId = row.membro_id || row.owner_id;
+    const membroNome = (lookupId && memberMap[lookupId]) || 'Sem atendente';
 
     const statusMap = {
       'frio': 'active', 'morno': 'active', 'quente': 'active',

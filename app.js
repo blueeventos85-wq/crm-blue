@@ -4975,7 +4975,7 @@ function leadCardHTML(l) {
   const more = overflow > 0
     ? `<span class="lead-card-svc-more" tabindex="0" role="button" aria-label="Mais ${overflow} serviço${overflow > 1 ? 's' : ''}" title="${allServices.slice(MAX_SERVICES_CARD).join(', ')}">+${overflow}</span>`
     : '';
-  const respName = l.responsavel || '—';
+  const respName = l.responsavel || 'Sem atendente';
   return `
     <article class="lead-card" draggable="true" data-lead-id="${l.id}" tabindex="0"
              aria-label="${l.empresa}${svcCount ? ', ' + svcCount + ' serviço' + (svcCount > 1 ? 's' : '') : ''}">
@@ -5663,7 +5663,7 @@ async function saveLead() {
       telefone: fields.telefone,
       cpf: fields.cpf || '',
       email: fields.email || '',
-      responsavel: currentUser.nome || 'Camila',
+      responsavel: currentUser.nome || 'Sem atendente',
       _ownerId: currentUser.id || null,
       _membroId: null,
       _centroCustoId: fields.empresaId || null,
