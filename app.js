@@ -2281,6 +2281,7 @@ function maskPhone(v) {
 
 function canEditEvent(event) {
   if (currentUser.perfil === 'Administrador') return true;
+  if (currentUser.perfil === 'Atendente') return true;
   if (event.createdBy && String(event.createdBy) === String(currentUser.id)) return true;
   return false;
 }
