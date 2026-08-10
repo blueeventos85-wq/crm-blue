@@ -6,3 +6,5 @@ dist
 *.exe
 *.msi
 tokens.json
+.vercel
+.env*

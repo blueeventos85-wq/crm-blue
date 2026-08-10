@@ -3771,14 +3771,22 @@ function renderMonthView(grid, weekdays, eventsMap) {
   for (let d = 1; d <= remaining; d++) cells.push({ day: d, other: true, iso: '' });
 
   grid.className = 'cal-grid';
+  const MAX_VISIBLE = 3;
   grid.innerHTML = cells.map(c => {
     const isToday = c.iso === todayIso;
     const events = c.iso ? (eventsMap || calendarEvents)[c.iso] || [] : [];
-    const eventsHtml = events.map(e =>
+    const visibleEvents = events.slice(0, MAX_VISIBLE);
+    const remaining = events.length - MAX_VISIBLE;
+    const eventsHtml = visibleEvents.map(e =>
       `<span class="cal-event" role="button" tabindex="0" data-iso="${c.iso}" data-meeting-id="${e.id}" style="background:${e.color}">${e.title}</span>`
     ).join('');
+    const moreHtml = remaining > 0
+      ? `<span class="cal-day-more" data-iso="${c.iso}">+${remaining} mais</span>`
+      : '';
     return `<div class="cal-day ${c.other ? 'other-month' : ''} ${isToday ? 'today' : ''}" role="button" tabindex="0" data-iso="${c.iso}">
-      <span class="cal-day-num">${c.day}</span>${eventsHtml}</div>`;
+      <span class="cal-day-num">${c.day}</span>
+      <div class="cal-day-events">${eventsHtml}${moreHtml}</div>
+    </div>`;
   }).join('');
 }
 
@@ -7813,6 +7821,19 @@ document.addEventListener('click', (e) => {
   const leadPopup = $('#calLeadPopup');
   if (leadPopup && !leadPopup.hidden && !e.target.closest('#calLeadPopup') && !e.target.closest('.cal-event')) {
     closeLeadEditPopup();
+  }
+
+  // "+X mais" counter → switch to day view
+  const moreEl = e.target.closest('.cal-day-more');
+  if (moreEl) {
+    e.preventDefault();
+    e.stopPropagation();
+    const iso = moreEl.dataset.iso;
+    if (iso) {
+      calCurrentDate = new Date(iso + 'T12:00:00');
+      setCalView('day');
+    }
+    return;
   }
 
   // Cell click (not on event) → open new event modal (only on double-click area or direct cell)
