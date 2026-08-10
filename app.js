@@ -416,11 +416,24 @@ function initAdminView() {
 
     // ── Busca membros ──
     if (searchInput) {
+      let adminDebounce;
       searchInput.addEventListener('input', () => {
-        const q = searchInput.value.toLowerCase().trim();
-        document.querySelectorAll('#adminUsersBody tr').forEach(row => {
-          row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
-        });
+        clearTimeout(adminDebounce);
+        adminDebounce = setTimeout(() => {
+          const q = searchInput.value.toLowerCase().trim();
+          document.querySelectorAll('#adminUsersBody tr').forEach(row => {
+            row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+          });
+        }, 150);
+      });
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          clearTimeout(adminDebounce);
+          const q = searchInput.value.toLowerCase().trim();
+          document.querySelectorAll('#adminUsersBody tr').forEach(row => {
+            row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+          });
+        }
       });
     }
 
@@ -440,11 +453,24 @@ function initAdminView() {
     // ── Busca permissões ──
     const permSearch = document.getElementById('adminPermSearchInput');
     if (permSearch) {
+      let permDebounce;
       permSearch.addEventListener('input', () => {
-        const q = permSearch.value.toLowerCase().trim();
-        document.querySelectorAll('#adminPermBody tr').forEach(row => {
-          row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
-        });
+        clearTimeout(permDebounce);
+        permDebounce = setTimeout(() => {
+          const q = permSearch.value.toLowerCase().trim();
+          document.querySelectorAll('#adminPermBody tr').forEach(row => {
+            row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+          });
+        }, 150);
+      });
+      permSearch.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          clearTimeout(permDebounce);
+          const q = permSearch.value.toLowerCase().trim();
+          document.querySelectorAll('#adminPermBody tr').forEach(row => {
+            row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+          });
+        }
       });
     }
 
@@ -2437,6 +2463,12 @@ function bindHomeSearch() {
       renderHomeModules(e.target.value);
     }, 200);
   });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      clearTimeout(homeSearchDebounce);
+      renderHomeModules(input.value);
+    }
+  });
 }
 // Atalho "/" para focar busca (bind uma vez só)
 document.addEventListener('keydown', function homeSearchShortcut(e) {
@@ -4008,6 +4040,13 @@ function initInteractions() {
         clienteSearchQuery = clienteSearch.value;
         renderClients();
       }, 180);
+    });
+    clienteSearch.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        clearTimeout(searchTimeout);
+        clienteSearchQuery = clienteSearch.value;
+        renderClients();
+      }
     });
   }
 
@@ -5899,10 +5938,19 @@ function initCRM() {
   // Busca com debounce
   const search = $('#crmSearch');
   let searchTimeout;
-  if (search) search.addEventListener('input', () => {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => { leadSearchQuery = search.value; renderAll(); }, 180);
-  });
+  if (search) {
+    search.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => { leadSearchQuery = search.value; renderAll(); }, 180);
+    });
+    search.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        clearTimeout(searchTimeout);
+        leadSearchQuery = search.value;
+        renderAll();
+      }
+    });
+  }
 
   // Botão + Lead → abre modal em modo criação
   const newLead = $('#crmNewLeadBtn');
@@ -9446,7 +9494,7 @@ function getFilteredAuditData() {
   const device = $('#auditFilterDevice')?.value || 'all';
 
   return auditData.filter(row => {
-    if (search && !row.user.toLowerCase().includes(search) && !row.action.toLowerCase().includes(search) && !row.actionUrl.toLowerCase().includes(search)) return false;
+    if (search && !row.user.toLowerCase().includes(search) && !row.action.toLowerCase().includes(search) && !row.actionUrl.toLowerCase().includes(search) && !(row.module || '').toLowerCase().includes(search)) return false;
     if (modulo !== 'all' && row.module.toLowerCase() !== modulo) return false;
     if (acao !== 'all' && row.action !== acao) return false;
     if (func !== 'all') {
@@ -9574,6 +9622,14 @@ function bindAuditFilters() {
         renderAuditTable();
         renderAuditPagination();
       }, 200);
+    });
+    search.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        clearTimeout(debounce);
+        auditPage = 1;
+        renderAuditTable();
+        renderAuditPagination();
+      }
     });
   }
   const refresh = $('#auditRefreshBtn');
@@ -10130,11 +10186,12 @@ function initConversas() {
   const assigneeSelect = $('#detailAssignee');
 
   if (searchInput) {
-    searchInput.addEventListener('input', (e) => {
-      const term = e.target.value.toLowerCase();
+    let conversasDebounce;
+    const filterConversas = (term) => {
+      const q = term.toLowerCase();
       const filtered = conversasState.chats.filter(c =>
-        (c.contact_name || '').toLowerCase().includes(term) ||
-        (c.contact_phone || '').includes(term)
+        (c.contact_name || '').toLowerCase().includes(q) ||
+        (c.contact_phone || '').toLowerCase().includes(q)
       );
       const list = $('#conversasList');
       if (!list) return;
@@ -10172,6 +10229,17 @@ function initConversas() {
       list.querySelectorAll('.conversas-chat-item').forEach(item => {
         item.addEventListener('click', () => selectConversasChat(item.dataset.chatId));
       });
+    };
+
+    searchInput.addEventListener('input', (e) => {
+      clearTimeout(conversasDebounce);
+      conversasDebounce = setTimeout(() => filterConversas(e.target.value), 150);
+    });
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        clearTimeout(conversasDebounce);
+        filterConversas(searchInput.value);
+      }
     });
   }
 
