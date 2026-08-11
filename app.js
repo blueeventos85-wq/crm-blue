@@ -5310,6 +5310,9 @@ function openNewLeadModal() {
   // Bind CPF mask
   bindCpfMask();
 
+  // Bind CNPJ mask
+  bindCnpjMask();
+
   // Hide transfer tab for new leads
   const transferTab = $('#leadTransferTab');
   const transferHeaderBtn = $('#leadTransferHeaderBtn');
@@ -5417,6 +5420,9 @@ function openLeadModal(id) {
 
   // Bind CPF mask
   bindCpfMask();
+
+  // Bind CNPJ mask
+  bindCnpjMask();
 
   // Popula dropdown de empresa e seleciona a do lead
   populateLeadEmpresaSelect();
@@ -5548,6 +5554,31 @@ function bindCpfMask() {
     newCpfEl.value = formatCpf(newCpfEl.value);
     const diff = newCpfEl.value.length - prevLen;
     newCpfEl.setSelectionRange(pos + diff, pos + diff);
+  });
+}
+
+function bindCnpjMask() {
+  const cnpjEl = $('#leadModal [name="cnpj"]');
+  if (!cnpjEl) return;
+
+  const newCnpjEl = cnpjEl.cloneNode(true);
+  cnpjEl.parentNode.replaceChild(newCnpjEl, cnpjEl);
+
+  function formatCnpj(v) {
+    v = v.replace(/\D/g, '').slice(0, 14);
+    if (v.length > 12) return v.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{1,2})/, '$1.$2.$3/$4-$5');
+    if (v.length > 8) return v.replace(/(\d{2})(\d{3})(\d{3})(\d{1,4})/, '$1.$2.$3/$4');
+    if (v.length > 5) return v.replace(/(\d{2})(\d{3})(\d{1,3})/, '$1.$2.$3');
+    if (v.length > 2) return v.replace(/(\d{2})(\d{1,3})/, '$1.$2');
+    return v;
+  }
+
+  newCnpjEl.addEventListener('input', () => {
+    const pos = newCnpjEl.selectionStart;
+    const prevLen = newCnpjEl.value.length;
+    newCnpjEl.value = formatCnpj(newCnpjEl.value);
+    const diff = newCnpjEl.value.length - prevLen;
+    newCnpjEl.setSelectionRange(pos + diff, pos + diff);
   });
 }
 
@@ -5707,7 +5738,7 @@ async function saveLead() {
     const newLead = {
       id: Math.max(...leads.map(l => l.id), 0) + 1,
       empresa: fields.empresa,
-      cnpj: '',
+      cnpj: fields.cnpj || '',
       telefone: fields.telefone,
       cpf: fields.cpf || '',
       email: fields.email || '',
@@ -5768,6 +5799,7 @@ async function saveLead() {
         owner_id: currentUser.id || null,
         centro_custo_id: fields.empresaId || null,
         cpf: fields.cpf || '',
+        cnpj: fields.cnpj || '',
         email: fields.email || ''
       });
       if (result && result[0] && result[0].id) {
@@ -5813,6 +5845,7 @@ if (typeof registrarAuditoria === 'function') {
         honorarios: fields.honorarios,
         observacoes: fields.observacoes || '',
         cpf: fields.cpf || '',
+        cnpj: fields.cnpj || '',
         email: fields.email || ''
       };
 

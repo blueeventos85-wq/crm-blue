@@ -261,7 +261,7 @@ async function fetchLeadsSupabase(filterMemberId) {
     return {
       id: row.id,
       empresa: row.nome || 'Sem nome',
-      cnpj: '',
+      cnpj: row.cnpj || '',
       telefone: row.telefone || '',
       cpf: row.cpf || '',
       email: row.email || '',
@@ -325,7 +325,7 @@ async function insertLeadSupabase(data) {
   const { nome, telefone, data_evento, endereco_evento,
           quantidade_horas, temperatura, honorarios, observacoes,
           tipo_servico_id, cadencia_id, owner_id, centro_custo_id,
-          cpf, email, endereco_residencial } = data;
+          cpf, cnpj, email, endereco_residencial } = data;
 
   console.log('[Supabase] Inserindo lead:', { nome, telefone, data_evento });
 
@@ -341,6 +341,7 @@ async function insertLeadSupabase(data) {
     membro_id: owner_id || null,
     centro_custo_id: centro_custo_id || null,
     cpf: cpf || null,
+    cnpj: cnpj || null,
     email: email || null,
     endereco_residencial: endereco_residencial || null
   };
@@ -644,7 +645,7 @@ async function fetchClientsSupabase(filterMemberId) {
     return {
       id: row.id,
       name: nome,
-      cnpj: '',
+      cnpj: row.cnpj || '',
       initials,
       avatar: 'avatar-blue',
       status,
