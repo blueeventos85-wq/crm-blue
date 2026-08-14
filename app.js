@@ -3599,6 +3599,7 @@ function meetingColor(type) {
     aniversario: '#f59e0b',
     corporativo: '#10b981',
     evento:      '#2F80ED',
+    lembrete:    '#3b82f6',
     fiscal:      '#f59e0b',
     financeiro:  '#10b981',
     implantacao: '#a855f7',
@@ -3612,7 +3613,8 @@ function meetingTypeLabel(type) {
     festa15:      'Festa de 15 anos',
     aniversario:  'Aniversário',
     corporativo:  'Corporativo',
-    evento:       'Evento'
+    evento:       'Evento',
+    lembrete:     'Lembrete'
   })[type] || 'Outro';
 }
 
