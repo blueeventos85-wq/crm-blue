@@ -4328,6 +4328,15 @@ textarea:focus-visible,
 .theme-dark .card { background: #1E293B; border-color: #334155; }
 .theme-dark .page-title { color: #E2E8F0; }
 .theme-dark .page-subtitle { color: #94A3B8; }
+.theme-dark .contratos-filters-card { background: #1E293B; border-color: #334155; }
+.theme-dark .contratos-table-wrapper { background: #1E293B; border-color: #334155; }
+.theme-dark .contratos-table th { background: #1E293B; border-color: #334155; color: #94A3B8; }
+.theme-dark .contratos-table td { border-color: #334155; color: #E2E8F0; }
+.theme-dark .contratos-table tbody tr:hover { background: color-mix(in srgb, var(--primary-blue) 10%, transparent); }
+.theme-dark .contrato-discard-modal { background: #1E293B; }
+.theme-dark .contrato-discard-text { color: #CBD5E1; }
+.theme-dark .contrato-cancel-modal { background: #1E293B; }
+.theme-dark .contrato-cancel-text { color: #CBD5E1; }
 .theme-dark .home-hero { background: linear-gradient(135deg, #002F8A 0%, #165BFF 100%); }
 .theme-dark .home-hero-search {
   background: rgba(255, 255, 255, 0.12);
@@ -8235,4 +8244,952 @@ textarea:focus-visible,
 @media (max-width: 768px) {
   .cc-grid { grid-template-columns: 1fr; }
   .cc-detail-stats { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ====== CONTRATOS ====== */
+.status-rascunho { background: var(--gray-100); color: var(--gray-700); }
+.theme-dark .status-rascunho { background: var(--gray-800); color: var(--gray-300); }
+.status-gerado { background: var(--blue-50); color: var(--blue-700); }
+.theme-dark .status-gerado { background: var(--blue-900); color: var(--blue-200); }
+.status-enviado { background: var(--indigo-50); color: var(--indigo-700); }
+.theme-dark .status-enviado { background: var(--indigo-900); color: var(--indigo-200); }
+.status-assinado { background: var(--green-50); color: var(--green-700); }
+.theme-dark .status-assinado { background: var(--green-900); color: var(--green-200); }
+.status-cancelado { background: var(--red-50); color: var(--red-700); }
+.theme-dark .status-cancelado { background: var(--red-900); color: var(--red-200); }
+.status-vencido { background: var(--amber-50); color: var(--amber-700); }
+.theme-dark .status-vencido { background: var(--amber-900); color: var(--amber-200); }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* =============================================
+   CONTRATOS — Layout da Página
+   ============================================= */
+.contratos-page {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 32px;
+}
+
+.contratos-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.contratos-page-header__text h1 {
+  margin: 0;
+  font-size: clamp(1.8rem, 2.5vw, 2.25rem);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.contratos-page-header__text p {
+  margin: 8px 0 0;
+  color: var(--muted-text);
+  font-size: 0.9375rem;
+}
+
+.contratos-add-button {
+  flex-shrink: 0;
+}
+
+/* =============================================
+   CONTRATOS — Filtros Compactos
+   ============================================= */
+.contratos-filters-card {
+  margin: 24px 0 20px;
+  padding: 20px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  background: var(--card-bg);
+}
+
+.contratos-filters-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 2fr) minmax(170px, 1fr) minmax(180px, 1fr) auto;
+  align-items: end;
+  gap: 16px;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-field > span {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* =============================================
+   CONTRATOS — Tabela
+   ============================================= */
+.contratos-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  background: var(--card-bg);
+}
+
+.contratos-table {
+  width: 100%;
+  min-width: 1040px;
+  border-collapse: collapse;
+}
+
+.contratos-table th {
+  padding: 16px 20px;
+  text-align: left;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--muted-text);
+  border-bottom: 1px solid var(--gray-200);
+  background: var(--gray-50);
+}
+
+.contratos-table td {
+  padding: 18px 20px;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--gray-100);
+  color: var(--text-primary);
+}
+
+.contratos-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.contratos-table tbody tr {
+  transition: background 0.15s;
+}
+
+.contratos-table tbody tr:hover {
+  background: color-mix(in srgb, var(--primary-blue) 6%, transparent);
+}
+
+.contract-number {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.contract-client {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contract-service {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contract-date,
+.contract-value,
+.contract-created-at {
+  white-space: nowrap;
+}
+
+.contratos-th-actions {
+  text-align: right;
+}
+
+.contract-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+/* =============================================
+   CONTRATOS — Responsividade
+   ============================================= */
+@media (max-width: 1024px) {
+  .contratos-filters-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  .contratos-page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .contratos-add-button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 640px) {
+  .contratos-page {
+    padding: 20px 16px;
+  }
+
+  .contratos-filters-card {
+    padding: 16px;
+  }
+
+  .contratos-filters-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* =============================================
+   CONTRATOS — Campo com erro de validação
+   ============================================= */
+.field-error {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.18);
+}
+
+.lead-searchable__control.field-error {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.18) !important;
+}
+
+/* =============================================
+   CONTRATOS — Campo Mês do Evento (dark mode)
+   ============================================= */
+.contract-event-month-input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  background-color: #fff;
+  color: var(--gray-800);
+  font: 400 14px 'Inter', sans-serif;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.contract-event-month-input:hover {
+  border-color: var(--gray-300);
+}
+
+.contract-event-month-input:focus,
+.contract-event-month-input:focus-visible {
+  border-color: var(--primary-blue);
+  box-shadow: 0 0 0 3px rgba(22, 91, 255, 0.1);
+}
+
+.theme-dark .contract-event-month-input {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #3a4b68;
+  border-radius: 8px;
+  background-color: #111b2e;
+  color: #e6edf8;
+  color-scheme: dark;
+  font: 400 14px 'Inter', sans-serif;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.theme-dark .contract-event-month-input:hover {
+  border-color: #50658a;
+}
+
+.theme-dark .contract-event-month-input:focus,
+.theme-dark .contract-event-month-input:focus-visible {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
+}
+
+.theme-dark .contract-event-month-input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.85;
+  filter: invert(1) brightness(1.8);
+}
+
+.theme-dark .contract-event-month-input::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+.theme-dark .contract-event-month-input::-webkit-datetime-edit,
+.theme-dark .contract-event-month-input::-webkit-datetime-edit-text,
+.theme-dark .contract-event-month-input::-webkit-datetime-edit-month-field,
+.theme-dark .contract-event-month-input::-webkit-datetime-edit-year-field {
+  color: #e6edf8;
+}
+
+.theme-dark .contract-event-month-input,
+.theme-dark .contract-event-month-input:active,
+.theme-dark .contract-event-month-input:focus {
+  background-color: #111b2e !important;
+  color: #e6edf8 !important;
+}
+
+/* =============================================
+   CONTRATOS — Modal de Confirmação de Descarte
+   ============================================= */
+.contrato-discard-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.contrato-discard-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.contrato-discard-modal {
+  z-index: 230;
+  max-width: 440px;
+  width: 90%;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, calc(-50% + 12px));
+  background: var(--card-bg);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.contrato-discard-modal.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+}
+
+.contrato-discard-text {
+  font: 400 14px 'Inter', sans-serif;
+  color: var(--gray-600);
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* =============================================
+   CONTRATOS — Modal de Cancelamento
+   ============================================= */
+.contrato-cancel-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.contrato-cancel-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.contrato-cancel-modal {
+  z-index: 230;
+  max-width: 440px;
+  width: 90%;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, calc(-50% + 12px));
+  background: var(--card-bg);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.contrato-cancel-modal.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+}
+
+.contrato-cancel-text {
+  font: 400 14px 'Inter', sans-serif;
+  color: var(--gray-600);
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* =============================================
+   CONTRATOS — Menu de Ações
+   ============================================= */
+.contract-actions-menu {
+  position: fixed;
+  z-index: 1200;
+  width: 220px;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  background: #17243a;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+}
+
+.contract-actions-menu button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #e5edf9;
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.contract-actions-menu button:hover,
+.contract-actions-menu button:focus-visible {
+  background: rgba(59, 130, 246, 0.14);
+  outline: none;
+}
+
+.contract-actions-menu button .action-menu-icon {
+  display: flex;
+  align-items: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.contract-actions-menu button .action-menu-icon i,
+.contract-actions-menu button .action-menu-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.contract-actions-menu__divider {
+  height: 1px;
+  margin: 6px 4px;
+  background: rgba(148, 163, 184, 0.18);
+}
+
+.contract-actions-menu__item--danger {
+  color: #fca5a5 !important;
+}
+
+.contract-actions-menu__item--danger:hover,
+.contract-actions-menu__item--danger:focus-visible {
+  background: rgba(239, 68, 68, 0.12) !important;
+}
+
+/* =============================================
+   CONTRATOS — Seletor de Lead Pesquisável
+   ============================================= */
+.lead-searchable {
+  position: relative;
+}
+
+.lead-searchable__control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--gray-200);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  min-height: 42px;
+  font: 400 14px 'Inter', sans-serif;
+  color: var(--gray-800);
+}
+
+.lead-searchable__control:focus {
+  border-color: var(--primary-blue);
+  box-shadow: 0 0 0 3px rgba(22, 91, 255, 0.1);
+  outline: none;
+}
+
+.lead-searchable__placeholder {
+  color: var(--gray-400);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.lead-searchable__value {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lead-searchable__value strong {
+  font-weight: 600;
+  color: var(--gray-800);
+}
+
+.lead-searchable__arrow {
+  width: 16px;
+  height: 16px;
+  color: var(--gray-400);
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.lead-searchable__dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 1100;
+  background: var(--card-bg);
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+
+.lead-searchable__input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.lead-searchable__search-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--gray-400);
+  flex-shrink: 0;
+}
+
+.lead-searchable__input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: 400 14px 'Inter', sans-serif;
+  color: var(--gray-800);
+}
+
+.lead-searchable__input::placeholder {
+  color: var(--gray-400);
+}
+
+.lead-searchable__options {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.lead-searchable__option {
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.12s;
+  border-bottom: 1px solid var(--gray-50);
+}
+
+.lead-searchable__option:last-child {
+  border-bottom: none;
+}
+
+.lead-searchable__option:hover,
+.lead-searchable__option--focused {
+  background: var(--primary-blue-soft);
+}
+
+.lead-searchable__option-name {
+  font: 500 14px 'Inter', sans-serif;
+  color: var(--gray-800);
+  margin-bottom: 2px;
+}
+
+.lead-searchable__option-meta {
+  font: 400 12px 'Inter', sans-serif;
+  color: var(--gray-500);
+}
+
+.lead-searchable__empty {
+  padding: 20px 12px;
+  text-align: center;
+  font: 400 13px 'Inter', sans-serif;
+  color: var(--gray-400);
+}
+
+/* Dark mode for searchable */
+.theme-dark .lead-searchable__control {
+  background: #0F172A;
+  border-color: #334155;
+  color: #E2E8F0;
+}
+.theme-dark .lead-searchable__dropdown {
+  background: #1E293B;
+  border-color: #334155;
+}
+.theme-dark .lead-searchable__input {
+  color: #E2E8F0;
+}
+.theme-dark .lead-searchable__option-name {
+  color: #E2E8F0;
+}
+.theme-dark .lead-searchable__option-meta {
+  color: #94A3B8;
+}
+.theme-dark .lead-searchable__empty {
+  color: #64748B;
+}
+
+/* =============================================
+   CONTRATOS — Tela de Prévia A4 Full-screen
+   ============================================= */
+.contrato-preview-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: none;
+  flex-direction: column;
+  background: rgba(8, 15, 31, 0.96);
+}
+
+.contrato-preview-modal.is-open {
+  display: flex;
+}
+
+.contrato-preview-toolbar {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px;
+  background: #111c31;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.contrato-preview-toolbar .btn-ghost,
+.contrato-preview-toolbar .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.contrato-preview-toolbar .btn-ghost {
+  background: transparent;
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.contrato-preview-toolbar .btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.contrato-preview-toolbar .btn-ghost:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.contrato-preview-toolbar .btn-primary {
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+}
+
+.contrato-preview-toolbar .btn-primary:hover {
+  background: #2563eb;
+}
+
+.contrato-preview-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 20px 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+/* =============================================
+   CONTRATOS — Documento A4 (múltiplas páginas)
+   ============================================= */
+.contrato-documento {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+/* =============================================
+   CONTRATOS — Documento A4 (múltiplas páginas)
+   ============================================= */
+.contrato-pagina {
+  display: block;
+  box-sizing: border-box;
+  width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto 24px;
+  padding: 16mm 18mm 16mm 18mm;
+  background: #ffffff;
+  color: #111111;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.42;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* =============================================
+   Marca-d'água
+   ============================================= */
+.contrato-marca-dagua {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url('/assets/bluepro-marca-dagua.png');
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: 100% auto;
+  opacity: 0.15;
+}
+
+/* Conteúdo sobre a marca-d'água */
+.contrato-pagina__conteudo {
+  position: relative;
+  z-index: 1;
+}
+
+.contrato-page-break {
+  break-before: page;
+  page-break-before: always;
+}
+
+/* =============================================
+   Cabeçalho
+   ============================================= */
+.contrato-cabecalho {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  min-height: 25mm;
+  font-size: 9.5pt;
+  line-height: 1.3;
+}
+
+.contrato-cabecalho__esquerda {
+  display: flex;
+  align-items: flex-start;
+}
+
+.contrato-cabecalho__logo {
+  height: 22mm;
+  width: auto;
+  object-fit: contain;
+}
+
+.contrato-cabecalho__direita {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1mm;
+  padding-top: 2mm;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* =============================================
+   Título
+   ============================================= */
+.contrato-titulo {
+  margin: 13mm 0 11mm;
+  text-align: center;
+  font-size: 14pt;
+  font-weight: 600;
+}
+
+/* =============================================
+   Títulos de seção
+   ============================================= */
+.contrato-secao-titulo {
+  margin: 7mm 0 4mm;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 10.5pt;
+}
+
+/* =============================================
+   Cláusulas e parágrafos
+   ============================================= */
+.contrato-clausula {
+  margin: 0 0 3.5mm;
+  font-size: 10.5pt;
+}
+
+.contrato-justificado {
+  text-align: justify;
+}
+
+/* =============================================
+   Título centralizado do serviço
+   ============================================= */
+.contrato-servico-titulo {
+  margin: 6mm 0 5mm;
+  text-align: center;
+  font-weight: 700;
+  font-size: 10.5pt;
+}
+
+/* =============================================
+   Listas dentro das cláusulas
+   ============================================= */
+.contrato-lista-container {
+  margin: 0 0 3.5mm;
+  padding-left: 7mm;
+}
+
+.contrato-lista-container p {
+  margin: 0 0 3mm;
+  padding-left: 1mm;
+  text-align: justify;
+}
+
+/* =============================================
+   Assinaturas
+   ============================================= */
+.contrato-assinaturas {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 50px;
+  gap: 40px;
+}
+
+.contrato-assinatura-col {
+  flex: 1;
+  text-align: center;
+}
+
+.contrato-assinatura-linha {
+  border-top: 1px solid #000;
+  margin-bottom: 8px;
+  margin-top: 40px;
+}
+
+.contrato-assinatura-col p {
+  margin: 2px 0;
+  font-size: 10pt;
+}
+
+/* =============================================
+   Rodapé
+   ============================================= */
+.contrato-rodape {
+  position: absolute;
+  right: 18mm;
+  bottom: 10mm;
+  font-size: 9.5pt;
+}
+
+/* =============================================
+   RESPONSIVIDADE
+   ============================================= */
+@media (max-width: 850px) {
+  .contrato-pagina {
+    width: 100%;
+    min-height: auto;
+    padding: 24px 18px;
+    font-size: 10pt;
+  }
+
+  .contrato-preview-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .contrato-preview-scroll {
+    padding: 16px 8px 32px;
+  }
+
+  .contrato-assinaturas {
+    flex-direction: column;
+    gap: 24px;
+  }
+}
+
+/* =============================================
+   PRINT
+   ============================================= */
+@media print {
+  body {
+    background: #fff;
+  }
+
+  .contrato-preview-modal {
+    position: static;
+    background: #fff;
+  }
+
+  .contrato-preview-toolbar {
+    display: none !important;
+  }
+
+  .contrato-preview-scroll {
+    padding: 0;
+    overflow: visible;
+  }
+
+  .contrato-documento {
+    gap: 0;
+  }
+
+  .contrato-pagina {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0;
+    box-shadow: none;
+    padding: 16mm 18mm 16mm 18mm;
+  }
+
+  .contrato-page-break {
+    break-before: page;
+    page-break-before: always;
+  }
 }

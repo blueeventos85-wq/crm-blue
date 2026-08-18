@@ -17,6 +17,9 @@
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -117,6 +120,12 @@
             <a href="#" class="nav-item" data-page="clientes">
               <i data-lucide="users"></i>
               <span>Cliente da Base</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="nav-item" data-page="contratos">
+              <i data-lucide="file-text"></i>
+              <span>Contratos</span>
             </a>
           </li>
           <li>
@@ -555,6 +564,77 @@
                 </button>
               </div>
             </div>
+          </div>
+        </section>
+
+        <!-- ============ CONTRATOS ============ -->
+        <section class="page contratos-page" id="page-contratos">
+
+          <!-- Cabeçalho -->
+          <section class="contratos-page-header">
+            <div class="contratos-page-header__text">
+              <h1>Contratos</h1>
+              <p>Gerencie e gere os contratos em PDF dos seus leads.</p>
+            </div>
+            <button class="btn btn-primary contratos-add-button" id="btnNovoContrato">
+              <i data-lucide="plus"></i>
+              Adicionar contrato
+            </button>
+          </section>
+
+          <!-- Filtros -->
+          <section class="contratos-filters-card">
+            <div class="contratos-filters-grid">
+              <label class="filter-field filter-field--search">
+                <span>Buscar</span>
+                <input type="text" id="filterContratoBusca" class="form-control" placeholder="Nome, CPF/CNPJ ou nº do contrato..." />
+              </label>
+              <label class="filter-field">
+                <span>Status</span>
+                <select id="filterContratoStatus" class="form-control">
+                  <option value="">Todos</option>
+                  <option value="rascunho">Rascunho</option>
+                  <option value="gerado">Gerado</option>
+                  <option value="enviado">Enviado</option>
+                  <option value="assinado">Assinado</option>
+                  <option value="vencido">Vencido</option>
+                  <option value="cancelado">Cancelado</option>
+                </select>
+              </label>
+              <label class="filter-field">
+                <span>Mês do evento</span>
+                <input type="month" id="filterContratoMesEvento" class="form-control contract-event-month-input" aria-label="Filtrar por mês do evento" />
+              </label>
+              <div class="filter-actions">
+                <button class="btn btn-primary btn-sm" id="btnFilterContratos">
+                  <i data-lucide="filter"></i> Filtrar
+                </button>
+                <button class="btn btn-outline btn-sm contratos-btn-limpar" id="btnClearContratos" style="display:none;">
+                  <i data-lucide="x"></i> Limpar
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Tabela -->
+          <div class="contratos-table-wrapper">
+            <table class="contratos-table" id="tableContratos">
+              <thead>
+                <tr>
+                  <th>Número</th>
+                  <th>Contratante</th>
+                  <th>Serviço(s)</th>
+                  <th>Data do evento</th>
+                  <th>Valor total</th>
+                  <th>Status</th>
+                  <th>Gerado em</th>
+                  <th class="contratos-th-actions">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- Preenchido via JS -->
+              </tbody>
+            </table>
           </div>
         </section>
 
@@ -2646,6 +2726,231 @@
     <i data-lucide="check-circle-2"></i>
     <span id="toastText">Salvo com sucesso</span>
   </div>
+
+  <!-- Modal: Confirmar descarte de contrato -->
+  <div class="contrato-discard-overlay" id="contratoDiscardOverlay"></div>
+  <div class="modal modal-sm contrato-discard-modal" id="contratoDiscardModal" role="dialog" aria-labelledby="contratoDiscardTitle" aria-modal="true">
+    <div class="modal-head">
+      <div class="modal-head-left">
+        <div class="modal-avatar" style="background:var(--warning-soft);color:var(--warning)"><i data-lucide="alert-triangle"></i></div>
+        <div>
+          <h2 id="contratoDiscardTitle">Descartar alterações?</h2>
+          <p class="modal-meta">Você preencheu informações que ainda não foram salvas.</p>
+        </div>
+      </div>
+      <button type="button" class="icon-btn small contrato-discard-close-x" title="Fechar"><i data-lucide="x"></i></button>
+    </div>
+    <div class="modal-body">
+      <p class="contrato-discard-text">Ao sair, os dados deste contrato serão perdidos.</p>
+    </div>
+    <div class="modal-foot">
+      <div></div>
+      <div class="modal-foot-actions">
+        <button type="button" class="btn-ghost" id="contratoDiscardCancel">Continuar editando</button>
+        <button type="button" class="btn-primary" style="background:var(--error)" id="contratoDiscardConfirm"><i data-lucide="trash-2"></i> Descartar e sair</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Confirmar cancelamento de contrato -->
+  <div class="contrato-cancel-overlay" id="contratoCancelOverlay"></div>
+  <div class="modal modal-sm contrato-cancel-modal" id="contratoCancelModal" role="dialog" aria-labelledby="contratoCancelTitle" aria-modal="true">
+    <div class="modal-head">
+      <div class="modal-head-left">
+        <div class="modal-avatar" style="background:var(--error-soft);color:var(--error)"><i data-lucide="alert-triangle"></i></div>
+        <div>
+          <h2 id="contratoCancelTitle">Cancelar contrato?</h2>
+          <p class="modal-meta">Essa ação não poderá ser desfeita.</p>
+        </div>
+      </div>
+      <button type="button" class="icon-btn small contrato-cancel-close-x" title="Fechar"><i data-lucide="x"></i></button>
+    </div>
+    <div class="modal-body">
+      <p class="contrato-cancel-text">Você está prestes a cancelar o contrato <strong id="contratoCancelNumber">—</strong>.</p>
+      <p class="contrato-cancel-text" style="margin-top:8px;">Essa ação alterará o status do contrato para <strong>Cancelado</strong>.</p>
+    </div>
+    <div class="modal-foot">
+      <div></div>
+      <div class="modal-foot-actions">
+        <button type="button" class="btn-ghost" id="contratoCancelBack">Voltar</button>
+        <button type="button" class="btn-primary" style="background:var(--error)" id="contratoCancelConfirm"><i data-lucide="x-circle"></i> Cancelar contrato</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overlay + Modal: Criar/Editar Contrato -->
+  <div class="modal-overlay" id="contratoOverlay"></div>
+  <div class="modal modal-lg" id="modalContrato" role="dialog" aria-labelledby="modalContratoTitle" aria-modal="true">
+    <div class="modal-head">
+      <div class="modal-head-left">
+        <div class="modal-avatar"><i data-lucide="file-text"></i></div>
+        <div>
+          <h2 id="modalContratoTitle">Gerar Contrato</h2>
+          <p class="modal-meta">Preencha os dados para emitir o contrato</p>
+        </div>
+      </div>
+      <button type="button" class="icon-btn small" id="btnCloseContratoModal" title="Fechar" aria-label="Fechar geração de contrato"><i data-lucide="x"></i></button>
+    </div>
+    <div class="modal-body admin-member-body" style="max-height: 72vh; overflow-y: auto;">
+      <form id="formContrato">
+        <input type="hidden" id="contratoId" />
+
+        <div class="admin-form-section">
+          <h3 class="admin-form-section-title">Lead Vinculado <span class="req">*</span></h3>
+          <div class="form-grid-2">
+            <div class="form-group full">
+              <label>Selecionar Lead <span class="req">*</span></label>
+              <input type="hidden" id="contratoLeadId" />
+              <div class="lead-searchable" id="contratoLeadSearchable">
+                <div class="lead-searchable__control" id="leadSearchControl" tabindex="0" role="combobox" aria-expanded="false" aria-haspopup="listbox" aria-label="Selecionar lead">
+                  <span class="lead-searchable__placeholder" id="leadSearchPlaceholder">Pesquisar por nome, CPF/CNPJ ou telefone...</span>
+                  <span class="lead-searchable__value" id="leadSearchValue" style="display:none;"></span>
+                  <i data-lucide="chevron-down" class="lead-searchable__arrow"></i>
+                </div>
+                <div class="lead-searchable__dropdown" id="leadSearchDropdown" style="display:none;">
+                  <div class="lead-searchable__input-wrap">
+                    <i data-lucide="search" class="lead-searchable__search-icon"></i>
+                    <input type="text" class="lead-searchable__input" id="leadSearchInput" placeholder="Pesquisar..." autocomplete="off" />
+                  </div>
+                  <div class="lead-searchable__options" id="leadSearchOptions" role="listbox">
+                    <!-- Preenchido via JS -->
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-form-section">
+          <h3 class="admin-form-section-title">Dados da Contratante</h3>
+          <div class="form-grid-2">
+            <div class="form-group full">
+              <label>Nome / Razão Social <span class="req">*</span></label>
+              <input type="text" id="contratoNome" required placeholder="Nome completo ou razão social" />
+            </div>
+            <div class="form-group">
+              <label>CPF/CNPJ <span class="req">*</span></label>
+              <input type="text" id="contratoCpfCnpj" required placeholder="000.000.000-00" />
+            </div>
+            <div class="form-group">
+              <label>Telefone <span class="req">*</span></label>
+              <input type="text" id="contratoTelefone" required placeholder="(85) 99999-9999" />
+            </div>
+            <div class="form-group">
+              <label>E-mail</label>
+              <input type="email" id="contratoEmail" placeholder="email@exemplo.com" />
+            </div>
+            <div class="form-group full">
+              <label>Endereço Completo <span class="req">*</span></label>
+              <input type="text" id="contratoEndereco" required placeholder="Rua, número, complemento" />
+            </div>
+            <div class="form-group">
+              <label>Bairro</label>
+              <input type="text" id="contratoBairro" placeholder="Bairro" />
+            </div>
+            <div class="form-group">
+              <label>Cidade <span class="req">*</span></label>
+              <input type="text" id="contratoCidade" required placeholder="Fortaleza" />
+            </div>
+            <div class="form-group">
+              <label>Estado <span class="req">*</span></label>
+              <input type="text" id="contratoEstado" required placeholder="CE" />
+            </div>
+            <div class="form-group">
+              <label>CEP <span class="req">*</span></label>
+              <input type="text" id="contratoCep" required placeholder="00000-000" />
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-form-section">
+          <h3 class="admin-form-section-title">Evento e Serviço</h3>
+          <div class="form-grid-2">
+            <div class="form-group full">
+              <label>Serviço Contratado <span class="req">*</span></label>
+              <input type="text" id="contratoServicosDesc" required placeholder="Ex: Fotografia e Filmagem" />
+            </div>
+            <div class="form-group">
+              <label>Data do Evento <span class="req">*</span></label>
+              <input type="date" id="contratoDataEvento" required />
+            </div>
+            <div class="form-group">
+              <label>Hora Início <span class="req">*</span></label>
+              <input type="time" id="contratoHoraInicio" required />
+            </div>
+            <div class="form-group">
+              <label>Hora Fim <span class="req">*</span></label>
+              <input type="time" id="contratoHoraFim" required />
+            </div>
+            <div class="form-group">
+              <label>Qtd. Horas</label>
+              <input type="number" id="contratoQtdHoras" step="0.5" placeholder="4" />
+            </div>
+            <div class="form-group full">
+              <label>Endereço do Evento <span class="req">*</span></label>
+              <input type="text" id="contratoEnderecoEvento" required placeholder="Endereço completo do local do evento" />
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-form-section">
+          <h3 class="admin-form-section-title">Valores e Pagamento</h3>
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label>Valor Total (R$) <span class="req">*</span></label>
+              <input type="number" id="contratoValorTotal" step="0.01" required placeholder="0,00" />
+            </div>
+            <div class="form-group">
+              <label>Condição de Pagamento</label>
+              <select id="contratoCondicaoPagamento">
+                <option value="1">À vista (1 parcela)</option>
+                <option value="2">2 Parcelas (Assinatura + Véspera)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Valor 1ª Parcela (R$)</label>
+              <input type="number" id="contratoValorP1" step="0.01" placeholder="0,00" />
+            </div>
+            <div class="form-group">
+              <label>Vencimento 1ª Parcela</label>
+              <input type="date" id="contratoVencimentoP1" />
+            </div>
+            <div class="form-group" id="rowParcelaVal2" style="display:none;">
+              <label>Valor 2ª Parcela (R$)</label>
+              <input type="number" id="contratoValorP2" step="0.01" placeholder="0,00" />
+            </div>
+            <div class="form-group" id="rowParcelaVenc2" style="display:none;">
+              <label>Vencimento 2ª Parcela</label>
+              <input type="date" id="contratoVencimentoP2" />
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="modal-actions" style="display:flex; gap:8px; justify-content:space-between; padding: 16px 24px; border-top: 1px solid var(--gray-200);">
+      <button type="button" class="btn-ghost" id="btnContratoCancel"><i data-lucide="x"></i> Cancelar</button>
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="btn-ghost" id="btnContratoPreview"><i data-lucide="eye"></i> Prévia</button>
+        <button type="button" class="btn-ghost" id="btnContratoSaveDraft"><i data-lucide="save"></i> Salvar Rascunho</button>
+        <button type="button" class="btn-primary" id="btnContratoGenerate"><i data-lucide="file-text"></i> Gerar PDF</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tela de Prévia do Contrato (A4 full-screen) -->
+  <section id="contratoPreviewModal" class="contrato-preview-modal">
+    <div class="contrato-preview-toolbar">
+      <button type="button" id="btnContratoBackToEdit" class="btn-ghost"><i data-lucide="arrow-left"></i> Voltar para edição</button>
+      <button type="button" id="btnContratoSaveDraftPreview" class="btn-ghost"><i data-lucide="save"></i> Salvar rascunho</button>
+      <button type="button" id="btnContratoGeneratePdf" class="btn-primary"><i data-lucide="file-text"></i> Gerar PDF</button>
+      <button type="button" id="btnContratoDownloadPdf" class="btn-ghost" disabled><i data-lucide="download"></i> Baixar PDF</button>
+    </div>
+    <div class="contrato-preview-scroll">
+      <div id="contratoA4Document" class="contrato-documento">
+        <!-- Contrato preenchido dinamicamente (4 páginas A4) -->
+      </div>
+    </div>
+  </section>
 
   <script type="module" src="supabaseClient.js"></script>
   <script type="module" src="app.js"></script>

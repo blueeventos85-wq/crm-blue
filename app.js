@@ -3,7 +3,7 @@
    Interatividade
    ============================================ */
 
-const $  = (s, ctx = document) => ctx.querySelector(s);
+const $ = (s, ctx = document) => ctx.querySelector(s);
 const $$ = (s, ctx = document) => Array.from(ctx.querySelectorAll(s));
 
 /* ============================================
@@ -520,12 +520,12 @@ function closeDeleteModal() {
 
 /* ── Form helpers ── */
 function resetMemberForm() {
-  const ids = ['adminMemberId','adminMemberName','adminMemberEmail','adminMemberPassword','adminMemberCPF','adminMemberBirth','adminMemberPhone'];
+  const ids = ['adminMemberId', 'adminMemberName', 'adminMemberEmail', 'adminMemberPassword', 'adminMemberCPF', 'adminMemberBirth', 'adminMemberPhone'];
   ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  const selects = ['adminMemberRole','adminMemberTeam'];
+  const selects = ['adminMemberRole', 'adminMemberTeam'];
   selects.forEach(id => { const el = document.getElementById(id); if (el) el.selectedIndex = 0; });
   document.getElementById('adminMemberPessoa').value = 'Pessoa Física';
-  ['adminMemberNotifEmail','adminMemberNotifWhats','adminMemberNotifSound'].forEach(id => {
+  ['adminMemberNotifEmail', 'adminMemberNotifWhats', 'adminMemberNotifSound'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = 'Sim';
   });
   // Reset CC checkboxes
@@ -780,7 +780,7 @@ function bindRowActions(row, member) {
 function renderMemberRow(m) {
   const initials = (m.nome || '').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
   const badgeClass = m.cargo === 'Administrador' ? 'admin-badge-admin' :
-                     m.cargo === 'Marketing' ? 'admin-badge-marketing' : 'admin-badge-attend';
+    m.cargo === 'Marketing' ? 'admin-badge-marketing' : 'admin-badge-attend';
   const row = document.createElement('tr');
   row.dataset.memberId = m.id;
   row.innerHTML = `
@@ -865,29 +865,29 @@ function closePermModal() {
 /* ── Perfil defaults ── */
 function applyPerfilDefaults(perfil) {
   const allModules = [
-    'permHome','permDashboard','permCrm','permClienteBase','permCalendario',
-    'permRotinaBlue','permPomodoro','permConversas','permConfiguracoes',
-    'permAuditoria','permAdministrador','permObrigacoes','permDocumentos','permSuporte'
+    'permHome', 'permDashboard', 'permCrm', 'permClienteBase', 'permCalendario',
+    'permRotinaBlue', 'permPomodoro', 'permConversas', 'permConfiguracoes',
+    'permAuditoria', 'permAdministrador', 'permObrigacoes', 'permDocumentos', 'permSuporte'
   ];
   const presets = {
     'Administrador': {
-      home:true, dashboard:true, crm:true, cliente_base:true, calendario:true,
-      rotina_blue:true, pomodoro:true, conversas:true, configuracoes:true,
-      auditoria:true, administrador:true,
+      home: true, dashboard: true, crm: true, cliente_base: true, calendario: true,
+      rotina_blue: true, pomodoro: true, conversas: true, configuracoes: true,
+      auditoria: true, administrador: true,
       calibragem: true,
       delete_telefone: true
     },
     'Atendente': {
-      home:false, dashboard:false, crm:true, cliente_base:true, calendario:true,
-      rotina_blue:true, pomodoro:true, conversas:true, configuracoes:false,
-      auditoria:false, administrador:false,
+      home: false, dashboard: false, crm: true, cliente_base: true, calendario: true,
+      rotina_blue: true, pomodoro: true, conversas: true, configuracoes: false,
+      auditoria: false, administrador: false,
       calibragem: false,
       delete_telefone: false
     },
     'Marketing': {
-      home:true, dashboard:true, crm:true, cliente_base:true, calendario:true,
-      rotina_blue:false, pomodoro:false, conversas:false, configuracoes:true,
-      auditoria:true, administrador:false,
+      home: true, dashboard: true, crm: true, cliente_base: true, calendario: true,
+      rotina_blue: false, pomodoro: false, conversas: false, configuracoes: true,
+      auditoria: true, administrador: false,
       calibragem: false,
       delete_telefone: true
     }
@@ -912,7 +912,7 @@ function applyPerfilDefaults(perfil) {
 function renderPermRow(m, perm) {
   const initials = (m.nome || '').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
   const badgeClass = m.cargo === 'Administrador' ? 'admin-badge-admin' :
-                     m.cargo === 'Marketing' ? 'admin-badge-marketing' : 'admin-badge-attend';
+    m.cargo === 'Marketing' ? 'admin-badge-marketing' : 'admin-badge-attend';
   const perfil = perm ? perm.perfil : 'Sem permissão';
   const perfilCls = perm ? ({
     'Administrador': 'perm-badge-admin',
@@ -2113,25 +2113,26 @@ function initBrandingSection() {
 let _userPermCache = null;
 
 const _sidebarMenuItems = [
-  { page: 'home',          icon: 'home',             label: 'Home' },
-  { page: 'dashboard',     icon: 'layout-dashboard', label: 'Dashboard' },
-  { page: 'crm',           icon: 'kanban-square',    label: 'CRM' },
-  { page: 'clientes',      icon: 'users',            label: 'Cliente da Base' },
-  { page: 'calendario',    icon: 'calendar-days',    label: 'Calendário' },
-  { page: 'rotina',        icon: 'clipboard-list',   label: 'Rotina Blue' },
-  { page: 'pomodoro',      icon: 'timer',            label: 'Pomodoro' },
-  { page: 'conversas',     icon: 'message-circle',   label: 'Conversas' },
-  { page: 'configuracoes', icon: 'settings',         label: 'Configurações' },
-  { page: 'auditoria',     icon: 'shield',           label: 'Auditoria' },
-  { page: 'administrador', icon: 'shield-check',     label: 'Administrador' }
+  { page: 'home', icon: 'home', label: 'Home' },
+  { page: 'dashboard', icon: 'layout-dashboard', label: 'Dashboard' },
+  { page: 'crm', icon: 'kanban-square', label: 'CRM' },
+  { page: 'contratos', icon: 'file-text', label: 'Contratos' },
+  { page: 'clientes', icon: 'users', label: 'Cliente da Base' },
+  { page: 'calendario', icon: 'calendar-days', label: 'Calendário' },
+  { page: 'rotina', icon: 'clipboard-list', label: 'Rotina Blue' },
+  { page: 'pomodoro', icon: 'timer', label: 'Pomodoro' },
+  { page: 'conversas', icon: 'message-circle', label: 'Conversas' },
+  { page: 'configuracoes', icon: 'settings', label: 'Configurações' },
+  { page: 'auditoria', icon: 'shield', label: 'Auditoria' },
+  { page: 'administrador', icon: 'shield-check', label: 'Administrador' }
 ];
 const _sidebarShortcuts = [
-  { page: 'calibragem',    icon: 'gauge',            label: 'Calibragem' }
+  { page: 'calibragem', icon: 'gauge', label: 'Calibragem' }
 ];
 
 const _permKeyMap = {
   home: 'can_home', dashboard: 'can_dashboard', crm: 'can_crm',
-  clientes: 'can_cliente_base', calendario: 'can_calendario',
+  contratos: 'can_contratos', clientes: 'can_cliente_base', calendario: 'can_calendario',
   rotina: 'can_rotina_blue', pomodoro: 'can_pomodoro',
   conversas: 'can_conversas', configuracoes: 'can_configuracoes',
   auditoria: 'can_auditoria', administrador: 'can_administrador',
@@ -2472,7 +2473,7 @@ function bindHomeSearch() {
 }
 // Atalho "/" para focar busca (bind uma vez só)
 document.addEventListener('keydown', function homeSearchShortcut(e) {
-  if (e.key === '/' && !['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) {
+  if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) {
     const input = document.getElementById('homeSearchInput');
     if (input) { e.preventDefault(); input.focus(); }
   }
@@ -2493,19 +2494,19 @@ function navigateToRoute(id, route) {
    HOME · MÓDULOS (JSON dinâmico)
    ============================================ */
 const homeModules = [
-  { id: 'home',          title: 'Home',           desc: 'Acesse rapidamente os principais módulos do sistema.',    icon: 'home',             route: '/home',           section: 'Principal' },
-  { id: 'dashboard',     title: 'Dashboard',      desc: 'Indicadores e métricas em tempo real.',                  icon: 'layout-dashboard', route: '/dashboard',      section: 'Principal' },
-  { id: 'crm',           title: 'CRM',            desc: 'Centralize o relacionamento com clientes.',              icon: 'kanban-square',    route: '/crm',            section: 'Principal' },
-  { id: 'clientes',      title: 'Cliente da Base',desc: 'Organize e qualifique os clientes.',                     icon: 'users',            route: '/cliente-da-base', section: 'Principal' },
-  { id: 'calendario',    title: 'Calendário',     desc: 'Organize as datas dos eventos.',                         icon: 'calendar-days',    route: '/calendario',     section: 'Principal' },
-  { id: 'configuracoes', title: 'Configurações',  desc: 'Personalize conta e equipe.',                             icon: 'settings',         route: '/configuracoes',  section: 'Principal' },
-  { id: 'rotina',        title: 'Rotina Blue',    desc: 'Organize tarefas, reuniões e lembretes do dia a dia.',    icon: 'clipboard-list',   route: '/rotina',         section: 'Ferramentas' },
-  { id: 'pomodoro',      title: 'Pomodoro',       desc: 'Gestão de tempo e foco com ciclos de trabalho.',          icon: 'timer',            route: '/pomodoro',       section: 'Ferramentas' },
-  { id: 'conversas',     title: 'Conversas',      desc: 'Central de conversas e mensagens da equipe.',            icon: 'message-circle',   route: '/conversas',      section: 'Ferramentas' },
-  { id: 'auditoria',     title: 'Auditoria',      desc: 'Rastreamento completo de ações e histórico do sistema.', icon: 'shield',           route: '/auditoria',      section: 'Ferramentas' }
+  { id: 'home', title: 'Home', desc: 'Acesse rapidamente os principais módulos do sistema.', icon: 'home', route: '/home', section: 'Principal' },
+  { id: 'dashboard', title: 'Dashboard', desc: 'Indicadores e métricas em tempo real.', icon: 'layout-dashboard', route: '/dashboard', section: 'Principal' },
+  { id: 'crm', title: 'CRM', desc: 'Centralize o relacionamento com clientes.', icon: 'kanban-square', route: '/crm', section: 'Principal' },
+  { id: 'clientes', title: 'Cliente da Base', desc: 'Organize e qualifique os clientes.', icon: 'users', route: '/cliente-da-base', section: 'Principal' },
+  { id: 'calendario', title: 'Calendário', desc: 'Organize as datas dos eventos.', icon: 'calendar-days', route: '/calendario', section: 'Principal' },
+  { id: 'configuracoes', title: 'Configurações', desc: 'Personalize conta e equipe.', icon: 'settings', route: '/configuracoes', section: 'Principal' },
+  { id: 'rotina', title: 'Rotina Blue', desc: 'Organize tarefas, reuniões e lembretes do dia a dia.', icon: 'clipboard-list', route: '/rotina', section: 'Ferramentas' },
+  { id: 'pomodoro', title: 'Pomodoro', desc: 'Gestão de tempo e foco com ciclos de trabalho.', icon: 'timer', route: '/pomodoro', section: 'Ferramentas' },
+  { id: 'conversas', title: 'Conversas', desc: 'Central de conversas e mensagens da equipe.', icon: 'message-circle', route: '/conversas', section: 'Ferramentas' },
+  { id: 'auditoria', title: 'Auditoria', desc: 'Rastreamento completo de ações e histórico do sistema.', icon: 'shield', route: '/auditoria', section: 'Ferramentas' }
 ];
 
-const knownPages = new Set(['home','dashboard','crm','clientes','calendario','configuracoes','rotina','pomodoro','conversas','auditoria','administrador','obrigacoes','documentos','suporte','calibragem','centros-custo','centro-custo-detail']);
+const knownPages = new Set(['home', 'dashboard', 'crm', 'clientes', 'contratos', 'calendario', 'configuracoes', 'rotina', 'pomodoro', 'conversas', 'auditoria', 'administrador', 'obrigacoes', 'documentos', 'suporte', 'calibragem', 'centros-custo', 'centro-custo-detail']);
 
 const pageConfig = {
   home: {
@@ -2609,6 +2610,12 @@ const pageConfig = {
     subtitle: 'Dados e funcionalidades deste centro de custo',
     primary: '',
     primaryIcon: 'building-2'
+  },
+  contratos: {
+    title: '',
+    subtitle: '',
+    primary: '',
+    primaryIcon: ''
   }
 };
 
@@ -2621,7 +2628,7 @@ function setActivePage(page) {
   if (_userPermCache) {
     const permPageMap = {
       home: 'can_home', dashboard: 'can_dashboard', crm: 'can_crm',
-      clientes: 'can_cliente_base', calendario: 'can_calendario',
+      contratos: 'can_contratos', clientes: 'can_cliente_base', calendario: 'can_calendario',
       rotina: 'can_rotina_blue', pomodoro: 'can_pomodoro',
       conversas: 'can_conversas', configuracoes: 'can_configuracoes',
       auditoria: 'can_auditoria', administrador: 'can_administrador',
@@ -2734,7 +2741,7 @@ function setActivePage(page) {
   // Ocultar botões de ação do topbar na Home, Dashboard, Calendário, Rotina e Pomodoro
   const chatBtn = $('#topbarChatBtn');
   const primaryBtn = $('#primaryAction');
-  const hideTopbarActions = page === 'home' || page === 'dashboard' || page === 'calendario' || page === 'rotina' || page === 'pomodoro' || page === 'conversas' || page === 'configuracoes' || page === 'auditoria' || page === 'administrador' || page === 'calibragem';
+  const hideTopbarActions = page === 'home' || page === 'dashboard' || page === 'calendario' || page === 'rotina' || page === 'pomodoro' || page === 'conversas' || page === 'configuracoes' || page === 'auditoria' || page === 'administrador' || page === 'calibragem' || page === 'contratos';
   if (chatBtn) chatBtn.style.display = hideTopbarActions ? 'none' : '';
   if (primaryBtn) primaryBtn.style.display = hideTopbarActions ? 'none' : '';
 
@@ -2779,6 +2786,9 @@ function setActivePage(page) {
   if (page === 'centros-custo') {
     initCentrosCusto();
   }
+  if (page === 'contratos') {
+    initContratos();
+  }
 }
 
 /* ============================================
@@ -2789,10 +2799,10 @@ let selectedClientIds = new Set();
 let _clientMassBarBound = false;
 
 const statusMap = {
-  active: { label: 'Ativo',        cls: 'status-active' },
-  impl:   { label: 'Implantação',  cls: 'status-impl' },
-  late:   { label: 'Inadimplente', cls: 'status-late' },
-  warn:   { label: 'Atenção',      cls: 'status-warn' }
+  active: { label: 'Ativo', cls: 'status-active' },
+  impl: { label: 'Implantação', cls: 'status-impl' },
+  late: { label: 'Inadimplente', cls: 'status-late' },
+  warn: { label: 'Atenção', cls: 'status-warn' }
 };
 
 const ALL_EVENT_SERVICES = [];
@@ -2972,13 +2982,13 @@ function getFilteredClients() {
   const q = clienteSearchQuery.toLowerCase().trim();
   const canViewAll = canViewAllData();
   const userId = getCurrentUserId();
-  
+
   return clientsData.filter(c => {
     if (q && !c.name.toLowerCase().includes(q) && !c.cnpj.includes(q)) return false;
     if (clienteServiceFilter !== 'all' && !c.services.includes(clienteServiceFilter)) return false;
     if (clienteCadenceFilter !== 'all' && c._cadenciaId !== clienteCadenceFilter) return false;
     if (clienteCcFilter !== 'all' && c._centroCustoId !== clienteCcFilter) return false;
-    
+
     // Se não é admin, filtrar apenas clientes do próprio usuário (membro_id, qualificador_id, owner_id)
     if (!canViewAll && userId) {
       const membroId = c._membroId || c._ownerId;
@@ -3593,28 +3603,28 @@ let meetings = [];
 
 function meetingColor(type) {
   return ({
-    reuniao:     '#165BFF',
-    casamento:   '#165BFF',
-    festa15:     '#a855f7',
+    reuniao: '#165BFF',
+    casamento: '#165BFF',
+    festa15: '#a855f7',
     aniversario: '#f59e0b',
     corporativo: '#10b981',
-    evento:      '#2F80ED',
-    lembrete:    '#3b82f6',
-    fiscal:      '#f59e0b',
-    financeiro:  '#10b981',
+    evento: '#2F80ED',
+    lembrete: '#3b82f6',
+    fiscal: '#f59e0b',
+    financeiro: '#10b981',
     implantacao: '#a855f7',
-    vencimento:  '#ef4444'
+    vencimento: '#ef4444'
   })[type] || '#165BFF';
 }
 
 function meetingTypeLabel(type) {
   return ({
-    casamento:    'Casamento',
-    festa15:      'Festa de 15 anos',
-    aniversario:  'Aniversário',
-    corporativo:  'Corporativo',
-    evento:       'Evento',
-    lembrete:     'Lembrete'
+    casamento: 'Casamento',
+    festa15: 'Festa de 15 anos',
+    aniversario: 'Aniversário',
+    corporativo: 'Corporativo',
+    evento: 'Evento',
+    lembrete: 'Lembrete'
   })[type] || 'Outro';
 }
 
@@ -3647,16 +3657,16 @@ function getFilteredMeetings() {
   });
 }
 
-const MONTH_NAMES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-const WEEKDAY_HEADERS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-const HOUR_LABELS = Array.from({length:24},(_,i)=>`${String(i).padStart(2,'0')}:00`);
+const MONTH_NAMES_PT = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+const WEEKDAY_HEADERS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const HOUR_LABELS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
 
 function getTodayIso() {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 function isoFromDate(d) {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function updateCalTitle() {
@@ -3666,11 +3676,11 @@ function updateCalTitle() {
     el.textContent = `${calCurrentDate.getDate()} de ${MONTH_NAMES_PT[calCurrentDate.getMonth()]} ${calCurrentDate.getFullYear()}`;
   } else if (calView === 'week') {
     const startOfWeek = getWeekStart(calCurrentDate);
-    const endOfWeek = new Date(startOfWeek); endOfWeek.setDate(endOfWeek.getDate()+6);
+    const endOfWeek = new Date(startOfWeek); endOfWeek.setDate(endOfWeek.getDate() + 6);
     if (startOfWeek.getMonth() === endOfWeek.getMonth()) {
       el.textContent = `${startOfWeek.getDate()}–${endOfWeek.getDate()} de ${MONTH_NAMES_PT[startOfWeek.getMonth()]} ${startOfWeek.getFullYear()}`;
     } else {
-      el.textContent = `${MONTH_NAMES_PT[startOfWeek.getMonth()].slice(0,3)} ${startOfWeek.getDate()} – ${MONTH_NAMES_PT[endOfWeek.getMonth()].slice(0,3)} ${endOfWeek.getDate()} ${endOfWeek.getFullYear()}`;
+      el.textContent = `${MONTH_NAMES_PT[startOfWeek.getMonth()].slice(0, 3)} ${startOfWeek.getDate()} – ${MONTH_NAMES_PT[endOfWeek.getMonth()].slice(0, 3)} ${endOfWeek.getDate()} ${endOfWeek.getFullYear()}`;
     }
   } else {
     el.textContent = `${MONTH_NAMES_PT[calCurrentDate.getMonth()]} ${calCurrentDate.getFullYear()}`;
@@ -3798,7 +3808,7 @@ function renderMonthView(grid, weekdays, eventsMap) {
   const cells = [];
   for (let i = firstDay; i > 0; i--) cells.push({ day: prevMonthDays - i + 1, other: true, iso: '' });
   for (let d = 1; d <= daysInMonth; d++) {
-    const iso = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const iso = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     cells.push({ day: d, other: false, iso });
   }
   const remaining = 42 - cells.length;
@@ -3834,7 +3844,7 @@ function renderWeekView(grid, weekdays, eventsMap, ms) {
   grid.className = 'cal-grid cal-grid-week';
   let html = '<div class="cal-week-header"><div class="cal-week-time-gutter"></div>';
   for (let i = 0; i < 7; i++) {
-    const d = new Date(weekStart); d.setDate(d.getDate()+i);
+    const d = new Date(weekStart); d.setDate(d.getDate() + i);
     const iso = isoFromDate(d);
     const isToday = iso === todayIso;
     html += `<div class="cal-week-day-head ${isToday ? 'today' : ''}">${WEEKDAY_HEADERS[i]} ${d.getDate()}</div>`;
@@ -3847,7 +3857,7 @@ function renderWeekView(grid, weekdays, eventsMap, ms) {
   for (const h of hours) {
     html += `<div class="cal-week-row"><div class="cal-week-time-gutter">${h}</div>`;
     for (let i = 0; i < 7; i++) {
-      const d = new Date(weekStart); d.setDate(d.getDate()+i);
+      const d = new Date(weekStart); d.setDate(d.getDate() + i);
       const iso = isoFromDate(d);
       const hourNum = parseInt(h);
       const evts = (evtSource[iso] || []).filter(e => {
@@ -3904,7 +3914,7 @@ function buildHatch(ctx, color) {
   g.lineWidth = 2;
   g.beginPath();
   g.moveTo(-2, size + 2); g.lineTo(size + 2, -2);
-  g.moveTo(-2, -2);       g.lineTo(size + 2, size + 2);
+  g.moveTo(-2, -2); g.lineTo(size + 2, size + 2);
   g.stroke();
   return ctx.createPattern(c, 'repeat');
 }
@@ -3915,7 +3925,7 @@ function initCharts() {
   if (ctx1) {
     const ctx = ctx1.getContext('2d');
     const labels = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
-    const data   = [12, 18, 0, 22, 16, 0, 8];  // Sáb e Dom = inativos
+    const data = [12, 18, 0, 22, 16, 0, 8];  // Sáb e Dom = inativos
     const activeIdx = data.indexOf(Math.max(...data));
 
     const hatch = buildHatch(ctx, '#C8D6FF');
@@ -3957,7 +3967,7 @@ function initCharts() {
             titleColor: '#fff',
             bodyColor: '#E2E8F0',
             titleFont: { family: 'Inter', weight: '600', size: 12 },
-            bodyFont:  { family: 'Inter', size: 12 },
+            bodyFont: { family: 'Inter', size: 12 },
             callbacks: {
               label: (c) => c.parsed.y === 0 ? 'Sem atividade' : `${c.parsed.y} entregas`
             }
@@ -3987,15 +3997,15 @@ function initCharts() {
 
 function animateRadial() {
   // 41% concluído, 35% em progresso, 24% pendente
-  const fg  = document.getElementById('prFg');
+  const fg = document.getElementById('prFg');
   const mid = document.getElementById('prMid');
   if (!fg || !mid) return;
 
   const C = 2 * Math.PI * 60; // ~376.99
   const total = 41 + 35 + 24; // 100
-  const dashFg  = C * (1 - (41 / 100));
+  const dashFg = C * (1 - (41 / 100));
   const dashMid = C * (1 - ((41 + 35) / 100));
-  fg.style.strokeDashoffset  = String(dashFg);
+  fg.style.strokeDashoffset = String(dashFg);
   mid.style.strokeDashoffset = String(dashMid);
 
   // Re-dispara animação ao entrar
@@ -4368,8 +4378,8 @@ const tt = {
 
 function initTimeTracker() {
   const playPause = $('#ttPlayPause');
-  const stop      = $('#ttStop');
-  const reset     = $('#ttReset');
+  const stop = $('#ttStop');
+  const reset = $('#ttReset');
   if (!playPause) return;
 
   tt.render();
@@ -4384,49 +4394,49 @@ function initTimeTracker() {
    CRM · DADOS
    ============================================ */
 const cadences = [
-  { id: 'novo-lead',           label: 'NOVO LEAD',                  short: 'Novo Lead' },
-  { id: 'dados-ia',            label: 'DADOS IA',                  short: 'Dados IA' },
-  { id: 'coletados-frio',      label: 'COLETADOS FRIOS',           short: 'Coletados Frios' },
-  { id: 'qualificado',         label: 'QUALIFICADO IA',            short: 'Qualificado IA' },
-  { id: 'em-atendimento',      label: 'AGUARDANDO RESPOSTA',       short: 'Aguardando Resposta' },
-  { id: 'geladeira',           label: 'EM ATENDIMENTO',            short: 'Em Atendimento' },
-  { id: 'stand-by',            label: 'FOLLOW-UP 1',               short: 'Follow-up 1' },
-  { id: 'diagnostico-gratis',  label: 'FOLLOW-UP 2',               short: 'Follow-up 2' },
-  { id: 'reuniao-agendada',    label: 'FOLLOW-UP 3',               short: 'Follow-up 3' },
-  { id: 'reuniao-realizada',   label: 'FOLLOW-UP 4',               short: 'Follow-up 4' },
-  { id: 'contrato-enviado',    label: 'CONTRATO ENVIADO',          short: 'Contrato Enviado' },
-  { id: 'contrato-fechado',    label: 'PARCEIROS',                 short: 'Parceiros' },
-  { id: 'cobranca-enviada',    label: 'STANDY-BY',                 short: 'Standy-by' },
-  { id: 'pagamento-recebido',  label: 'GELADEIRA',                 short: 'Geladeira' },
-  { id: 'servico-executado',   label: 'ACOMPANHAMENTO',            short: 'Acompanhamento' },
-  { id: 'pos-vendas',          label: 'GERAÇÃO DE CONTRATO',       short: 'Geração de Contrato' }
+  { id: 'novo-lead', label: 'NOVO LEAD', short: 'Novo Lead' },
+  { id: 'dados-ia', label: 'DADOS IA', short: 'Dados IA' },
+  { id: 'coletados-frio', label: 'COLETADOS FRIOS', short: 'Coletados Frios' },
+  { id: 'qualificado', label: 'QUALIFICADO IA', short: 'Qualificado IA' },
+  { id: 'em-atendimento', label: 'AGUARDANDO RESPOSTA', short: 'Aguardando Resposta' },
+  { id: 'geladeira', label: 'EM ATENDIMENTO', short: 'Em Atendimento' },
+  { id: 'stand-by', label: 'FOLLOW-UP 1', short: 'Follow-up 1' },
+  { id: 'diagnostico-gratis', label: 'FOLLOW-UP 2', short: 'Follow-up 2' },
+  { id: 'reuniao-agendada', label: 'FOLLOW-UP 3', short: 'Follow-up 3' },
+  { id: 'reuniao-realizada', label: 'FOLLOW-UP 4', short: 'Follow-up 4' },
+  { id: 'contrato-enviado', label: 'CONTRATO ENVIADO', short: 'Contrato Enviado' },
+  { id: 'contrato-fechado', label: 'PARCEIROS', short: 'Parceiros' },
+  { id: 'cobranca-enviada', label: 'STANDY-BY', short: 'Standy-by' },
+  { id: 'pagamento-recebido', label: 'GELADEIRA', short: 'Geladeira' },
+  { id: 'servico-executado', label: 'ACOMPANHAMENTO', short: 'Acompanhamento' },
+  { id: 'pos-vendas', label: 'GERAÇÃO DE CONTRATO', short: 'Geração de Contrato' }
 ];
 
 // Mapeamento fixo: slug da coluna Kanban → UUID real da tabela cadencias no Supabase
 // IMPORTANTE: Execute migration_novo_lead_cadencia.sql e substitua o UUID abaixo
 const mapaCadencias = {
-  "novo-lead":           "50dafcf2-00d1-491d-9297-98bf0906f5c4",
-  "dados-ia":            "3cf00875-b5e8-471b-8dd7-c389f8c9d22a",
-  "coletados-frio":      "509aa84e-5bcb-43f6-ba63-96ceee4adf3b",
-  "qualificado":         "0ec70bba-f34b-4658-a95a-1463ed621d86",
+  "novo-lead": "50dafcf2-00d1-491d-9297-98bf0906f5c4",
+  "dados-ia": "3cf00875-b5e8-471b-8dd7-c389f8c9d22a",
+  "coletados-frio": "509aa84e-5bcb-43f6-ba63-96ceee4adf3b",
+  "qualificado": "0ec70bba-f34b-4658-a95a-1463ed621d86",
   "aguardando-resposta": "1a18bc95-3aaf-4de1-8d9e-efab7762fee0",
-  "em-atendimento":      "61182408-299b-49cc-9ce6-91bf9b4be190",
-  "geladeira":           "74426e6b-e5cb-40bd-9c01-04f8a71a8b27",
-  "stand-by":            "2b543a5f-eeba-4256-8043-84e8a93ed469",
-  "diagnostico-gratis":  "8c58c670-7cdc-486d-88dd-1f746d2e554d",
-  "follow-up-1":         "4847febb-1a1c-4a0c-a988-85d72309bce2",
-  "follow-up-2":         "8c58c670-7cdc-486d-88dd-1f746d2e554d",
-  "follow-up-3":         "4e1eee02-ede7-433a-bf7b-60144ed496b8",
-  "follow-up-4":         "ac1c4d91-3964-44cc-b375-3f67e2252a7f",
-  "reuniao-agendada":    "4e1eee02-ede7-433a-bf7b-60144ed496b8",
-  "reuniao-realizada":   "ac1c4d91-3964-44cc-b375-3f67e2252a7f",
-  "contrato-enviado":    "87fdfa17-c356-4363-b036-b703fcdf8a24",
-  "contrato-fechado":    "87fdfa17-c356-4363-b036-b703fcdf8a24",
-  "cobranca-enviada":    "2b543a5f-eeba-4256-8043-84e8a93ed469",
-  "pagamento-recebido":  "74426e6b-e5cb-40bd-9c01-04f8a71a8b27",
-  "servico-executado":   "a914c5c0-c5cc-4bca-9a13-91eb827abf0d",
-  "acompanhamento":      "a914c5c0-c5cc-4bca-9a13-91eb827abf0d",
-  "pos-vendas":          "1c8d3c69-442a-49bf-9eef-9840f4e8d415",
+  "em-atendimento": "61182408-299b-49cc-9ce6-91bf9b4be190",
+  "geladeira": "74426e6b-e5cb-40bd-9c01-04f8a71a8b27",
+  "stand-by": "2b543a5f-eeba-4256-8043-84e8a93ed469",
+  "diagnostico-gratis": "8c58c670-7cdc-486d-88dd-1f746d2e554d",
+  "follow-up-1": "4847febb-1a1c-4a0c-a988-85d72309bce2",
+  "follow-up-2": "8c58c670-7cdc-486d-88dd-1f746d2e554d",
+  "follow-up-3": "4e1eee02-ede7-433a-bf7b-60144ed496b8",
+  "follow-up-4": "ac1c4d91-3964-44cc-b375-3f67e2252a7f",
+  "reuniao-agendada": "4e1eee02-ede7-433a-bf7b-60144ed496b8",
+  "reuniao-realizada": "ac1c4d91-3964-44cc-b375-3f67e2252a7f",
+  "contrato-enviado": "87fdfa17-c356-4363-b036-b703fcdf8a24",
+  "contrato-fechado": "87fdfa17-c356-4363-b036-b703fcdf8a24",
+  "cobranca-enviada": "2b543a5f-eeba-4256-8043-84e8a93ed469",
+  "pagamento-recebido": "74426e6b-e5cb-40bd-9c01-04f8a71a8b27",
+  "servico-executado": "a914c5c0-c5cc-4bca-9a13-91eb827abf0d",
+  "acompanhamento": "a914c5c0-c5cc-4bca-9a13-91eb827abf0d",
+  "pos-vendas": "1c8d3c69-442a-49bf-9eef-9840f4e8d415",
   "geracao-de-contrato": "1c8d3c69-442a-49bf-9eef-9840f4e8d415"
 };
 
@@ -4501,7 +4511,7 @@ async function loadServiceChips(empresaId) {
     if (currentUser.perfil === 'Administrador') {
       empresaId = currentCrmEmpresaFilter !== 'all' ? currentCrmEmpresaFilter : null;
     } else {
-empresaId = currentUser.centro_custo_ids?.[0] || null;
+      empresaId = currentUser.centro_custo_ids?.[0] || null;
     }
   }
 
@@ -4717,10 +4727,10 @@ function getSearchFilteredLeads() {
   const q = leadSearchQuery.toLowerCase().trim();
   const canViewAll = canViewAllData();
   const userId = getCurrentUserId();
-  
+
   return leads.filter(l => {
     if (q && !l.empresa.toLowerCase().includes(q) && !l.telefone.includes(q) && !l.cnpj.includes(q)) return false;
-    
+
     // Se não é admin, filtrar apenas leads do próprio usuário (membro_id ou qualificador_id)
     if (!canViewAll && userId) {
       const membroId = l._membroId || l._ownerId;
@@ -5091,9 +5101,9 @@ function bindLeadCards() {
 
 function bindDropZones() {
   $$('.kanban-col-list').forEach(zone => {
-    zone.addEventListener('dragover',  onDragOver);
+    zone.addEventListener('dragover', onDragOver);
     zone.addEventListener('dragleave', onDragLeave);
-    zone.addEventListener('drop',      onDrop);
+    zone.addEventListener('drop', onDrop);
   });
 }
 
@@ -5101,15 +5111,15 @@ function handleLeadAction(action, id) {
   const lead = leads.find(l => String(l.id) === String(id));
   if (!lead) return;
   switch (action) {
-    case 'open-lead':       openLeadModal(id); break;
-    case 'call-lead':       recordInteraction(id, 'Ligação', 'phone'); break;
-    case 'schedule-lead':   recordInteraction(id, 'Reunião agendada', 'calendar'); break;
-    case 'note-lead':       {
+    case 'open-lead': openLeadModal(id); break;
+    case 'call-lead': recordInteraction(id, 'Ligação', 'phone'); break;
+    case 'schedule-lead': recordInteraction(id, 'Reunião agendada', 'calendar'); break;
+    case 'note-lead': {
       const note = prompt('Adicionar nota rápida:');
       if (note) recordInteraction(id, 'Nota', 'sticky-note', note);
       break;
     }
-    case 'transfer-lead':   {
+    case 'transfer-lead': {
       const resp = prompt('Transferir para (Camila / Rafaela / João / Marina):', lead.responsavel);
       if (resp) {
         lead.responsavel = resp;
@@ -5130,7 +5140,7 @@ function onDragStart(e) {
   draggedId = this.dataset.leadId;
   this.classList.add('dragging');
   e.dataTransfer.effectAllowed = 'move';
-  try { e.dataTransfer.setData('text/plain', draggedId); } catch {}
+  try { e.dataTransfer.setData('text/plain', draggedId); } catch { }
 }
 
 function onDragEnd() {
@@ -5169,7 +5179,7 @@ async function onDrop(e) {
     try {
       const rebuilt = await rebuildCadenciaMaps();
       newCadenciaUuid = (window._cadenciaColToUuid || {})[newStatus] || null;
-    } catch {}
+    } catch { }
   }
 
   if (newCadenciaUuid) {
@@ -5618,10 +5628,10 @@ function renderLeadHistory(lead) {
 
 function defaultHistory(lead) {
   return [
-    { icon: 'user-plus',   title: 'Lead criado',                 meta: lead.createdAt,                                  desc: 'Importação automática · origem: ' + (lead.origem || '—') },
-    { icon: 'phone',       title: 'Ligação de qualificação',     meta: '28/05/2026 14:20',                              desc: 'Conversa inicial · lead demonstrou interesse em contabilidade mensal.' },
-    { icon: 'mail',        title: 'E-mail de follow-up',         meta: '30/05/2026 09:10',                              desc: 'Envio da proposta de faturamento.' },
-    { icon: 'calendar',    title: 'Reunião agendada',            meta: '02/06/2026 11:00',                              desc: 'Reunião marcada para 10/06 às 14h.' }
+    { icon: 'user-plus', title: 'Lead criado', meta: lead.createdAt, desc: 'Importação automática · origem: ' + (lead.origem || '—') },
+    { icon: 'phone', title: 'Ligação de qualificação', meta: '28/05/2026 14:20', desc: 'Conversa inicial · lead demonstrou interesse em contabilidade mensal.' },
+    { icon: 'mail', title: 'E-mail de follow-up', meta: '30/05/2026 09:10', desc: 'Envio da proposta de faturamento.' },
+    { icon: 'calendar', title: 'Reunião agendada', meta: '02/06/2026 11:00', desc: 'Reunião marcada para 10/06 às 14h.' }
   ];
 }
 
@@ -5674,11 +5684,11 @@ async function saveLead() {
 
   // Validação (alinhada aos campos do formulário)
   const errors = {};
-  if (!fields.empresa)        errors.empresa = 'Obrigatório';
-  if (!fields.telefone)       errors.telefone = 'Obrigatório';
+  if (!fields.empresa) errors.empresa = 'Obrigatório';
+  if (!fields.telefone) errors.telefone = 'Obrigatório';
   else if (!validarTelefone(fields.telefone)) errors.telefone = 'Telefone inválido';
 
-  if (!fields.empresaId)      errors.empresaId = 'Selecione uma empresa';
+  if (!fields.empresaId) errors.empresaId = 'Selecione uma empresa';
   if (!fields.tiposServico || fields.tiposServico.length === 0) {
     errors.tiposServico = 'Selecione ao menos um serviço';
   }
@@ -5809,9 +5819,9 @@ async function saveLead() {
         currentLeadId = result[0].id;
       }
       toast('Lead criado e salvo no Supabase: ' + newLead.empresa);
-if (typeof registrarAuditoria === 'function') {
-    registrarAuditoria({ acao: 'Inclusões', caminho_url: '/crm', modulo: 'CRM' });
-  }
+      if (typeof registrarAuditoria === 'function') {
+        registrarAuditoria({ acao: 'Inclusões', caminho_url: '/crm', modulo: 'CRM' });
+      }
     } catch (err) {
       console.error('[Insert] Erro completo:', err);
       const errMsg = err.message || String(err);
@@ -5865,9 +5875,9 @@ if (typeof registrarAuditoria === 'function') {
 
       await updateLeadSupabase(lead.id, payload);
       toast('Lead atualizado no Supabase: ' + lead.empresa);
-if (typeof registrarAuditoria === 'function') {
-    registrarAuditoria({ acao: 'Atualizações', caminho_url: '/crm', modulo: 'CRM' });
-  }
+      if (typeof registrarAuditoria === 'function') {
+        registrarAuditoria({ acao: 'Atualizações', caminho_url: '/crm', modulo: 'CRM' });
+      }
     } catch (err) {
       console.error('[Edit] Erro completo:', err);
       const errMsg = err.message || String(err);
@@ -6035,47 +6045,47 @@ function initCRM() {
 
 // ----- Constantes de status / cadência / temperatura
 const STATUS_CATEGORY = {
-  'novo-lead':          'pendente',
-  'dados-ia':           'pendente',
-  'coletados-frio':     'pendente',
-  'geladeira':          'pendente',
-  'stand-by':           'pendente',
-  'qualificado':        'andamento',
-  'em-atendimento':     'andamento',
+  'novo-lead': 'pendente',
+  'dados-ia': 'pendente',
+  'coletados-frio': 'pendente',
+  'geladeira': 'pendente',
+  'stand-by': 'pendente',
+  'qualificado': 'andamento',
+  'em-atendimento': 'andamento',
   'diagnostico-gratis': 'andamento',
-  'reuniao-agendada':   'andamento',
-  'reuniao-realizada':  'andamento',
-  'contrato-fechado':   'andamento',
-  'cobranca-enviada':   'andamento',
+  'reuniao-agendada': 'andamento',
+  'reuniao-realizada': 'andamento',
+  'contrato-fechado': 'andamento',
+  'cobranca-enviada': 'andamento',
   'pagamento-recebido': 'andamento',
-  'servico-executado':  'andamento',
-  'pos-vendas':         'finalizado'
+  'servico-executado': 'andamento',
+  'pos-vendas': 'finalizado'
 };
 
 // Normaliza a origem do lead para as 4 categorias fixas
 const ORIGIN_MAP = {
-  'Indicação':           'Indicação de Cliente',
-  'Indicação de Cliente':'Indicação de Cliente',
-  'Google Ads':          'Anúncio Pago',
-  'Facebook Ads':        'Anúncio Pago',
-  'Instagram Ads':       'Anúncio Pago',
-  'LinkedIn Ads':        'Anúncio Pago',
-  'Anúncio Pago':        'Anúncio Pago',
-  'Ação de Rua':         'Ação de Rua',
-  'Acao de Rua':         'Ação de Rua',
-  'Oferta Ativa':        'Oferta Ativa',
-  'LinkedIn':            'Oferta Ativa',
-  'Instagram':           'Oferta Ativa',
-  'Site':                'Oferta Ativa',
-  'Orgânico':            'Oferta Ativa',
-  'Outro':               'Oferta Ativa'
+  'Indicação': 'Indicação de Cliente',
+  'Indicação de Cliente': 'Indicação de Cliente',
+  'Google Ads': 'Anúncio Pago',
+  'Facebook Ads': 'Anúncio Pago',
+  'Instagram Ads': 'Anúncio Pago',
+  'LinkedIn Ads': 'Anúncio Pago',
+  'Anúncio Pago': 'Anúncio Pago',
+  'Ação de Rua': 'Ação de Rua',
+  'Acao de Rua': 'Ação de Rua',
+  'Oferta Ativa': 'Oferta Ativa',
+  'LinkedIn': 'Oferta Ativa',
+  'Instagram': 'Oferta Ativa',
+  'Site': 'Oferta Ativa',
+  'Orgânico': 'Oferta Ativa',
+  'Outro': 'Oferta Ativa'
 };
 const ORIGENS_FIXAS = ['Indicação de Cliente', 'Anúncio Pago', 'Ação de Rua', 'Oferta Ativa'];
 const ORIGEM_COLOR = {
   'Indicação de Cliente': '#165BFF',
-  'Anúncio Pago':         '#F59E0B',
-  'Ação de Rua':          '#10B981',
-  'Oferta Ativa':         '#A855F7'
+  'Anúncio Pago': '#F59E0B',
+  'Ação de Rua': '#10B981',
+  'Oferta Ativa': '#A855F7'
 };
 const TEMP_COLOR = { frio: '#0284C7', morno: '#D97706', quente: '#DC2626' };
 
@@ -6108,26 +6118,26 @@ function parseISODate(iso) {
 }
 function formatBR(d) {
   if (!d) return '—';
-  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 }
 function formatBRShort(d) {
   if (!d) return '—';
-  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 function formatBRL(v) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 function timeAgo(ts) {
   if (!ts) return '—';
   const diff = Math.max(0, Date.now() - ts);
   const s = Math.floor(diff / 1000);
-  if (s < 60)  return 'agora';
-  if (s < 3600) return `há ${Math.floor(s/60)} min`;
-  if (s < 86400) return `há ${Math.floor(s/3600)}h`;
-  return `há ${Math.floor(s/86400)}d`;
+  if (s < 60) return 'agora';
+  if (s < 3600) return `há ${Math.floor(s / 60)} min`;
+  if (s < 86400) return `há ${Math.floor(s / 3600)}h`;
+  return `há ${Math.floor(s / 86400)}d`;
 }
 
 function getPeriodRange() {
@@ -6195,7 +6205,7 @@ function getPreviousPeriodRange() {
 }
 
 function formatPeriodBadge(start, end) {
-  const fmt = (d) => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  const fmt = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
   if (start.getTime() === end.getTime()) return fmt(start);
   return `${fmt(start)} — ${fmt(end)}`;
 }
@@ -6235,9 +6245,9 @@ function applySecondaryFilters(leads) {
   const f = dashState.filters;
   return leads.filter(l => {
     if (f.responsavel && l.responsavel !== f.responsavel) return false;
-    if (f.cadencia   && l.status      !== f.cadencia)      return false;
-    if (f.origem     && normalizeOrigin(l.origem) !== f.origem) return false;
-    if (f.thermal    && l.thermal     !== f.thermal)       return false;
+    if (f.cadencia && l.status !== f.cadencia) return false;
+    if (f.origem && normalizeOrigin(l.origem) !== f.origem) return false;
+    if (f.thermal && l.thermal !== f.thermal) return false;
     return true;
   });
 }
@@ -6269,10 +6279,10 @@ function computeAllMetrics(leads) {
   return {
     current,
     metrics: {
-      total:       { count: cur.total,       var: variation(cur.total,       prevM.total) },
-      finalizado:  { count: cur.finalizado,  var: variation(cur.finalizado,  prevM.finalizado) },
-      andamento:   { count: cur.andamento,   var: variation(cur.andamento,   prevM.andamento) },
-      pendente:    { count: cur.pendente,    var: variation(cur.pendente,    prevM.pendente) }
+      total: { count: cur.total, var: variation(cur.total, prevM.total) },
+      finalizado: { count: cur.finalizado, var: variation(cur.finalizado, prevM.finalizado) },
+      andamento: { count: cur.andamento, var: variation(cur.andamento, prevM.andamento) },
+      pendente: { count: cur.pendente, var: variation(cur.pendente, prevM.pendente) }
     },
     range: { start, end }
   };
@@ -6295,9 +6305,9 @@ function computeTemperatures(leads) {
   const map = { frio: [], morno: [], quente: [] };
   leads.forEach(l => { (map[l.thermal] || map.frio).push(l); });
   return {
-    frio:   { count: map.frio.length,   leads: map.frio,   value: map.frio.reduce((s,l)   => s + (l.honorarios||0), 0) },
-    morno:  { count: map.morno.length,  leads: map.morno,  value: map.morno.reduce((s,l)  => s + (l.honorarios||0), 0) },
-    quente: { count: map.quente.length, leads: map.quente, value: map.quente.reduce((s,l) => s + (l.honorarios||0), 0) }
+    frio: { count: map.frio.length, leads: map.frio, value: map.frio.reduce((s, l) => s + (l.honorarios || 0), 0) },
+    morno: { count: map.morno.length, leads: map.morno, value: map.morno.reduce((s, l) => s + (l.honorarios || 0), 0) },
+    quente: { count: map.quente.length, leads: map.quente, value: map.quente.reduce((s, l) => s + (l.honorarios || 0), 0) }
   };
 }
 
@@ -6336,14 +6346,14 @@ function computeHonorarios(leads) {
   const byCadence = cadences
     .map(c => {
       const ls = leads.filter(l => l.status === c.id);
-      return { id: c.id, label: c.label, value: ls.reduce((s,l)=>s+(l.honorarios||0),0), count: ls.length };
+      return { id: c.id, label: c.label, value: ls.reduce((s, l) => s + (l.honorarios || 0), 0), count: ls.length };
     })
     .filter(x => x.value > 0)
-    .sort((a,b) => b.value - a.value);
-  const byTemp = ['quente','morno','frio']
+    .sort((a, b) => b.value - a.value);
+  const byTemp = ['quente', 'morno', 'frio']
     .map(t => {
       const ls = leads.filter(l => l.thermal === t);
-      return { id: t, label: t[0].toUpperCase()+t.slice(1), value: ls.reduce((s,l)=>s+(l.honorarios||0),0), count: ls.length };
+      return { id: t, label: t[0].toUpperCase() + t.slice(1), value: ls.reduce((s, l) => s + (l.honorarios || 0), 0), count: ls.length };
     });
   return { total, byCadence, byTemp, count: leads.length, avg: leads.length ? total / leads.length : 0 };
 }
@@ -6372,22 +6382,22 @@ function renderDashSummary(payload) {
   if (!wrap) return;
   const m = payload.metrics;
   const cfg = [
-    { key: 'total',       label: 'Total de Lead',       ico: 'users-round',   tip: 'Total de leads no período' },
-    { key: 'finalizado',  label: 'Leads Finalizados',   ico: 'check-circle-2',tip: 'Leads que chegaram ao pós-vendas' },
-    { key: 'andamento',   label: 'Leads Em Andamento',  ico: 'loader',        tip: 'Leads ativos em cadências intermediárias' },
-    { key: 'pendente',    label: 'Leads Pendentes',     ico: 'alert-circle',  tip: 'Aguardando primeiro atendimento' }
+    { key: 'total', label: 'Total de Lead', ico: 'users-round', tip: 'Total de leads no período' },
+    { key: 'finalizado', label: 'Leads Finalizados', ico: 'check-circle-2', tip: 'Leads que chegaram ao pós-vendas' },
+    { key: 'andamento', label: 'Leads Em Andamento', ico: 'loader', tip: 'Leads ativos em cadências intermediárias' },
+    { key: 'pendente', label: 'Leads Pendentes', ico: 'alert-circle', tip: 'Aguardando primeiro atendimento' }
   ];
   wrap.innerHTML = cfg.map(c => {
     const data = m[c.key];
     return `
-      <div class="metric-card${c.key==='total'?' highlight':''}" data-tooltip="${c.tip}" data-tab-link="${c.key==='finalizado'?'finalizados':c.key==='andamento'?'andamento':c.key==='pendente'?'pendentes':'total'}">
+      <div class="metric-card${c.key === 'total' ? ' highlight' : ''}" data-tooltip="${c.tip}" data-tab-link="${c.key === 'finalizado' ? 'finalizados' : c.key === 'andamento' ? 'andamento' : c.key === 'pendente' ? 'pendentes' : 'total'}">
         <div class="metric-head">
           <span class="metric-label">${c.label}</span>
           <i data-lucide="${c.ico}" class="metric-ico"></i>
         </div>
         <h2 class="metric-value">${data.count}</h2>
         ${trendPill(data.var)}
-        <div class="metric-bar"><span data-width="${Math.min(100, data.count * (c.key==='total' ? 4 : 8))}%"></span></div>
+        <div class="metric-bar"><span data-width="${Math.min(100, data.count * (c.key === 'total' ? 4 : 8))}%"></span></div>
       </div>`;
   }).join('');
   if (window.initIcons) window.initIcons();
@@ -6409,9 +6419,9 @@ function renderTableTotal(tbody, leads) {
       <td>${thermalTag(l.thermal)}</td>
       <td>${escapeHtml(normalizeOrigin(l.origem))}</td>
       <td>${escapeHtml(l.responsavel)}</td>
-      <td>${formatBRL(l.honorarios||0)}</td>
-      <td>${escapeHtml((l.createdAt||'').split(' ')[0])}</td>
-      <td>${escapeHtml(l.lastTouch||'—')}</td>
+      <td>${formatBRL(l.honorarios || 0)}</td>
+      <td>${escapeHtml((l.createdAt || '').split(' ')[0])}</td>
+      <td>${escapeHtml(l.lastTouch || '—')}</td>
     </tr>`).join('');
 }
 function renderTableFinalizados(tbody, leads) {
@@ -6422,8 +6432,8 @@ function renderTableFinalizados(tbody, leads) {
       <td>${statusTag(l.status)}</td>
       <td>${escapeHtml(normalizeOrigin(l.origem))}</td>
       <td>${escapeHtml(l.responsavel)}</td>
-      <td>${formatBRL(l.honorarios||0)}</td>
-      <td>${escapeHtml((l.createdAt||'').split(' ')[0])}</td>
+      <td>${formatBRL(l.honorarios || 0)}</td>
+      <td>${escapeHtml((l.createdAt || '').split(' ')[0])}</td>
     </tr>`).join('');
 }
 function renderTableAndamento(tbody, leads) {
@@ -6434,8 +6444,8 @@ function renderTableAndamento(tbody, leads) {
       <td>${statusTag(l.status)}</td>
       <td>${escapeHtml(normalizeOrigin(l.origem))}</td>
       <td>${escapeHtml(l.responsavel)}</td>
-      <td>${formatBRL(l.honorarios||0)}</td>
-      <td>${escapeHtml(l.lastTouch||'—')}</td>
+      <td>${formatBRL(l.honorarios || 0)}</td>
+      <td>${escapeHtml(l.lastTouch || '—')}</td>
     </tr>`).join('');
 }
 function renderTablePendentes(tbody, leads) {
@@ -6446,8 +6456,8 @@ function renderTablePendentes(tbody, leads) {
       <td>${statusTag(l.status)}</td>
       <td>${escapeHtml(normalizeOrigin(l.origem))}</td>
       <td>${escapeHtml(l.responsavel)}</td>
-      <td>${formatBRL(l.honorarios||0)}</td>
-      <td>${escapeHtml(l.lastTouch||'—')}</td>
+      <td>${formatBRL(l.honorarios || 0)}</td>
+      <td>${escapeHtml(l.lastTouch || '—')}</td>
     </tr>`).join('');
 }
 function renderTableReunioes(tbody, meetings) {
@@ -6456,14 +6466,14 @@ function renderTableReunioes(tbody, meetings) {
     const d = parseISODate(m.iso);
     const tagCls = m.type === 'reuniao' ? 'tag-blue' : m.type === 'fiscal' ? 'tag-amber' : m.type === 'financeiro' ? 'tag-green' : 'tag-purple';
     return `
-      <tr data-meeting-id="${m.id}"${m.leadId?` data-lead-id="${m.leadId}"`:''}>
+      <tr data-meeting-id="${m.id}"${m.leadId ? ` data-lead-id="${m.leadId}"` : ''}>
         <td>${formatBRShort(d)}</td>
-        <td>${escapeHtml(m.time || '—')}${m.duration?` <span style="color:var(--muted-text);font-size:11px">(${m.duration}min)</span>`:''}</td>
+        <td>${escapeHtml(m.time || '—')}${m.duration ? ` <span style="color:var(--muted-text);font-size:11px">(${m.duration}min)</span>` : ''}</td>
         <td>${escapeHtml(m.cliente || '—')}</td>
         <td>${escapeHtml(m.empresa)}</td>
         <td>${escapeHtml(m.responsavel || '—')}</td>
         <td><span class="tag ${tagCls}">${meetingTypeLabel(m.type)}</span></td>
-        <td>${m.lead?`<button class="icon-btn small" data-action="open-lead" data-lead-id="${m.leadId}" title="Abrir lead"><i data-lucide="external-link"></i></button>`:''}</td>
+        <td>${m.lead ? `<button class="icon-btn small" data-action="open-lead" data-lead-id="${m.leadId}" title="Abrir lead"><i data-lucide="external-link"></i></button>` : ''}</td>
       </tr>`;
   }).join('');
 }
@@ -6474,17 +6484,17 @@ function renderTopResponsaveis(leads) {
   if (!wrap) return;
   const counts = {};
   leads.forEach(l => { counts[l.responsavel] = (counts[l.responsavel] || 0) + 1; });
-  const top = Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0,3);
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3);
   if (!top.length) { wrap.innerHTML = '<p class="empty-state" style="margin:0">Sem dados</p>'; return; }
   const max = top[0][1];
   wrap.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:8px">
       ${top.map(([name, count], i) => `
         <div style="display:grid;grid-template-columns:24px 1fr 50px;align-items:center;gap:10px">
-          <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:${['#165BFF','#A855F7','#10B981'][i]};color:#fff;font-size:11px;font-weight:600">${i+1}</span>
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:${['#165BFF', '#A855F7', '#10B981'][i]};color:#fff;font-size:11px;font-weight:600">${i + 1}</span>
           <div>
             <div style="font:500 13px 'Inter';color:var(--text-primary)">${escapeHtml(name)}</div>
-            <div style="height:6px;background:var(--gray-200);border-radius:999px;overflow:hidden;margin-top:4px"><span style="display:block;height:100%;width:${(count/max)*100}%;background:${['#165BFF','#A855F7','#10B981'][i]};border-radius:999px"></span></div>
+            <div style="height:6px;background:var(--gray-200);border-radius:999px;overflow:hidden;margin-top:4px"><span style="display:block;height:100%;width:${(count / max) * 100}%;background:${['#165BFF', '#A855F7', '#10B981'][i]};border-radius:999px"></span></div>
           </div>
           <span style="font:600 14px 'Inter';color:var(--text-primary);text-align:right">${count}</span>
         </div>`).join('')}
@@ -6502,7 +6512,7 @@ function renderPenMotivos(leads) {
     else if (o.includes('interesse') || o.includes('desistiu')) buckets['Sem interesse claro']++;
     else buckets['Sem contato inicial']++;
   });
-  const list = Object.entries(buckets).sort((a,b)=>b[1]-a[1]);
+  const list = Object.entries(buckets).sort((a, b) => b[1] - a[1]);
   wrap.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">
       ${list.map(([motivo, count]) => `
@@ -6517,7 +6527,7 @@ function renderPenMotivos(leads) {
 function renderFunil(funnel, sortBy = 'value') {
   const wrap = document.getElementById('dashFunilList');
   if (!wrap) return;
-  const sorted = [...funnel].sort((a,b) => sortBy === 'value' ? b.value - a.value : b.count - a.count);
+  const sorted = [...funnel].sort((a, b) => sortBy === 'value' ? b.value - a.value : b.count - a.count);
   const max = Math.max(...sorted.map(s => sortBy === 'value' ? s.value : s.count), 1);
   wrap.innerHTML = sorted.map(row => {
     const pct = ((sortBy === 'value' ? row.value : row.count) / max) * 100;
@@ -6544,9 +6554,9 @@ function renderFunilTable(funnel) {
             <tr class="lead-row-clickable" data-lead-id="${l.id}">
               <td>${escapeHtml(l.cliente || l.responsavel || '—')}</td>
               <td>${escapeHtml(l.empresa)}</td>
-              <td>${escapeHtml((l.createdAt||'').split(' ')[0])}</td>
+              <td>${escapeHtml((l.createdAt || '').split(' ')[0])}</td>
               <td>${statusTag(l.status)}</td>
-              <td>${formatBRL(l.honorarios||0)}</td>
+              <td>${formatBRL(l.honorarios || 0)}</td>
             </tr>`).join('')}
         </tbody>
       </table>
@@ -6559,9 +6569,9 @@ function renderOrigensChart(origins) {
   const canvas = document.getElementById('chartOrigens');
   if (!canvas || typeof Chart === 'undefined') return;
   const labels = ORIGENS_FIXAS;
-  const data   = labels.map(l => origins[l]?.count || 0);
+  const data = labels.map(l => origins[l]?.count || 0);
   const colors = labels.map(l => ORIGEM_COLOR[l]);
-  const total  = data.reduce((a,b)=>a+b,0);
+  const total = data.reduce((a, b) => a + b, 0);
   document.getElementById('dashOrigensTotal').innerHTML = `<strong>${total}</strong><span>leads</span>`;
 
   if (_origensChart) { _origensChart.destroy(); }
@@ -6572,8 +6582,10 @@ function renderOrigensChart(origins) {
       responsive: true, maintainAspectRatio: false, cutout: '68%',
       plugins: {
         legend: { display: false },
-        tooltip: { backgroundColor: '#0F172A', padding: 10, cornerRadius: 8, titleColor: '#fff', bodyColor: '#E2E8F0',
-          callbacks: { label: c => `${c.label}: ${c.parsed} (${total ? Math.round(c.parsed/total*100) : 0}%)` } }
+        tooltip: {
+          backgroundColor: '#0F172A', padding: 10, cornerRadius: 8, titleColor: '#fff', bodyColor: '#E2E8F0',
+          callbacks: { label: c => `${c.label}: ${c.parsed} (${total ? Math.round(c.parsed / total * 100) : 0}%)` }
+        }
       }
     }
   });
@@ -6581,7 +6593,7 @@ function renderOrigensChart(origins) {
 function renderOrigensLegend(origins) {
   const wrap = document.getElementById('dashOrigensLegend');
   if (!wrap) return;
-  const total = Object.values(origins).reduce((s,o)=>s+o.count,0);
+  const total = Object.values(origins).reduce((s, o) => s + o.count, 0);
   wrap.innerHTML = ORIGENS_FIXAS.map(o => {
     const d = origins[o] || { count: 0 };
     const pct = total ? Math.round(d.count / total * 100) : 0;
@@ -6610,7 +6622,7 @@ function renderOrigensLegend(origins) {
                 <td>${escapeHtml(l.empresa)}</td>
                 <td>${statusTag(l.status)}</td>
                 <td>${escapeHtml(l.responsavel)}</td>
-                <td>${formatBRL(l.honorarios||0)}</td>
+                <td>${formatBRL(l.honorarios || 0)}</td>
               </tr>`).join('')}
           </tbody></table>
         </div>`;
@@ -6625,7 +6637,7 @@ function renderTempBars(temps) {
   if (!wrap) return;
   const max = Math.max(temps.frio.count, temps.morno.count, temps.quente.count, 1);
   const total = temps.frio.count + temps.morno.count + temps.quente.count;
-  ['frio','morno','quente'].forEach(t => {
+  ['frio', 'morno', 'quente'].forEach(t => {
     const pct = (temps[t].count / max) * 100;
     const el = wrap.querySelector(`.temp-bar-${t}`);
     if (!el) return;
@@ -6649,8 +6661,8 @@ function renderTempBars(temps) {
               <tr class="lead-row-clickable" data-lead-id="${l.id}">
                 <td>${escapeHtml(l.empresa)}</td>
                 <td>${escapeHtml(l.responsavel)}</td>
-                <td>${escapeHtml(l.lastTouch||'—')}</td>
-                <td>${formatBRL(l.honorarios||0)}</td>
+                <td>${escapeHtml(l.lastTouch || '—')}</td>
+                <td>${formatBRL(l.honorarios || 0)}</td>
               </tr>`).join('')}
           </tbody></table>
         </div>`;
@@ -6661,9 +6673,9 @@ function renderTempBars(temps) {
 function ensureTempBarsDom() {
   const wrap = document.getElementById('dashTempBars');
   if (!wrap || wrap.children.length) return;
-  wrap.innerHTML = ['frio','morno','quente'].map(t => `
+  wrap.innerHTML = ['frio', 'morno', 'quente'].map(t => `
     <div class="temp-bar temp-bar-${t}" data-temp="${t}">
-      <span class="temp-bar-name">${t[0].toUpperCase()+t.slice(1)}</span>
+      <span class="temp-bar-name">${t[0].toUpperCase() + t.slice(1)}</span>
       <div class="temp-bar-track"><div class="temp-bar-fill" style="width:0%"></div></div>
       <span class="temp-bar-count">0</span>
       <span class="temp-bar-trend">0%</span>
@@ -6677,19 +6689,19 @@ function renderHonorarios(hon) {
   document.getElementById('dashHonTotal').textContent = formatBRL(hon.total);
   document.getElementById('dashHonMeta').textContent = `${hon.count} leads · ticket médio ${formatBRL(hon.avg || 0)}`;
   document.getElementById('dashHonTrend').innerHTML = `<i data-lucide="trending-up"></i> Período atual`;
-  document.getElementById('dashHonCadList').innerHTML = (hon.byCadence.length ? hon.byCadence : [{ id:'_', label:'Sem dados', value:0, count:0 }])
+  document.getElementById('dashHonCadList').innerHTML = (hon.byCadence.length ? hon.byCadence : [{ id: '_', label: 'Sem dados', value: 0, count: 0 }])
     .map(x => `
       <li>
         <span class="hl-name">${escapeHtml(x.label)} <span style="color:var(--muted-text);font-weight:400">· ${x.count}</span></span>
         <span class="hl-value">${formatBRL(x.value)}</span>
-        <span class="hl-bar"><span style="width:${(x.value/maxCad)*100}%"></span></span>
+        <span class="hl-bar"><span style="width:${(x.value / maxCad) * 100}%"></span></span>
       </li>`).join('');
   document.getElementById('dashHonTempList').innerHTML = hon.byTemp
     .map(x => `
       <li>
         <span class="hl-name"><span class="thermal-tag ${x.id}">${escapeHtml(x.label)}</span> <span style="color:var(--muted-text);font-weight:400;margin-left:6px">· ${x.count}</span></span>
         <span class="hl-value">${formatBRL(x.value)}</span>
-        <span class="hl-bar"><span style="width:${(x.value/maxTemp)*100}%;background:${TEMP_COLOR[x.id]}"></span></span>
+        <span class="hl-bar"><span style="width:${(x.value / maxTemp) * 100}%;background:${TEMP_COLOR[x.id]}"></span></span>
       </li>`).join('');
   if (window.initIcons) window.initIcons();
 }
@@ -6710,7 +6722,7 @@ function renderReunRespChips() {
 function renderCalUpcoming() {
   const wrap = document.getElementById('calUpcoming');
   if (!wrap) return;
-  const today = new Date(); today.setHours(0,0,0,0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
   const weekLater = new Date(today); weekLater.setDate(weekLater.getDate() + 7);
   const isAdmin = isCurrentUserAdmin();
   const userId = getCurrentUserId();
@@ -6725,7 +6737,7 @@ function renderCalUpcoming() {
     });
   }
   items = items
-    .sort((a,b) => (a.iso+a.time).localeCompare(b.iso+b.time))
+    .sort((a, b) => (a.iso + a.time).localeCompare(b.iso + b.time))
     .slice(0, 8);
   if (!items.length) { wrap.innerHTML = '<li class="empty-state"><i data-lucide="inbox"></i><p>Sem eventos próximos</p></li>'; if (window.initIcons) window.initIcons(); return; }
   wrap.innerHTML = items.map(m => {
@@ -6735,11 +6747,11 @@ function renderCalUpcoming() {
     const leadPhone = m.lead ? m.lead.telefone : (m.phone || '');
     return `
       <li class="event-item" data-meeting-id="${m.id}">
-        <div class="event-date"><strong>${String(d.getDate()).padStart(2,'0')}</strong><span>${['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][d.getMonth()]}</span></div>
+        <div class="event-date"><strong>${String(d.getDate()).padStart(2, '0')}</strong><span>${['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'][d.getMonth()]}</span></div>
         <div class="event-bar" style="background:${meetingColor(m.type)}"></div>
         <div class="event-info">
           <p class="event-title">${escapeHtml(m.title)}</p>
-          <p class="event-meta">${escapeHtml(m.time || '')}${leadName?' · '+escapeHtml(leadName):''}${leadPhone?' · '+escapeHtml(leadPhone):''}</p>
+          <p class="event-meta">${escapeHtml(m.time || '')}${leadName ? ' · ' + escapeHtml(leadName) : ''}${leadPhone ? ' · ' + escapeHtml(leadPhone) : ''}</p>
         </div>
         <span class="tag ${tagCls}">${meetingTypeLabel(m.type)}</span>
       </li>`;
@@ -6750,10 +6762,10 @@ function renderCalUpcoming() {
 function renderDashRemindersWidget() {
   const wrap = document.getElementById('dashRemindersWidget');
   if (!wrap) return;
-  const today = new Date(); today.setHours(0,0,0,0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
   const items = meetings
     .filter(m => m.type === 'reuniao' && parseISODate(m.iso) >= today)
-    .sort((a,b) => (a.iso+a.time).localeCompare(b.iso+b.time))
+    .sort((a, b) => (a.iso + a.time).localeCompare(b.iso + b.time))
     .slice(0, 2);
   if (!items.length) { wrap.innerHTML = '<div class="empty-state" style="padding:20px"><i data-lucide="inbox"></i><p>Sem reuniões próximas</p></div>'; if (window.initIcons) window.initIcons(); return; }
   wrap.innerHTML = items.map(m => {
@@ -6778,19 +6790,19 @@ function renderDashSubHeaders(payload) {
   const r = payload.range;
   const fmt = `${formatBR(r.start)} — ${formatBR(r.end)}`;
   const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
-  set('dashTotalSub',  `${payload.current.length} leads no período · ${fmt}`);
-  set('dashFinSub',    `${payload.metrics.finalizado.count} finalizados · ${fmt}`);
-  set('dashAndSub',    `${payload.metrics.andamento.count} em andamento · ${fmt}`);
-  set('dashPenSub',    `${payload.metrics.pendente.count} pendentes · ${fmt}`);
-  set('dashReunSub',   `Reuniões no período · ${fmt} <span style="opacity:0.7">· sync com Calendário</span>`);
-  set('dashFunilSub',  `Soma de leads e faturamento por cadência · ${fmt}`);
-  set('dashOrigSub',   `Distribuição por origem (4 fixas) · ${fmt}`);
-  set('dashTempSub',   `Frio · Morno · Quente · ${fmt}`);
-  set('dashHonSub',    `Soma de faturamento no período · ${fmt}`);
+  set('dashTotalSub', `${payload.current.length} leads no período · ${fmt}`);
+  set('dashFinSub', `${payload.metrics.finalizado.count} finalizados · ${fmt}`);
+  set('dashAndSub', `${payload.metrics.andamento.count} em andamento · ${fmt}`);
+  set('dashPenSub', `${payload.metrics.pendente.count} pendentes · ${fmt}`);
+  set('dashReunSub', `Reuniões no período · ${fmt} <span style="opacity:0.7">· sync com Calendário</span>`);
+  set('dashFunilSub', `Soma de leads e faturamento por cadência · ${fmt}`);
+  set('dashOrigSub', `Distribuição por origem (4 fixas) · ${fmt}`);
+  set('dashTempSub', `Frio · Morno · Quente · ${fmt}`);
+  set('dashHonSub', `Soma de faturamento no período · ${fmt}`);
   set('dashTotalTrend', trendPill(payload.metrics.total.var));
-  set('dashFinTrend',   trendPill(payload.metrics.finalizado.var));
-  set('dashAndTrend',   trendPill(payload.metrics.andamento.var));
-  set('dashPenTrend',   trendPill(payload.metrics.pendente.var));
+  set('dashFinTrend', trendPill(payload.metrics.finalizado.var));
+  set('dashAndTrend', trendPill(payload.metrics.andamento.var));
+  set('dashPenTrend', trendPill(payload.metrics.pendente.var));
 }
 
 // ----- Render: Painel de reunião (filtro por chip)
@@ -6809,8 +6821,8 @@ function renderDashTab(tabId, payload) {
 
   const leads = payload.current;
   const leadsFinalizados = leads.filter(l => getStatusCategory(l.status) === 'finalizado');
-  const leadsAndamento   = leads.filter(l => getStatusCategory(l.status) === 'andamento');
-  const leadsPendentes   = leads.filter(l => getStatusCategory(l.status) === 'pendente');
+  const leadsAndamento = leads.filter(l => getStatusCategory(l.status) === 'andamento');
+  const leadsPendentes = leads.filter(l => getStatusCategory(l.status) === 'pendente');
 
   if (tabId === 'total') {
     renderTableTotal(panel.querySelector('#dashTableTotal tbody'), leads);
@@ -6864,11 +6876,11 @@ function renderDashAll(force = false) {
     const metrics = computeAllMetrics(filteredLeads);
     payload = {
       ...metrics,
-      origins:      computeOrigins(metrics.current),
+      origins: computeOrigins(metrics.current),
       temperatures: computeTemperatures(metrics.current),
-      funnel:       computeCadenceFunnel(metrics.current),
-      reminders:    computeReminders(filteredLeads),
-      honorarios:   computeHonorarios(metrics.current)
+      funnel: computeCadenceFunnel(metrics.current),
+      reminders: computeReminders(filteredLeads),
+      honorarios: computeHonorarios(metrics.current)
     };
     setCachedPayload(payload);
   }
@@ -6921,29 +6933,29 @@ function exportData(format) {
   let filename = `dashboard-${tabId}`;
 
   if (tabId === 'total') {
-    rows = p.current.map(l => ({ Empresa: l.empresa, Cadência: cadences.find(c=>c.id===l.status)?.label||l.status, Temperatura: l.thermal, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios||0, Entrada: (l.createdAt||'').split(' ')[0], 'Último contato': l.lastTouch||'' }));
+    rows = p.current.map(l => ({ Empresa: l.empresa, Cadência: cadences.find(c => c.id === l.status)?.label || l.status, Temperatura: l.thermal, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios || 0, Entrada: (l.createdAt || '').split(' ')[0], 'Último contato': l.lastTouch || '' }));
   } else if (tabId === 'finalizados') {
-    rows = p.current.filter(l => getStatusCategory(l.status)==='finalizado').map(l => ({ Empresa: l.empresa, 'Cadência final': cadences.find(c=>c.id===l.status)?.label||l.status, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios||0, 'Concluído em': (l.createdAt||'').split(' ')[0] }));
+    rows = p.current.filter(l => getStatusCategory(l.status) === 'finalizado').map(l => ({ Empresa: l.empresa, 'Cadência final': cadences.find(c => c.id === l.status)?.label || l.status, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios || 0, 'Concluído em': (l.createdAt || '').split(' ')[0] }));
   } else if (tabId === 'andamento') {
-    rows = p.current.filter(l => getStatusCategory(l.status)==='andamento').map(l => ({ Empresa: l.empresa, 'Cadência atual': cadences.find(c=>c.id===l.status)?.label||l.status, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios||0, 'Último contato': l.lastTouch||'' }));
+    rows = p.current.filter(l => getStatusCategory(l.status) === 'andamento').map(l => ({ Empresa: l.empresa, 'Cadência atual': cadences.find(c => c.id === l.status)?.label || l.status, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios || 0, 'Último contato': l.lastTouch || '' }));
   } else if (tabId === 'pendentes') {
-    rows = p.current.filter(l => getStatusCategory(l.status)==='pendente').map(l => ({ Empresa: l.empresa, Cadência: cadences.find(c=>c.id===l.status)?.label||l.status, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios||0, 'Último contato': l.lastTouch||'' }));
+    rows = p.current.filter(l => getStatusCategory(l.status) === 'pendente').map(l => ({ Empresa: l.empresa, Cadência: cadences.find(c => c.id === l.status)?.label || l.status, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios || 0, 'Último contato': l.lastTouch || '' }));
   } else if (tabId === 'reunioes') {
-    rows = p.reminders.map(m => ({ Dia: m.iso, Horário: m.time||'', Cliente: m.cliente||'', Empresa: m.empresa, Responsável: m.responsavel||'', Tipo: meetingTypeLabel(m.type) }));
+    rows = p.reminders.map(m => ({ Dia: m.iso, Horário: m.time || '', Cliente: m.cliente || '', Empresa: m.empresa, Responsável: m.responsavel || '', Tipo: meetingTypeLabel(m.type) }));
   } else if (tabId === 'funil') {
-    rows = p.funnel.flatMap(f => f.leads.map(l => ({ Cadência: f.label, Nome: l.responsavel||'', Empresa: l.empresa, 'Data de entrada': (l.createdAt||'').split(' ')[0], 'Status atual': cadences.find(c=>c.id===l.status)?.label||l.status, 'Valor de Faturamento': l.honorarios||0 })));
+    rows = p.funnel.flatMap(f => f.leads.map(l => ({ Cadência: f.label, Nome: l.responsavel || '', Empresa: l.empresa, 'Data de entrada': (l.createdAt || '').split(' ')[0], 'Status atual': cadences.find(c => c.id === l.status)?.label || l.status, 'Valor de Faturamento': l.honorarios || 0 })));
   } else if (tabId === 'origens') {
     rows = [];
-    ORIGENS_FIXAS.forEach(o => (p.origins[o]?.leads || []).forEach(l => rows.push({ Origem: o, Empresa: l.empresa, Cadência: cadences.find(c=>c.id===l.status)?.label||l.status, Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios||0 })));
+    ORIGENS_FIXAS.forEach(o => (p.origins[o]?.leads || []).forEach(l => rows.push({ Origem: o, Empresa: l.empresa, Cadência: cadences.find(c => c.id === l.status)?.label || l.status, Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios || 0 })));
   } else if (tabId === 'temperatura') {
     rows = [];
-    ['frio','morno','quente'].forEach(t => (p.temperatures[t]?.leads || []).forEach(l => rows.push({ Temperatura: t, Empresa: l.empresa, Responsável: l.responsavel, 'Último contato': l.lastTouch||'', 'Valor de Faturamento': l.honorarios||0 })));
+    ['frio', 'morno', 'quente'].forEach(t => (p.temperatures[t]?.leads || []).forEach(l => rows.push({ Temperatura: t, Empresa: l.empresa, Responsável: l.responsavel, 'Último contato': l.lastTouch || '', 'Valor de Faturamento': l.honorarios || 0 })));
   } else if (tabId === 'honorarios') {
-    rows = p.current.filter(l => (l.honorarios||0) > 0).map(l => ({ Empresa: l.empresa, Cadência: cadences.find(c=>c.id===l.status)?.label||l.status, Temperatura: l.thermal, Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios }));
+    rows = p.current.filter(l => (l.honorarios || 0) > 0).map(l => ({ Empresa: l.empresa, Cadência: cadences.find(c => c.id === l.status)?.label || l.status, Temperatura: l.thermal, Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios }));
   }
 
   if (!rows.length) { alert('Nenhum dado para exportar neste painel.'); return; }
-  filename = `blue-${tabId}-${formatBR(new Date()).replace(/\//g,'-')}`;
+  filename = `blue-${tabId}-${formatBR(new Date()).replace(/\//g, '-')}`;
 
   if (format === 'csv') downloadCSV(filename + '.csv', rows);
   else if (format === 'xlsx') downloadXLSX(filename + '.xls', rows);
@@ -6952,7 +6964,7 @@ function exportData(format) {
 function downloadCSV(name, rows) {
   if (!rows.length) return;
   const cols = Object.keys(rows[0]);
-  const esc = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
+  const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const csv = [cols.join(','), ...rows.map(r => cols.map(c => esc(r[c])).join(','))].join('\n');
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
   triggerDownload(blob, name);
@@ -6989,7 +7001,7 @@ function downloadPrintable(name, rows, tabId) {
     <h1>Dashboard · ${escapeHtml(tabId)}</h1>
     <p>${escapeHtml(name)} · gerado em ${new Date().toLocaleString('pt-BR')}</p>
     <table><thead><tr>${cols.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>
-    <tbody>${rows.map(r => `<tr>${cols.map(c => `<td>${escapeHtml(String(r[c]??''))}</td>`).join('')}</tr>`).join('')}</tbody>
+    <tbody>${rows.map(r => `<tr>${cols.map(c => `<td>${escapeHtml(String(r[c] ?? ''))}</td>`).join('')}</tr>`).join('')}</tbody>
     </table>
     <script>window.onload = () => { window.print(); }<\/script>
     </body></html>`;
@@ -7016,10 +7028,10 @@ function initDashboard() {
       if (dashState.period === 'custom' && !dashState.startDate) {
         const today = new Date();
         const ago = new Date(); ago.setDate(ago.getDate() - 30);
-        document.getElementById('dashStartDate').value = ago.toISOString().slice(0,10);
-        document.getElementById('dashEndDate').value = today.toISOString().slice(0,10);
-        dashState.startDate = ago.toISOString().slice(0,10);
-        dashState.endDate = today.toISOString().slice(0,10);
+        document.getElementById('dashStartDate').value = ago.toISOString().slice(0, 10);
+        document.getElementById('dashEndDate').value = today.toISOString().slice(0, 10);
+        dashState.startDate = ago.toISOString().slice(0, 10);
+        dashState.endDate = today.toISOString().slice(0, 10);
       }
       invalidateDashCache();
       renderDashAll();
@@ -7041,12 +7053,12 @@ function initDashboard() {
     });
   }
   // Custom range
-  ['dashStartDate','dashEndDate'].forEach(id => {
+  ['dashStartDate', 'dashEndDate'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener('change', () => {
       dashState.startDate = document.getElementById('dashStartDate').value;
-      dashState.endDate   = document.getElementById('dashEndDate').value;
+      dashState.endDate = document.getElementById('dashEndDate').value;
       // muda automaticamente para "custom"
       document.querySelectorAll('#dashPeriodSeg .seg').forEach(b => b.classList.toggle('active', b.dataset.period === 'custom'));
       dashState.period = 'custom';
@@ -7062,7 +7074,7 @@ function initDashboard() {
     tab.addEventListener('click', () => setDashTab(tab.dataset.tab));
   });
   // Filtros secundários
-  ['dashFilterResponsavel','dashFilterCadencia','dashFilterOrigem','dashFilterTemp'].forEach(id => {
+  ['dashFilterResponsavel', 'dashFilterCadencia', 'dashFilterOrigem', 'dashFilterTemp'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener('change', () => {
@@ -7075,8 +7087,8 @@ function initDashboard() {
   // Limpar filtros
   const clearF = document.getElementById('dashClearFilters');
   if (clearF) clearF.addEventListener('click', () => {
-    dashState.filters = { responsavel:'', cadencia:'', origem:'', thermal:'' };
-    ['dashFilterResponsavel','dashFilterCadencia','dashFilterOrigem','dashFilterTemp'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    dashState.filters = { responsavel: '', cadencia: '', origem: '', thermal: '' };
+    ['dashFilterResponsavel', 'dashFilterCadencia', 'dashFilterOrigem', 'dashFilterTemp'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     invalidateDashCache();
     renderDashAll();
   });
@@ -7125,7 +7137,7 @@ function initDashboard() {
     if (mrow) {
       const id = mrow.dataset.meetingId;
       const meeting = meetings.find(m => String(m.id) === String(id));
-      if (meeting) toast(`Reunião: ${meeting.title} · ${meeting.iso} ${meeting.time||''}`);
+      if (meeting) toast(`Reunião: ${meeting.title} · ${meeting.iso} ${meeting.time || ''}`);
     }
     const mli = e.target.closest('li.event-item');
     if (mli) {
@@ -7150,10 +7162,10 @@ function initDashboard() {
 function addMeetingPrompt() {
   const titulo = prompt('Título da reunião:');
   if (!titulo) return;
-  const data = prompt('Data (AAAA-MM-DD):', new Date().toISOString().slice(0,10));
+  const data = prompt('Data (AAAA-MM-DD):', new Date().toISOString().slice(0, 10));
   if (!data) return;
   const hora = prompt('Horário (HH:MM):', '10:00') || '10:00';
-  const id = Math.max(...meetings.map(m=>m.id), 0) + 1;
+  const id = Math.max(...meetings.map(m => m.id), 0) + 1;
   meetings.push({ id, iso: data, time: hora, duration: 30, title: titulo, cliente: '', empresa: 'A definir', responsavel: 'Camila', type: 'reuniao', leadId: null, status: 'agendada' });
   rebuildCalendarEvents();
   invalidateDashCache();
@@ -7183,7 +7195,7 @@ function openCalEventModal(isoDate, meetingId) {
   const dateStr = isoDate || new Date().toISOString().slice(0, 10);
   $('#calEventDate').value = dateStr;
   const d = parseISODate(dateStr);
-  const monthNames = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  const monthNames = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
   $('#calEventDateLabel').textContent = `${d.getDate()} de ${monthNames[d.getMonth()]} de ${d.getFullYear()}`;
 
   // Clear errors
@@ -7323,7 +7335,7 @@ function openCalEventModal(isoDate, meetingId) {
     const totalMin = sh * 60 + sm + dur;
     const eh = Math.floor(totalMin / 60) % 24;
     const em = totalMin % 60;
-    timeEnd.value = `${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}`;
+    timeEnd.value = `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`;
   };
 
   timeStart.onchange = () => { calcDurFromTimes(); };
@@ -7415,8 +7427,8 @@ function openCalEventPopup(iso, meetingId) {
 
   $('#calPopupTitle').textContent = m.title || '';
   const d = parseISODate(m.iso || iso);
-  const dayNames = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
-  const monthNames = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  const dayNames = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+  const monthNames = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
   $('#calPopupDate').textContent = d ? `${dayNames[d.getDay()]}, ${d.getDate()} de ${monthNames[d.getMonth()]} de ${d.getFullYear()}` : iso;
 
   // Time
@@ -7667,7 +7679,7 @@ function bindCalClientAutocomplete() {
       const q = input.value.toLowerCase().trim();
       if (q.length < 1) { dropdown.hidden = true; dropdown.classList.remove('open'); return; }
       const allClients = [...clientsData.map(c => ({ name: c.name, phone: c.telefone || '', services: c.services, id: c.id })),
-                          ...leads.map(l => ({ name: l.empresa, phone: l.telefone, services: normalizeServices(l.servicos), id: l.id }))];
+      ...leads.map(l => ({ name: l.empresa, phone: l.telefone, services: normalizeServices(l.servicos), id: l.id }))];
       const matches = allClients.filter(c => c.name.toLowerCase().includes(q)).slice(0, 6);
       if (!matches.length) { dropdown.hidden = true; dropdown.classList.remove('open'); return; }
       dropdown.innerHTML = matches.map(c =>
@@ -7782,9 +7794,9 @@ function saveCalEvent() {
           try {
             await updateEventoSupabase(calEventEditId, payload);
             toast('Evento atualizado no Supabase');
-if (typeof registrarAuditoria === 'function') {
-    registrarAuditoria({ acao: 'Atualizações', caminho_url: '/calendario', modulo: 'Calendário' });
-  }
+            if (typeof registrarAuditoria === 'function') {
+              registrarAuditoria({ acao: 'Atualizações', caminho_url: '/calendario', modulo: 'Calendário' });
+            }
           } catch (syncErr) {
             console.error('[Calendário] Erro ao atualizar no Supabase:', syncErr);
             toast('Salvo localmente. Erro ao sincronizar: ' + (syncErr.message || syncErr), 'error');
@@ -7799,9 +7811,9 @@ if (typeof registrarAuditoria === 'function') {
         }
         meetings.push(payload);
         toast('Evento salvo no Supabase');
-if (typeof registrarAuditoria === 'function') {
-    registrarAuditoria({ acao: 'Inclusões', caminho_url: '/calendario', modulo: 'Calendário' });
-  }
+        if (typeof registrarAuditoria === 'function') {
+          registrarAuditoria({ acao: 'Inclusões', caminho_url: '/calendario', modulo: 'Calendário' });
+        }
       }
     } catch (err) {
       console.error('[Calendário] Erro ao salvar evento:', err);
@@ -7990,7 +8002,7 @@ function initDashboardPeriod() {
       dashState.period = p.period || 'today';
       dashState.startDate = p.startDate || null;
       dashState.endDate = p.endDate || null;
-    } catch(e) { /* ignore */ }
+    } catch (e) { /* ignore */ }
   }
   const segBtns = document.querySelectorAll('#dashPeriodSeg .seg');
   segBtns.forEach(btn => {
@@ -8009,9 +8021,9 @@ function initDashboardPeriod() {
     btn.addEventListener('click', () => {
       const period = btn.dataset.period;
       dashState.period = period;
-      segBtns.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected','false'); });
+      segBtns.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
       btn.classList.add('active');
-      btn.setAttribute('aria-selected','true');
+      btn.setAttribute('aria-selected', 'true');
       const cr = document.getElementById('dashCustomRange');
       if (cr) cr.style.display = period === 'custom' ? '' : 'none';
       persistDashPeriod();
@@ -8156,11 +8168,11 @@ function renderOrigins(originsMap) {
   const canvas = document.getElementById('chartOrigins');
   const legend = document.getElementById('originsLegend');
   if (!canvas || !legend) return;
-  const entries = Object.entries(originsMap).filter(([,v]) => v.count > 0).sort((a,b) => b[1].count - a[1].count);
+  const entries = Object.entries(originsMap).filter(([, v]) => v.count > 0).sort((a, b) => b[1].count - a[1].count);
   if (!entries.length) { canvas.style.display = 'none'; legend.innerHTML = '<li class="empty-state">Nenhum dado.</li>'; return; }
   canvas.style.display = '';
   const ctx = canvas.getContext('2d');
-  const total = entries.reduce((s, [,v]) => s + v.count, 0);
+  const total = entries.reduce((s, [, v]) => s + v.count, 0);
   const colors = ['#165BFF', '#10b981', '#F0A500', '#a855f7', '#94A3B8'];
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.parentElement.offsetWidth - 40;
@@ -8169,7 +8181,7 @@ function renderOrigins(originsMap) {
   ctx.scale(dpr, dpr);
   const cx = w / 2, cy = 90, r = 70;
   let startAngle = -Math.PI / 2;
-  entries.forEach(([,v], i) => {
+  entries.forEach(([, v], i) => {
     const slice = (v.count / total) * Math.PI * 2;
     ctx.beginPath(); ctx.moveTo(cx, cy);
     ctx.arc(cx, cy, r, startAngle, startAngle + slice);
@@ -8183,7 +8195,7 @@ function renderOrigins(originsMap) {
   ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim() || '#1F2D3D';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(total.toLocaleString('pt-BR'), cx, cy);
-  legend.innerHTML = entries.map(([k,v], i) =>
+  legend.innerHTML = entries.map(([k, v], i) =>
     `<li><span class="dot" style="background:${colors[i % colors.length]}"></span>${k}: ${v.count}</li>`
   ).join('');
 }
@@ -8195,8 +8207,8 @@ function renderTemperatura(tempData) {
   if (!total) { el.innerHTML = '<p class="empty-state">Nenhum dado no período.</p>'; return; }
   el.innerHTML = [
     { label: 'Quente', count: tempData.quente.count, cls: 'hot' },
-    { label: 'Morno',  count: tempData.morno.count,  cls: 'warm' },
-    { label: 'Frio',   count: tempData.frio.count,   cls: 'cold' }
+    { label: 'Morno', count: tempData.morno.count, cls: 'warm' },
+    { label: 'Frio', count: tempData.frio.count, cls: 'cold' }
   ].map(item => {
     const pct = (item.count / total * 100).toFixed(0);
     return `<div class="temp-row">
@@ -8314,12 +8326,12 @@ function renderProximosEventos(start, end) {
     const d = parseISODate(m.iso);
     const tagCls = m.type === 'reuniao' ? 'tag-blue' : m.type === 'fiscal' ? 'tag-amber'
       : m.type === 'financeiro' ? 'tag-green' : 'tag-purple';
-    const monthNames = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
     const leadName = m.lead ? m.lead.nome : (m.cliente || '');
     const leadPhone = m.lead ? m.lead.telefone : (m.phone || '');
     return `<div class="evento-item" data-meeting-id="${m.id}">
       <div class="evento-date">
-        <strong>${String(d.getDate()).padStart(2,'0')}</strong>
+        <strong>${String(d.getDate()).padStart(2, '0')}</strong>
         <span>${monthNames[d.getMonth()]}</span>
       </div>
       <div class="evento-bar" style="background:${meetingColor(m.type)}"></div>
@@ -8337,18 +8349,18 @@ function renderProximosEventos(start, end) {
    ADMINISTRADOR · GERENCIAMENTO
    ============================================ */
 const adminModulos = [
-  { nome: 'Home',             chave: 'home' },
-  { nome: 'Dashboard',        chave: 'dashboard' },
-  { nome: 'CRM',              chave: 'crm' },
-  { nome: 'Kanban',           chave: 'kanban' },
-  { nome: 'Cliente da Base',  chave: 'clientes' },
-  { nome: 'Calendário',       chave: 'calendario' },
-  { nome: 'Rotina Blue',      chave: 'rotina' },
-  { nome: 'Pomodoro',         chave: 'pomodoro' },
-  { nome: 'Conversas',        chave: 'conversas' },
-  { nome: 'Auditoria',        chave: 'auditoria' },
-  { nome: 'Configurações',    chave: 'configuracoes' },
-  { nome: 'Administrador',    chave: 'administrador' },
+  { nome: 'Home', chave: 'home' },
+  { nome: 'Dashboard', chave: 'dashboard' },
+  { nome: 'CRM', chave: 'crm' },
+  { nome: 'Kanban', chave: 'kanban' },
+  { nome: 'Cliente da Base', chave: 'clientes' },
+  { nome: 'Calendário', chave: 'calendario' },
+  { nome: 'Rotina Blue', chave: 'rotina' },
+  { nome: 'Pomodoro', chave: 'pomodoro' },
+  { nome: 'Conversas', chave: 'conversas' },
+  { nome: 'Auditoria', chave: 'auditoria' },
+  { nome: 'Configurações', chave: 'configuracoes' },
+  { nome: 'Administrador', chave: 'administrador' },
   { nome: 'Ação: Apagar Clientes', chave: 'apagar_clientes' }
 ];
 
@@ -8417,17 +8429,17 @@ async function loadRotinas() {
   data.forEach(row => {
     const membroNome = row.membros ? row.membros.nome : '';
     rotinaItems.push({
-      id:        row.id,
-      type:      row.tipo || 'tarefa',
-      column:    row.status || 'cadencia',
-      title:     row.titulo || '',
-      time:      row.hora_tarefa || null,
-      date:      row.data_tarefa || null,
+      id: row.id,
+      type: row.tipo || 'tarefa',
+      column: row.status || 'cadencia',
+      title: row.titulo || '',
+      time: row.hora_tarefa || null,
+      date: row.data_tarefa || null,
       assignees: [],
-      pastel:    row.cor || 'blue',
-      done:      (row.status === 'concluido'),
-      desc:      row.observacoes || '',
-      fixado:    row.fixado || false,
+      pastel: row.cor || 'blue',
+      done: (row.status === 'concluido'),
+      desc: row.observacoes || '',
+      fixado: row.fixado || false,
       _supabaseId: row.id,
       _membroId: row.membro_id || null,
       _membroNome: membroNome
@@ -8438,20 +8450,20 @@ async function loadRotinas() {
 
 let rotinaFilters = { tarefa: true, reuniao: true, prazo: true, concluido: true };
 const rotinaTeam = {
-  CS: { name: 'Camila Souza',     initials: 'CS', color: 'avatar-blue' },
+  CS: { name: 'Camila Souza', initials: 'CS', color: 'avatar-blue' },
   RF: { name: 'Rafaela Ferreira', initials: 'RF', color: 'avatar-green' },
-  JP: { name: 'João Pedro',       initials: 'JP', color: 'avatar-amber' },
-  MA: { name: 'Marina Alves',     initials: 'MA', color: 'avatar-purple' }
+  JP: { name: 'João Pedro', initials: 'JP', color: 'avatar-amber' },
+  MA: { name: 'Marina Alves', initials: 'MA', color: 'avatar-purple' }
 };
 
 function rotinaGetFiltered() {
   const canViewAll = canViewAllData();
   const userId = getCurrentUserId();
-  
+
   return rotinaItems.filter(i => {
     if (i.done && !rotinaFilters.concluido) return false;
     if (!i.done && !rotinaFilters[i.type]) return false;
-    
+
     // Se não é admin, exibir apenas rotinas associadas ao próprio usuário
     if (!canViewAll && userId && i._membroId !== userId) return false;
     return true;
@@ -8681,9 +8693,9 @@ function bindRotinaCheckboxes() {
         }
 
         toast(item.done ? 'Tarefa concluída!' : 'Tarefa reaberta');
-if (typeof registrarAuditoria === 'function') {
-    registrarAuditoria({ acao: 'Atualizações', caminho_url: '/rotina', modulo: 'Rotina Blue' });
-  }
+        if (typeof registrarAuditoria === 'function') {
+          registrarAuditoria({ acao: 'Atualizações', caminho_url: '/rotina', modulo: 'Rotina Blue' });
+        }
         renderRotinaKanban();
         renderRotinaReminder();
         bindRotinaCheckboxes();
@@ -8723,9 +8735,9 @@ function bindRotinaCards() {
         }
         rotinaItems.splice(idx, 1);
         toast('Card apagado');
-if (typeof registrarAuditoria === 'function') {
-    registrarAuditoria({ acao: 'Exclusões', caminho_url: '/rotina', modulo: 'Rotina Blue' });
-  }
+        if (typeof registrarAuditoria === 'function') {
+          registrarAuditoria({ acao: 'Exclusões', caminho_url: '/rotina', modulo: 'Rotina Blue' });
+        }
         renderRotinaKanban();
         renderRotinaReminder();
         bindRotinaCheckboxes();
@@ -8804,9 +8816,9 @@ function closeRotinaDetail() {
       const supabaseId = item._supabaseId || item.id;
       if (supabaseId && typeof supabaseId === 'string' && supabaseId.includes('-')) {
         updateRotina(supabaseId, {
-          titulo:      item.title,
+          titulo: item.title,
           observacoes: item.desc,
-          cor:         item.pastel
+          cor: item.pastel
         }).then(() => {
           toast('Alterações salvas no Supabase');
         }).catch(err => {
@@ -8896,7 +8908,7 @@ function initRotinaCreateModal() {
       const picker = $('#rotinaDatePicker');
       if (picker) {
         const today = new Date();
-        picker.min = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+        picker.min = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         if (!picker.value) picker.value = picker.min;
       }
     };
@@ -8985,15 +8997,15 @@ function saveAndCloseRotinaCreate() {
   if (t || d) {
     const newType = rotinaScheduledDate ? 'reuniao' : 'tarefa';
     const payload = {
-      titulo:      t || 'Nota sem título',
+      titulo: t || 'Nota sem título',
       observacoes: d || '',
-      status:      'cadencia',
-      cor:         rotinaSelectedColor,
+      status: 'cadencia',
+      cor: rotinaSelectedColor,
       data_tarefa: rotinaScheduledDate || null,
       hora_tarefa: rotinaScheduledTime || null,
-      tipo:        newType,
-      fixado:      false,
-      membro_id:   currentUser.id || null
+      tipo: newType,
+      fixado: false,
+      membro_id: currentUser.id || null
     };
 
     async function doInsert() {
@@ -9015,19 +9027,19 @@ function saveAndCloseRotinaCreate() {
 
       if (insertSuccess) {
         const newItem = {
-          id:          payload.id,
-          type:        payload.tipo,
-          column:      payload.status,
-          title:       payload.titulo,
-          time:        payload.hora_tarefa,
-          date:        payload.data_tarefa,
-          assignees:   [],
-          pastel:      payload.cor,
-          done:        false,
-          desc:        payload.observacoes,
-          fixado:      payload.fixado,
+          id: payload.id,
+          type: payload.tipo,
+          column: payload.status,
+          title: payload.titulo,
+          time: payload.hora_tarefa,
+          date: payload.data_tarefa,
+          assignees: [],
+          pastel: payload.cor,
+          done: false,
+          desc: payload.observacoes,
+          fixado: payload.fixado,
           _supabaseId: payload._supabaseId || payload.id,
-          _membroId:   currentUser.id || null
+          _membroId: currentUser.id || null
         };
         rotinaItems.push(newItem);
         toast('Card criado com sucesso!');
@@ -9110,9 +9122,9 @@ function bindRotinaDragDrop() {
 
       const labels = { cadencia: 'Cadência / Demanda Recorrente', andamento: 'Em Andamento', pendentes: 'Pendentes', concluido: 'Concluído' };
       toast(`Movido para "${labels[col] || col}"`);
-if (typeof registrarAuditoria === 'function') {
-    registrarAuditoria({ acao: 'Atualizações', caminho_url: '/rotina', modulo: 'Rotina Blue' });
-  }
+      if (typeof registrarAuditoria === 'function') {
+        registrarAuditoria({ acao: 'Atualizações', caminho_url: '/rotina', modulo: 'Rotina Blue' });
+      }
       renderRotinaKanban();
       renderRotinaReminder();
       bindRotinaCheckboxes();
@@ -9156,9 +9168,9 @@ function toggleTheme() {
    ============================================ */
 
 const POMO_MODES = {
-  pomodoro:   { label: 'Pomodoro',   defaultMin: 25 },
-  shortBreak: { label: 'Short Break', defaultMin: 5  },
-  longBreak:  { label: 'Long Break',  defaultMin: 15 }
+  pomodoro: { label: 'Pomodoro', defaultMin: 25 },
+  shortBreak: { label: 'Short Break', defaultMin: 5 },
+  longBreak: { label: 'Long Break', defaultMin: 15 }
 };
 
 let pomoSettings = {
@@ -9342,7 +9354,7 @@ function playPomoAlarm() {
       osc2.start();
       osc2.stop(ctx.currentTime + 0.3);
     }, 200);
-  } catch (e) {}
+  } catch (e) { }
 }
 
 /* ---- Settings ---- */
@@ -9397,15 +9409,15 @@ async function initAuditoria() {
     const dados = await buscarAuditoria({ limit: 500 });
     if (dados.length > 0) {
       auditData = dados.map(row => ({
-        id:         row.id,
-        user:       row.usuario_nome,
-        hash:       row.usuario_id,
-        action:     row.acao,
-        actionUrl:  row.caminho_url,
-        module:     row.modulo,
-        device:     row.dispositivo,
+        id: row.id,
+        user: row.usuario_nome,
+        hash: row.usuario_id,
+        action: row.acao,
+        actionUrl: row.caminho_url,
+        module: row.modulo,
+        device: row.dispositivo,
         deviceIcon: (row.dispositivo || '').toLowerCase() === 'mobile' ? 'smartphone' : 'monitor',
-        datetime:   formatAuditDate(row.created_at)
+        datetime: formatAuditDate(row.created_at)
       }));
     } else {
       auditData = generateAuditMockData(120);
@@ -9464,25 +9476,25 @@ async function updateAuditKPIs() {
 
 /* Mock data fallback */
 const auditMockUsers = [
-  { name: 'Camila Souza',     hash: 'CS-8a2f' },
+  { name: 'Camila Souza', hash: 'CS-8a2f' },
   { name: 'Rafaela Ferreira', hash: 'RF-3b1c' },
-  { name: 'João Pedro',       hash: 'JP-7d4e' },
-  { name: 'Marina Alves',     hash: 'MA-9f6a' }
+  { name: 'João Pedro', hash: 'JP-7d4e' },
+  { name: 'Marina Alves', hash: 'MA-9f6a' }
 ];
 const auditMockActions = [
-  { name: 'LOGIN',        url: '/auth/login' },
-  { name: 'VIEW_LEAD',    url: '/crm' },
-  { name: 'EDIT_LEAD',    url: '/crm/edit' },
-  { name: 'CREATE_LEAD',  url: '/crm/new' },
-  { name: 'VIEW_EVENT',   url: '/calendario' },
-  { name: 'VIEW_ROTINA',  url: '/rotina' },
-  { name: 'EDIT_ROTINA',  url: '/rotina/edit' },
-  { name: 'VIEW_DASH',    url: '/dashboard' }
+  { name: 'LOGIN', url: '/auth/login' },
+  { name: 'VIEW_LEAD', url: '/crm' },
+  { name: 'EDIT_LEAD', url: '/crm/edit' },
+  { name: 'CREATE_LEAD', url: '/crm/new' },
+  { name: 'VIEW_EVENT', url: '/calendario' },
+  { name: 'VIEW_ROTINA', url: '/rotina' },
+  { name: 'EDIT_ROTINA', url: '/rotina/edit' },
+  { name: 'VIEW_DASH', url: '/dashboard' }
 ];
 const auditMockModules = ['CRM', 'Clientes', 'Calendário', 'Rotina', 'Dashboard', 'Configurações'];
 const auditMockDevices = [
   { type: 'desktop', icon: 'monitor', label: 'Desktop' },
-  { type: 'mobile',  icon: 'smartphone', label: 'Mobile' }
+  { type: 'mobile', icon: 'smartphone', label: 'Mobile' }
 ];
 
 function generateAuditMockData(count) {
@@ -9511,14 +9523,14 @@ function generateAuditMockData(count) {
 }
 
 const auditTempoData = [
-  { page: '/crm',            tempoMedio: '4m 32s', visitas: 342, usuarios: 6, retorno: '68%' },
-  { page: '/clientes',       tempoMedio: '3m 15s', visitas: 287, usuarios: 5, retorno: '54%' },
-  { page: '/calendario',     tempoMedio: '2m 48s', visitas: 215, usuarios: 7, retorno: '42%' },
-  { page: '/dashboard',      tempoMedio: '5m 10s', visitas: 198, usuarios: 4, retorno: '71%' },
-  { page: '/rotina',         tempoMedio: '3m 55s', visitas: 176, usuarios: 8, retorno: '63%' },
-  { page: '/configuracoes',  tempoMedio: '1m 22s', visitas: 89,  usuarios: 3, retorno: '22%' },
-  { page: '/home',           tempoMedio: '0m 45s', visitas: 421, usuarios: 8, retorno: '35%' },
-  { page: '/auditoria',      tempoMedio: '2m 10s', visitas: 54,  usuarios: 2, retorno: '48%' }
+  { page: '/crm', tempoMedio: '4m 32s', visitas: 342, usuarios: 6, retorno: '68%' },
+  { page: '/clientes', tempoMedio: '3m 15s', visitas: 287, usuarios: 5, retorno: '54%' },
+  { page: '/calendario', tempoMedio: '2m 48s', visitas: 215, usuarios: 7, retorno: '42%' },
+  { page: '/dashboard', tempoMedio: '5m 10s', visitas: 198, usuarios: 4, retorno: '71%' },
+  { page: '/rotina', tempoMedio: '3m 55s', visitas: 176, usuarios: 8, retorno: '63%' },
+  { page: '/configuracoes', tempoMedio: '1m 22s', visitas: 89, usuarios: 3, retorno: '22%' },
+  { page: '/home', tempoMedio: '0m 45s', visitas: 421, usuarios: 8, retorno: '35%' },
+  { page: '/auditoria', tempoMedio: '2m 10s', visitas: 54, usuarios: 2, retorno: '48%' }
 ];
 
 function getFilteredAuditData() {
@@ -9592,9 +9604,9 @@ function renderAuditPagination() {
     <div class="audit-pagination-btns">
       <button class="audit-pagination-btn" data-page="prev" ${auditPage <= 1 ? 'disabled' : ''}>Anterior</button>
       ${Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-        const p = i + 1;
-        return `<button class="audit-pagination-btn ${p === auditPage ? 'active' : ''}" data-page="${p}">${p}</button>`;
-      }).join('')}
+    const p = i + 1;
+    return `<button class="audit-pagination-btn ${p === auditPage ? 'active' : ''}" data-page="${p}">${p}</button>`;
+  }).join('')}
       <button class="audit-pagination-btn" data-page="next" ${auditPage >= totalPages ? 'disabled' : ''}>Próximo</button>
     </div>`;
 
@@ -9639,7 +9651,7 @@ function bindAuditTabs() {
 }
 
 function bindAuditFilters() {
-  ['auditFilterRows','auditFilterPeriodo','auditFilterAcao','auditFilterModulo','auditFilterFunc','auditFilterDevice'].forEach(id => {
+  ['auditFilterRows', 'auditFilterPeriodo', 'auditFilterAcao', 'auditFilterModulo', 'auditFilterFunc', 'auditFilterDevice'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', () => {
       auditPage = 1;
@@ -9673,15 +9685,15 @@ function bindAuditFilters() {
       const dados = await buscarAuditoria({ limit: 500 });
       if (dados.length > 0) {
         auditData = dados.map(row => ({
-          id:         row.id,
-          user:       row.usuario_nome,
-          hash:       row.usuario_id,
-          action:     row.acao,
-          actionUrl:  row.caminho_url,
-          module:     row.modulo,
-          device:     row.dispositivo,
+          id: row.id,
+          user: row.usuario_nome,
+          hash: row.usuario_id,
+          action: row.acao,
+          actionUrl: row.caminho_url,
+          module: row.modulo,
+          device: row.dispositivo,
           deviceIcon: (row.dispositivo || '').toLowerCase() === 'mobile' ? 'smartphone' : 'monitor',
-          datetime:   formatAuditDate(row.created_at)
+          datetime: formatAuditDate(row.created_at)
         }));
       } else {
         auditData = generateAuditMockData(120);
@@ -9707,7 +9719,7 @@ function bindAuditFilters() {
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `auditoria-${new Date().toISOString().slice(0,10)}.csv`;
+    a.download = `auditoria-${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 200);
     toast('CSV exportado');
@@ -9800,76 +9812,76 @@ async function loadCalibragemData(memberId) {
   }).length;
   const conversao = total > 0 ? Math.round((finalizados / total) * 100) : 0;
 
-    document.getElementById('calibLeadsTotal').textContent = total;
-    document.getElementById('calibLeadsQuentes').textContent = quentes;
-    document.getElementById('calibTempoResposta').textContent = total > 0 ? '—' : '—';
-    document.getElementById('calibSemAtendimento').textContent = semAtendimento;
-    document.getElementById('calibVisitas').textContent = finalizados;
-    document.getElementById('calibConversao').textContent = conversao + '%';
+  document.getElementById('calibLeadsTotal').textContent = total;
+  document.getElementById('calibLeadsQuentes').textContent = quentes;
+  document.getElementById('calibTempoResposta').textContent = total > 0 ? '—' : '—';
+  document.getElementById('calibSemAtendimento').textContent = semAtendimento;
+  document.getElementById('calibVisitas').textContent = finalizados;
+  document.getElementById('calibConversao').textContent = conversao + '%';
 
-    document.getElementById('calibQtdQuente').textContent = quentes;
-    document.getElementById('calibQtdMorno').textContent = mornos;
-    document.getElementById('calibQtdFrio').textContent = frios;
-    const pctQ = total > 0 ? Math.round((quentes / total) * 100) : 0;
-    const pctM = total > 0 ? Math.round((mornos / total) * 100) : 0;
-    const pctF = total > 0 ? Math.round((frios / total) * 100) : 0;
-    document.getElementById('calibPctQuente').textContent = pctQ + '%';
-    document.getElementById('calibPctMorno').textContent = pctM + '%';
-    document.getElementById('calibPctFrio').textContent = pctF + '%';
+  document.getElementById('calibQtdQuente').textContent = quentes;
+  document.getElementById('calibQtdMorno').textContent = mornos;
+  document.getElementById('calibQtdFrio').textContent = frios;
+  const pctQ = total > 0 ? Math.round((quentes / total) * 100) : 0;
+  const pctM = total > 0 ? Math.round((mornos / total) * 100) : 0;
+  const pctF = total > 0 ? Math.round((frios / total) * 100) : 0;
+  document.getElementById('calibPctQuente').textContent = pctQ + '%';
+  document.getElementById('calibPctMorno').textContent = pctM + '%';
+  document.getElementById('calibPctFrio').textContent = pctF + '%';
 
-    drawCalibDonut(quentes, mornos, frios);
+  drawCalibDonut(quentes, mornos, frios);
 
-    document.getElementById('calibPerfTotal').textContent = total;
-    document.getElementById('calibPerfFinalizados').textContent = finalizados;
-    document.getElementById('calibPerfAndamento').textContent = total - finalizados - semAtendimento;
-    document.getElementById('calibPerfPendentes').textContent = semAtendimento;
+  document.getElementById('calibPerfTotal').textContent = total;
+  document.getElementById('calibPerfFinalizados').textContent = finalizados;
+  document.getElementById('calibPerfAndamento').textContent = total - finalizados - semAtendimento;
+  document.getElementById('calibPerfPendentes').textContent = semAtendimento;
 
-    let status, statusCls, pontosFortes, pontosMelhorar;
-    if (conversao >= 30) {
-      status = 'EXCELENTE'; statusCls = 'calib-status-excellent';
-      pontosFortes = 'Alta taxa de conversão e boa qualificação de leads.';
-      pontosMelhorar = 'Manter consistência e buscar novos canais de captação.';
-    } else if (conversao >= 15) {
-      status = 'BOM'; statusCls = 'calib-status-good';
-      pontosFortes = 'Performance acima da média com bons resultados.';
-      pontosMelhorar = 'Focar na qualificação de leads para aumentar conversão.';
-    } else if (conversao >= 5) {
-      status = 'REGULAR'; statusCls = 'calib-status-regular';
-      pontosFortes = 'Participação ativa na equipe.';
-      pontosMelhorar = 'Melhorar tempo de resposta e follow-up com leads.';
-    } else {
-      status = 'CRÍTICO'; statusCls = 'calib-status-critical';
-      pontosFortes = 'Presença na equipe.';
-      pontosMelhorar = 'Necessário revisão de abordagem e aumento da atividade comercial.';
-    }
+  let status, statusCls, pontosFortes, pontosMelhorar;
+  if (conversao >= 30) {
+    status = 'EXCELENTE'; statusCls = 'calib-status-excellent';
+    pontosFortes = 'Alta taxa de conversão e boa qualificação de leads.';
+    pontosMelhorar = 'Manter consistência e buscar novos canais de captação.';
+  } else if (conversao >= 15) {
+    status = 'BOM'; statusCls = 'calib-status-good';
+    pontosFortes = 'Performance acima da média com bons resultados.';
+    pontosMelhorar = 'Focar na qualificação de leads para aumentar conversão.';
+  } else if (conversao >= 5) {
+    status = 'REGULAR'; statusCls = 'calib-status-regular';
+    pontosFortes = 'Participação ativa na equipe.';
+    pontosMelhorar = 'Melhorar tempo de resposta e follow-up com leads.';
+  } else {
+    status = 'CRÍTICO'; statusCls = 'calib-status-critical';
+    pontosFortes = 'Presença na equipe.';
+    pontosMelhorar = 'Necessário revisão de abordagem e aumento da atividade comercial.';
+  }
 
-    const statusBadge = document.getElementById('calibStatusBadge');
-    statusBadge.textContent = status;
-    statusBadge.className = 'calib-status-badge ' + statusCls;
-    document.getElementById('calibRanking').textContent = '#—';
-    document.getElementById('calibEvolucao').textContent = conversao > 0 ? '+' + conversao + '%' : '—';
-    document.getElementById('calibDiagStatus').textContent = status;
-    document.getElementById('calibDiagStatus').className = 'calib-diag-status ' + statusCls;
-    document.getElementById('calibDiagPontosFortes').textContent = pontosFortes;
-    document.getElementById('calibDiagPontosMelhorar').textContent = pontosMelhorar;
+  const statusBadge = document.getElementById('calibStatusBadge');
+  statusBadge.textContent = status;
+  statusBadge.className = 'calib-status-badge ' + statusCls;
+  document.getElementById('calibRanking').textContent = '#—';
+  document.getElementById('calibEvolucao').textContent = conversao > 0 ? '+' + conversao + '%' : '—';
+  document.getElementById('calibDiagStatus').textContent = status;
+  document.getElementById('calibDiagStatus').className = 'calib-diag-status ' + statusCls;
+  document.getElementById('calibDiagPontosFortes').textContent = pontosFortes;
+  document.getElementById('calibDiagPontosMelhorar').textContent = pontosMelhorar;
 
-    const baseEmpty = document.getElementById('calibBaseEmpty');
-    if (total === 0 && baseEmpty) {
-      baseEmpty.innerHTML = '<i data-lucide="inbox"></i><p>Nenhum dado no período</p>';
-      initIcons();
-    }
+  const baseEmpty = document.getElementById('calibBaseEmpty');
+  if (total === 0 && baseEmpty) {
+    baseEmpty.innerHTML = '<i data-lucide="inbox"></i><p>Nenhum dado no período</p>';
+    initIcons();
+  }
 }
 
 function setCalibragemPlaceholders() {
-  ['calibLeadsTotal','calibLeadsQuentes','calibTempoResposta','calibSemAtendimento','calibVisitas','calibConversao'].forEach(id => {
+  ['calibLeadsTotal', 'calibLeadsQuentes', 'calibTempoResposta', 'calibSemAtendimento', 'calibVisitas', 'calibConversao'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.textContent = id === 'calibConversao' ? '0%' : '0';
   });
-  ['calibQtdQuente','calibQtdMorno','calibQtdFrio'].forEach(id => {
+  ['calibQtdQuente', 'calibQtdMorno', 'calibQtdFrio'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.textContent = '0';
   });
-  ['calibPctQuente','calibPctMorno','calibPctFrio'].forEach(id => {
+  ['calibPctQuente', 'calibPctMorno', 'calibPctFrio'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.textContent = '0%';
   });
@@ -10577,7 +10589,7 @@ function openCentroCustoDetail(id, nome) {
   if (dashboardContainer && ccWrapper) {
     ccWrapper.appendChild(dashboardContainer);
   }
-  
+
   // Esconder a barra superior de filtro original
   const dashHeader = document.querySelector('.dash-header');
   if (dashHeader) dashHeader.style.display = 'none';
@@ -10677,165 +10689,1884 @@ function populateDashCcFilter() {
    ============================================ */
 document.addEventListener('DOMContentLoaded', async () => {
   try {
-  // Auth first - shows login screen or hides it
-  bindAuthForms();
-  await loadBranding();
-  await initAuth();
+    // Auth first - shows login screen or hides it
+    bindAuthForms();
+    await loadBranding();
+    await initAuth();
 
-  initTheme();
-  initIcons();
-  initInteractions();
-  initCRM();
-  renderCalendar();
-  initDashboard();
-  renderCalUpcoming();
-  renderDashRemindersWidget();
-  renderReunRespChips();
-  initCalibragem();
-  initNotifications();
+    initTheme();
+    initIcons();
+    initInteractions();
+    initCRM();
+    renderCalendar();
+    initDashboard();
+    renderCalUpcoming();
+    renderDashRemindersWidget();
+    renderReunRespChips();
+    initCalibragem();
+    initNotifications();
 
-  // Carregar serviços primeiro (necessário para mapear leads)
-  try {
-    await seedServicos();
-    await fetchServicosSupabase();
-  } catch (err) {
-    console.error('[Boot] Erro ao carregar serviços:', err);
-  }
-
-  // Carregar leads do Supabase (Administrador vê todos, Atendente/Marketing veem apenas seus)
-  try {
-    const canViewAll = canViewAllData();
-    const filterId = canViewAll ? null : getCurrentUserId();
-    console.log('[Boot] Carregando leads, canViewAll:', canViewAll, 'filterId:', filterId, 'currentUser.id:', currentUser.id);
-    const supabaseLeads = await fetchLeadsSupabase(filterId);
-    if (supabaseLeads.length > 0) {
-      leads = supabaseLeads;
-      console.log('[Boot] Leads carregados do Supabase:', leads.length);
-    } else {
-      console.log('[Boot] Nenhum lead no Supabase, usando dados locais');
+    // Carregar serviços primeiro (necessário para mapear leads)
+    try {
+      await seedServicos();
+      await fetchServicosSupabase();
+    } catch (err) {
+      console.error('[Boot] Erro ao carregar serviços:', err);
     }
-  } catch (err) {
-    console.error('[Boot] Erro ao carregar leads do Supabase:', err);
-  }
 
-  // Carregar eventos do Supabase
-  try {
-    const supabaseEvents = await fetchEventosSupabase();
-    if (supabaseEvents.length > 0) {
-      meetings = supabaseEvents;
-      rebuildCalendarEvents();
-      console.log('[Boot] Eventos carregados do Supabase:', meetings.length);
-    } else {
-      console.log('[Boot] Nenhum evento no Supabase, usando dados locais');
+    // Carregar leads do Supabase (Administrador vê todos, Atendente/Marketing veem apenas seus)
+    try {
+      const canViewAll = canViewAllData();
+      const filterId = canViewAll ? null : getCurrentUserId();
+      console.log('[Boot] Carregando leads, canViewAll:', canViewAll, 'filterId:', filterId, 'currentUser.id:', currentUser.id);
+      const supabaseLeads = await fetchLeadsSupabase(filterId);
+      if (supabaseLeads.length > 0) {
+        leads = supabaseLeads;
+        console.log('[Boot] Leads carregados do Supabase:', leads.length);
+      } else {
+        console.log('[Boot] Nenhum lead no Supabase, usando dados locais');
+      }
+    } catch (err) {
+      console.error('[Boot] Erro ao carregar leads do Supabase:', err);
     }
-  } catch (err) {
-    console.error('[Boot] Erro ao carregar eventos do Supabase:', err);
-  }
 
-  // Re-renderizar calendário e próximos eventos após carregar dados do Supabase
-  renderCalendar();
-  renderCalUpcoming();
-  renderDashRemindersWidget();
-
-  // Carregar centros de custo do Supabase
-  try {
-    await loadCentrosCustoFromSupabase();
-    console.log('[Boot] Centros de custo carregados:', centrosCustoData.length);
-  } catch (err) {
-    console.error('[Boot] Erro ao carregar centros de custo:', err);
-  }
-
-  // Carregar vínculos de serviços por empresa
-  try {
-    await loadVinculosServicos();
-    console.log('[Boot] Vínculos de serviços carregados:', vinculosServicos.length);
-  } catch (err) {
-    console.error('[Boot] Erro ao carregar vínculos de serviços:', err);
-  }
-
-  // Carregar vínculos de cadências por empresa
-  try {
-    await loadVinculosCadencias();
-    console.log('[Boot] Vínculos de cadências carregados:', vinculosCadencias.length);
-  } catch (err) {
-    console.error('[Boot] Erro ao carregar vínculos de cadências:', err);
-  }
-
-  // Carregar visibilidade de cadências por perfil
-  try {
-    _cadenciaVisibilityData = await fetchCadenciaVisibility();
-    console.log('[Boot] Visibilidade de cadências carregada:', _cadenciaVisibilityData.length);
-  } catch (err) {
-    console.error('[Boot] Erro ao carregar visibilidade de cadências:', err);
-  }
-
-  // Inicializar filtro de empresa no CRM
-  initCrmEmpresaFilter();
-
-  // Inicializar filtro de empresa no Calendário
-  initCalEmpresaFilter();
-
-  // Carregar chips de serviços no modal
-  try {
-    await loadServiceChips();
-    // Cal service chips are loaded dynamically when the modal opens (filtered by empresa)
-    const calSvcContainer = document.getElementById('calEventServices');
-    if (calSvcContainer) calSvcContainer.innerHTML = '<span style="font-size:11px;color:var(--muted-text);">Selecione uma empresa para ver os serviços</span>';
-  } catch (err) {
-    console.error('[Boot] Erro ao carregar chips de serviços:', err);
-  }
-
-  // Carregar rotinas do Supabase
-  try {
-    await loadRotinas();
-  } catch (err) {
-    console.error('[Boot] Erro ao carregar rotinas do Supabase:', err);
-  }
-
-  // Render inicial
-  renderClients();
-  renderAll();
-  renderRotina();
-  initPomodoro();
-  initConversas();
-
-  // Carregar clientes do Supabase para a página "Cliente da Base"
-  try {
-    const canViewAllClients = canViewAllData();
-    const filterClientId = canViewAllClients ? null : getCurrentUserId();
-    console.log('[Boot] Carregando clientes, canViewAll:', canViewAllClients, 'filterClientId:', filterClientId);
-    const supabaseClients = await fetchClientsSupabase(filterClientId);
-    if (supabaseClients.length > 0) {
-      clientsData = supabaseClients;
-      console.log('[Boot] Clientes carregados do Supabase:', clientsData.length);
-    } else {
-      console.log('[Boot] Nenhum cliente no Supabase');
+    // Carregar eventos do Supabase
+    try {
+      const supabaseEvents = await fetchEventosSupabase();
+      if (supabaseEvents.length > 0) {
+        meetings = supabaseEvents;
+        rebuildCalendarEvents();
+        console.log('[Boot] Eventos carregados do Supabase:', meetings.length);
+      } else {
+        console.log('[Boot] Nenhum evento no Supabase, usando dados locais');
+      }
+    } catch (err) {
+      console.error('[Boot] Erro ao carregar eventos do Supabase:', err);
     }
-  } catch (err) {
-    console.error('[Boot] Erro ao carregar clientes do Supabase:', err);
-  }
-  _clientsLoaded = true;
 
-  populateServiceFilter();
-  populateCadenceFilter();
-  initCadenceFilter();
-  populateEmpresaFilter();
-  initEmpresaFilter();
-  renderClients();
-  setActivePage('home');
+    // Re-renderizar calendário e próximos eventos após carregar dados do Supabase
+    renderCalendar();
+    renderCalUpcoming();
+    renderDashRemindersWidget();
 
-  // Auditoria: registrar login na inicialização da sessão
-  if (typeof registrarAuditoria === 'function') {
-    registrarAuditoria({
-      acao: 'Logins',
-      caminho_url: '/home',
-      modulo: 'Sistema'
-    });
-  }
+    // Carregar centros de custo do Supabase
+    try {
+      await loadCentrosCustoFromSupabase();
+      console.log('[Boot] Centros de custo carregados:', centrosCustoData.length);
+    } catch (err) {
+      console.error('[Boot] Erro ao carregar centros de custo:', err);
+    }
 
-  // Charts inicializam quando o dashboard for aberto
+    // Carregar vínculos de serviços por empresa
+    try {
+      await loadVinculosServicos();
+      console.log('[Boot] Vínculos de serviços carregados:', vinculosServicos.length);
+    } catch (err) {
+      console.error('[Boot] Erro ao carregar vínculos de serviços:', err);
+    }
+
+    // Carregar vínculos de cadências por empresa
+    try {
+      await loadVinculosCadencias();
+      console.log('[Boot] Vínculos de cadências carregados:', vinculosCadencias.length);
+    } catch (err) {
+      console.error('[Boot] Erro ao carregar vínculos de cadências:', err);
+    }
+
+    // Carregar visibilidade de cadências por perfil
+    try {
+      _cadenciaVisibilityData = await fetchCadenciaVisibility();
+      console.log('[Boot] Visibilidade de cadências carregada:', _cadenciaVisibilityData.length);
+    } catch (err) {
+      console.error('[Boot] Erro ao carregar visibilidade de cadências:', err);
+    }
+
+    // Inicializar filtro de empresa no CRM
+    initCrmEmpresaFilter();
+
+    // Inicializar filtro de empresa no Calendário
+    initCalEmpresaFilter();
+
+    // Carregar chips de serviços no modal
+    try {
+      await loadServiceChips();
+      // Cal service chips are loaded dynamically when the modal opens (filtered by empresa)
+      const calSvcContainer = document.getElementById('calEventServices');
+      if (calSvcContainer) calSvcContainer.innerHTML = '<span style="font-size:11px;color:var(--muted-text);">Selecione uma empresa para ver os serviços</span>';
+    } catch (err) {
+      console.error('[Boot] Erro ao carregar chips de serviços:', err);
+    }
+
+    // Carregar rotinas do Supabase
+    try {
+      await loadRotinas();
+    } catch (err) {
+      console.error('[Boot] Erro ao carregar rotinas do Supabase:', err);
+    }
+
+    // Render inicial
+    renderClients();
+    renderAll();
+    renderRotina();
+    initPomodoro();
+    initConversas();
+
+    // Carregar clientes do Supabase para a página "Cliente da Base"
+    try {
+      const canViewAllClients = canViewAllData();
+      const filterClientId = canViewAllClients ? null : getCurrentUserId();
+      console.log('[Boot] Carregando clientes, canViewAll:', canViewAllClients, 'filterClientId:', filterClientId);
+      const supabaseClients = await fetchClientsSupabase(filterClientId);
+      if (supabaseClients.length > 0) {
+        clientsData = supabaseClients;
+        console.log('[Boot] Clientes carregados do Supabase:', clientsData.length);
+      } else {
+        console.log('[Boot] Nenhum cliente no Supabase');
+      }
+    } catch (err) {
+      console.error('[Boot] Erro ao carregar clientes do Supabase:', err);
+    }
+    _clientsLoaded = true;
+
+    populateServiceFilter();
+    populateCadenceFilter();
+    initCadenceFilter();
+    populateEmpresaFilter();
+    initEmpresaFilter();
+    renderClients();
+    setActivePage('home');
+
+    // Auditoria: registrar login na inicialização da sessão
+    if (typeof registrarAuditoria === 'function') {
+      registrarAuditoria({
+        acao: 'Logins',
+        caminho_url: '/home',
+        modulo: 'Sistema'
+      });
+    }
+
+    // Charts inicializam quando o dashboard for aberto
   } catch (bootErr) {
     console.error('[Boot] ERRO FATAL:', bootErr);
     document.body.innerHTML = '<div style="padding:40px;font-family:sans-serif;color:red"><h2>Erro ao inicializar</h2><pre>' + (bootErr.message || bootErr) + '</pre></div>';
   }
 });
+
+/* ====================================================
+   CONTRATOS — MÓDULO COMPLETO
+   ==================================================== */
+
+// State
+let _contratosData = [];
+let _contratosLeadsList = [];
+let _contratosInited = false;
+let _currentContratoData = null; // contrato em edição
+
+// Modal close / dirty state
+let _contratoFormSnapshot = null;
+let _contratoPreviousFocus = null;
+
+/* ---- Helpers ----- */
+function fmtDateBR(dateStr) {
+  if (!dateStr) return '';
+  try {
+    const [y, m, d] = dateStr.split('-');
+    return `${d}/${m}/${y}`;
+  } catch { return dateStr; }
+}
+
+function dataExtenso(dateStr) {
+  if (!dateStr) return '';
+  try {
+    const [y, m, d] = dateStr.split('-');
+    const meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    return `${d} de ${meses[parseInt(m, 10) - 1]} de ${y}`;
+  } catch { return dateStr; }
+}
+
+function fmtTimeBR(timeStr) {
+  if (!timeStr) return '';
+  return timeStr.substring(0, 5);
+}
+
+function fmtCurrency(val) {
+  if (val === null || val === undefined || val === '') return 'R$ 0,00';
+  return Number(val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function numeroExtenso(valor) {
+  if (!valor || isNaN(valor)) return 'zero reais';
+  const n = parseFloat(valor);
+  const inteiro = Math.floor(n);
+  const centavos = Math.round((n - inteiro) * 100);
+
+  const unidades = ['', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove',
+    'dez', 'onze', 'doze', 'treze', 'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
+  const dezenas = ['', '', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
+  const centenas = ['', 'cem', 'duzentos', 'trezentos', 'quatrocentos', 'quinhentos', 'seiscentos', 'setecentos', 'oitocentos', 'novecentos'];
+
+  function converteGrupo(n) {
+    if (n === 0) return '';
+    if (n < 20) return unidades[n];
+    if (n < 100) {
+      const d = Math.floor(n / 10);
+      const u = n % 10;
+      return dezenas[d] + (u ? ' e ' + unidades[u] : '');
+    }
+    const c = Math.floor(n / 100);
+    const resto = n % 100;
+    if (n === 100) return 'cem';
+    return centenas[c] + (resto ? ' e ' + converteGrupo(resto) : '');
+  }
+
+  let resultado = '';
+  if (inteiro === 0) {
+    resultado = 'zero';
+  } else if (inteiro < 1000) {
+    resultado = converteGrupo(inteiro);
+  } else if (inteiro < 1000000) {
+    const milhar = Math.floor(inteiro / 1000);
+    const resto = inteiro % 1000;
+    resultado = (milhar === 1 ? 'mil' : converteGrupo(milhar) + ' mil') + (resto ? ' e ' + converteGrupo(resto) : '');
+  } else {
+    resultado = inteiro.toString();
+  }
+
+  let reais = resultado + (inteiro === 1 ? ' real' : ' reais');
+  if (centavos > 0) {
+    reais += ' e ' + converteGrupo(centavos) + (centavos === 1 ? ' centavo' : ' centavos');
+  }
+  return reais;
+}
+
+function gerarNumeroContrato(seq) {
+  return 'CT-' + String(seq).padStart(6, '0');
+}
+
+function contratoStatusBadge(status) {
+  const map = {
+    rascunho: { cls: 'status-rascunho', label: 'Rascunho' },
+    gerado: { cls: 'status-gerado', label: 'Gerado' },
+    enviado: { cls: 'status-enviado', label: 'Enviado' },
+    assinado: { cls: 'status-assinado', label: 'Assinado' },
+    cancelado: { cls: 'status-cancelado', label: 'Cancelado' },
+    vencido: { cls: 'status-vencido', label: 'Vencido' }
+  };
+  const s = map[status] || { cls: '', label: status };
+  return `<span class="badge ${s.cls}">${s.label}</span>`;
+}
+
+/* ---- Parse PostgreSQL array text for tipo_servico_id ----- */
+function parseTipoServicoIds(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (typeof value === 'string') {
+    return value.replace(/^\{|\}$/g, '').split(',').map(id => id.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+/* ---- Resolve service IDs to names using the same _servicosById map as CRM ----- */
+function resolveServicoNamesFromLead(lead) {
+  const ids = parseTipoServicoIds(lead.tipo_servico_id);
+  if (!ids.length) return [];
+  return ids.map(id => {
+    if (window._servicosById && window._servicosById[id]) return window._servicosById[id].nome;
+    if (typeof _servicosById !== 'undefined' && _servicosById[id]) return _servicosById[id].nome;
+    return null;
+  }).filter(Boolean);
+}
+
+/* ---- Load leads for the select (same table, same RLS, same filters as CRM) ----- */
+async function loadContratoLeads() {
+  if (!_supabase) return [];
+
+  const canViewAll = typeof canViewAllData === 'function' ? canViewAllData() : false;
+  const filterId = canViewAll ? null : (typeof getCurrentUserId === 'function' ? getCurrentUserId() : null);
+
+  let q = _supabase.from('leads').select('*').order('nome', { ascending: true });
+  if (filterId) {
+    q = q.or('membro_id.eq.' + filterId + ',qualificador_id.eq.' + filterId + ',owner_id.eq.' + filterId);
+  }
+
+  const { data, error } = await q;
+  if (error) { console.error('[Contratos] Erro ao carregar leads:', error.message, error.code); return []; }
+  return data || [];
+}
+
+/* ---- Load contratos from Supabase ----- */
+async function loadContratos(filters = {}) {
+  if (!_supabase) return [];
+  let q = _supabase.from('contratos').select('*').order('created_at', { ascending: false });
+
+  if (filters.status) q = q.eq('status', filters.status);
+  if (filters.mesEvento) {
+    const [y, m] = filters.mesEvento.split('-');
+    const inicio = `${y}-${m}-01`;
+    const fim = `${y}-${m}-31`;
+    q = q.gte('data_evento', inicio).lte('data_evento', fim);
+  }
+  if (filters.busca) {
+    const b = filters.busca.toLowerCase();
+    // We do client-side filtering after fetch for simplicity
+  }
+
+  const { data, error } = await q;
+  if (error) { console.error('[Contratos] Erro ao carregar contratos:', error); return []; }
+  let list = data || [];
+
+  if (filters.busca) {
+    const b = filters.busca.toLowerCase();
+    list = list.filter(c =>
+      (c.contratante_nome || '').toLowerCase().includes(b) ||
+      (c.contratante_cpf_cnpj || '').includes(b) ||
+      (c.numero_contrato || '').toLowerCase().includes(b) ||
+      (c.contratante_telefone || '').includes(b)
+    );
+  }
+
+  return list;
+}
+
+/* ---- Next sequence number ----- */
+async function nextContratoSeq() {
+  if (!_supabase) return 1;
+  const { count } = await _supabase.from('contratos').select('*', { count: 'exact', head: true });
+  return (count || 0) + 1;
+}
+
+/* ---- Render table ----- */
+function renderContratosTable(list) {
+  const tbody = document.querySelector('#tableContratos tbody');
+  if (!tbody) return;
+
+  if (!list || list.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;opacity:0.5;padding:24px;">Nenhum contrato encontrado.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = list.map(c => {
+    const servicoDesc = c.descricao_servicos || (Array.isArray(c.servicos) ? c.servicos.join(', ') : '') || '—';
+    const dataEvento = fmtDateBR(c.data_evento);
+    const geradoEm = c.gerado_em ? new Date(c.gerado_em).toLocaleDateString('pt-BR') : '—';
+    const valor = fmtCurrency(c.valor_total);
+    const pdfBtn = c.pdf_storage_path
+      ? `<button class="btn-ghost btn-sm" onclick="contratoDownloadPDF('${c.id}')" title="Baixar PDF" aria-label="Baixar PDF"><i data-lucide="download"></i></button>`
+      : `<button class="btn-ghost btn-sm" onclick="contratoGeneratePDF('${c.id}')" title="Gerar PDF" aria-label="Gerar PDF"><i data-lucide="file-text"></i></button>`;
+
+    return `<tr>
+      <td class="contract-number">${c.numero_contrato || '—'}</td>
+      <td class="contract-client" title="${c.contratante_nome || ''}">${c.contratante_nome || '—'}</td>
+      <td class="contract-service" title="${servicoDesc}">${servicoDesc}</td>
+      <td class="contract-date">${dataEvento || '—'}</td>
+      <td class="contract-value text-right">${valor}</td>
+      <td>${contratoStatusBadge(c.status)}</td>
+      <td class="contract-created-at">${geradoEm}</td>
+      <td class="contract-actions">
+        <button class="btn-ghost btn-sm" onclick="contratoEdit('${c.id}')" title="Editar" aria-label="Editar contrato"><i data-lucide="edit"></i></button>
+        ${pdfBtn}
+        <button class="btn-ghost btn-sm contract-more-actions-button" data-contrato-actions="${c.id}" onclick="contratoAcoes('${c.id}', '${c.status}')" title="Mais ações" aria-label="Mais ações do contrato ${c.numero_contrato || ''}" aria-haspopup="menu" aria-expanded="false"><i data-lucide="more-vertical"></i></button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  if (typeof initIcons === 'function') initIcons();
+}
+
+/* ---- Fill lead data into the modal form ----- */
+function fillContratoFromLead(lead) {
+  if (!lead) return;
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+
+  set('contratoNome', lead.nome || '');
+  set('contratoCpfCnpj', lead.cpf_cnpj || lead.cpf || lead.cnpj || '');
+  set('contratoEmail', lead.email || '');
+  set('contratoTelefone', lead.telefone || '');
+  set('contratoEndereco', lead.endereco || lead.endereco_residencial || '');
+  set('contratoBairro', lead.bairro || '');
+  set('contratoCidade', lead.cidade || '');
+  set('contratoEstado', lead.estado || '');
+  set('contratoCep', lead.cep || '');
+  set('contratoEnderecoEvento', lead.endereco_evento || '');
+  set('contratoQtdHoras', lead.quantidade_horas || '');
+  if (lead.data_evento) set('contratoDataEvento', lead.data_evento);
+  if (lead.honorarios) set('contratoValorTotal', parseFloat(lead.honorarios) || '');
+
+  const nomesServicos = resolveServicoNamesFromLead(lead);
+  set('contratoServicosDesc', nomesServicos.length ? nomesServicos.join(', ') : '');
+}
+
+/* ---- Build the PDF HTML content (4-page A4 layout) ----- */
+function _contratoHeader() {
+  return `
+  <header class="contrato-cabecalho">
+    <div class="contrato-cabecalho__esquerda">
+      <img src="/assets/logo_blue_pro.png" alt="Agência Blue PRO" class="contrato-cabecalho__logo">
+    </div>
+    <div class="contrato-cabecalho__direita">
+      <strong>Agência Blue PRO</strong>
+      <span>www.agenciabluepro.com.br</span>
+      <span>Instagram: @agenciabluepro</span>
+      <span>WhatsApp: (85) 99149-9320</span>
+    </div>
+  </header>`;
+}
+
+function _contratoFooter(pageNum) {
+  return `
+  <div class="contrato-rodape">
+    <span>${pageNum}</span>
+  </div>`;
+}
+
+function buildPDFContent(data) {
+  const qtdParcelas = parseInt(data.quantidade_parcelas) || 1;
+  const valorTotal = fmtCurrency(data.valor_total);
+  const valorTotalExt = numeroExtenso(data.valor_total);
+
+  let clausulaPag = '';
+  if (qtdParcelas === 1) {
+    const venc = fmtDateBR(data.parcelas?.[0]?.vencimento || '');
+    const val = fmtCurrency(data.parcelas?.[0]?.valor || data.valor_total);
+    const valExt = numeroExtenso(data.parcelas?.[0]?.valor || data.valor_total);
+    clausulaPag = `O aluguel possui custo total de ${valorTotal} (${valorTotalExt}), a ser pago pela CONTRATANTE à CONTRATADA em parcela única no valor de ${val} (${valExt}), com vencimento em ${venc}.`;
+  } else if (qtdParcelas === 2) {
+    const p1 = data.parcelas?.[0];
+    const p2 = data.parcelas?.[1];
+    const venc1 = fmtDateBR(p1?.vencimento || '');
+    const val1 = fmtCurrency(p1?.valor || '');
+    const valExt1 = numeroExtenso(p1?.valor || 0);
+    const venc2 = fmtDateBR(p2?.vencimento || '');
+    const val2 = fmtCurrency(p2?.valor || '');
+    const valExt2 = numeroExtenso(p2?.valor || 0);
+    clausulaPag = `O aluguel possui custo total de ${valorTotal} (${valorTotalExt}), a ser pago pela CONTRATANTE à CONTRATADA em 2 parcelas: a primeira, no valor de ${val1} (${valExt1}), com vencimento em ${venc1}; e a segunda, no valor de ${val2} (${valExt2}), com vencimento em ${venc2}, um dia antes do evento.`;
+  } else {
+    const parcelasDesc = (data.parcelas || []).map((p, i) =>
+      `${i + 1}ª parcela no valor de ${fmtCurrency(p.valor)} (${numeroExtenso(p.valor)}) com vencimento em ${fmtDateBR(p.vencimento)}`
+    ).join('; ');
+    clausulaPag = `O aluguel possui custo total de ${valorTotal} (${valorTotalExt}), a ser pago pela CONTRATANTE à CONTRATADA em ${qtdParcelas} parcelas: ${parcelasDesc}.`;
+  }
+
+  const rawDataEmissao = data.data_emissao || new Date().toISOString().split('T')[0];
+  const dataEmissaoFormatada = fmtDateBR(rawDataEmissao);
+  const dataEmissaoExtenso = dataExtenso(rawDataEmissao);
+
+  const servico = data.descricao_servicos || '—';
+  const nome = data.contratante_nome || '—';
+  const cpfCnpj = data.contratante_cpf_cnpj || '—';
+  const endereco = data.contratante_endereco || '—';
+  const bairro = data.contratante_bairro || '—';
+  const cidade = data.contratante_cidade || '—';
+  const estado = data.contratante_estado || '—';
+  const cep = data.contratante_cep || '—';
+  const tel = data.contratante_telefone || '—';
+  const dataEvento = fmtDateBR(data.data_evento);
+  const horaInicio = fmtTimeBR(data.hora_inicio);
+  const horaFim = fmtTimeBR(data.hora_fim);
+  const qtdHoras = data.quantidade_horas || '—';
+  const endEvento = data.endereco_evento || '—';
+
+  const header = _contratoHeader();
+
+  /* ==================== PÁGINA 1 ==================== */
+  const page1 = `
+  <div class="contrato-pagina">
+    <div class="contrato-marca-dagua" aria-hidden="true"></div>
+    <div class="contrato-pagina__conteudo">
+      ${header}
+
+      <h1 class="contrato-titulo">Contrato de Prestação de Serviços</h1>
+
+      <p class="contrato-clausula">
+        <strong>CONTRATANTE:</strong> ${nome}, inscrito(a) no CPF/CNPJ sob o nº ${cpfCnpj}, residente e domiciliado(a) no(a) ${endereco}, Bairro ${bairro}, Cidade ${cidade} – ${estado}, CEP ${cep}, telefone para contato: ${tel}, e-mail: ${data.contratante_email || 'Não informado'}.
+      </p>
+
+      <p class="contrato-clausula">
+        <strong>CONTRATADA:</strong> Agência Blue Organização de Eventos e Inteligência Empresarial Ltda., inscrita no CNPJ sob o nº 59.417.603/0001-36, com sede na Av. Eng. Humberto Monte, 2929, Pici, Fortaleza/CE, CEP: 60.440-593.
+      </p>
+
+      <p class="contrato-clausula contrato-justificado">
+        As partes acima identificadas têm, entre si, justo e acertado o presente Contrato de Prestação de Serviços, o qual se regerá pelas cláusulas seguintes e pelas condições descritas no presente instrumento.
+      </p>
+
+      <h2 class="contrato-secao-titulo">DO OBJETO DO CONTRATO</h2>
+
+      <p class="contrato-clausula contrato-justificado">
+        1.1. O presente contrato tem por objeto a prestação de serviços de <strong>${servico}</strong> por parte da CONTRATADA em favor da CONTRATANTE, conforme especificações abaixo:
+      </p>
+
+      <p class="contrato-servico-titulo">DESCRIÇÃO DO(S) SERVIÇO(S)</p>
+
+      <div class="contrato-clausula contrato-justificado contrato-lista-container">
+        <p>a) Serviço: <strong>${servico}</strong>;</p>
+        <p>b) Data do evento: <strong>${dataEvento}</strong>;</p>
+        <p>c) Horário: das <strong>${horaInicio}</strong> às <strong>${horaFim}</strong>;</p>
+        <p>d) Duração total: <strong>${qtdHoras}</strong> hora(s);</p>
+        <p>e) Local do evento: <strong>${endEvento}</strong>.</p>
+      </div>
+
+      <p class="contrato-clausula contrato-justificado">
+        1.2. A CONTRATADA se compromete a realizar os serviços com zelo, responsabilidade e profissionalismo, fornecendo todo o material e equipamentos necessários para a execução dos trabalhos, bem como os profissionais qualificados para tal.
+      </p>
+
+      <h2 class="contrato-secao-titulo">DAS OBRIGAÇÕES DA CONTRATADA</h2>
+
+      <p class="contrato-clausula contrato-justificado">
+        2.1. A CONTRATADA compromete-se a executar os serviços descritos na Cláusula 1ª nas condições pactuadas no presente instrumento.
+      </p>
+      <p class="contrato-clausula contrato-justificado">
+        2.2. A CONTRATADA deverá dispor de todos os equipamentos e profissionais necessários para a realização dos serviços contratados.
+      </p>
+
+      ${_contratoFooter(1)}
+    </div>
+  </div>`;
+
+  /* ==================== PÁGINA 2 ==================== */
+  const page2 = `
+  <div class="contrato-pagina contrato-page-break">
+    <div class="contrato-marca-dagua" aria-hidden="true"></div>
+    <div class="contrato-pagina__conteudo">
+      ${header}
+
+      <p class="contrato-clausula contrato-justificado">
+        2.3. A CONTRATADA deverá manter sigilo sobre todas as informações obtidas durante a execução do contrato.
+      </p>
+      <p class="contrato-clausula contrato-justificado">
+        2.4. A CONTRATADA deverá entregar todos os materiais e resultados dos serviços contratados no prazo e condições pactuados.
+      </p>
+
+      <h2 class="contrato-secao-titulo">DAS OBRIGAÇÕES DA CONTRATANTE</h2>
+
+      <p class="contrato-clausula contrato-justificado">
+        3.1. A CONTRATANTE compromete-se a fornecer as informações e condições adequadas no local do evento para que a CONTRATADA possa realizar seus serviços com qualidade e dentro do prazo estipulado.
+      </p>
+      <p class="contrato-clausula contrato-justificado">
+        3.2. A CONTRATANTE deverá efetuar os pagamentos conforme estabelecido neste contrato, nas datas e valores previstos.
+      </p>
+      <p class="contrato-clausula contrato-justificado">
+        3.3. A CONTRATANTE é responsável por eventuais danos causados aos equipamentos da CONTRATADA por convidados do evento, sujeitando-se ao ressarcimento do valor de conserto ou reposição.
+      </p>
+      <p class="contrato-clausula contrato-justificado">
+        3.4. A CONTRATANTE autoriza, desde já, o uso das imagens captadas no evento para composição do portfólio da CONTRATADA, podendo ser veiculadas em redes sociais, site e materiais promocionais, salvo acordo em contrário estabelecido por escrito.
+      </p>
+      <p class="contrato-clausula contrato-justificado">
+        3.5. A CONTRATANTE deverá garantir acesso seguro e adequado ao local do evento para a equipe da CONTRATADA.
+      </p>
+
+      ${_contratoFooter(2)}
+    </div>
+  </div>`;
+
+  /* ==================== PÁGINA 3 ==================== */
+  const page3 = `
+  <div class="contrato-pagina contrato-page-break">
+    <div class="contrato-marca-dagua" aria-hidden="true"></div>
+    <div class="contrato-pagina__conteudo">
+      ${header}
+
+      <h2 class="contrato-secao-titulo">DO CUSTO E DA FORMA DE PAGAMENTO</h2>
+
+      <p class="contrato-clausula contrato-justificado">
+        4.1. ${clausulaPag}
+      </p>
+      <p class="contrato-clausula contrato-justificado">
+        4.2. Os pagamentos deverão ser realizados por meio de PIX, conforme os dados abaixo:
+      </p>
+
+      <div class="contrato-clausula contrato-lista-container">
+        <p>Chave PIX: 59.417.603/0001-36</p>
+        <p>Titular: Agência Blue Pro</p>
+        <p>CNPJ: 59.417.603/0001-36</p>
+        <p>Banco: Cora</p>
+      </div>
+
+      <p class="contrato-clausula contrato-justificado">
+        4.3. O atraso no pagamento acarretará a incidência de multa de 2% sobre o valor devido, acrescido de juros de mora de 1% ao mês, calculados pro rata die.
+      </p>
+
+      <h2 class="contrato-secao-titulo">DO PRAZO E CRONOGRAMA</h2>
+
+      <p class="contrato-clausula contrato-justificado">
+        5.1. O prazo do presente contrato vigora a partir do dia <strong>${dataEmissaoFormatada}</strong>, extinguindo-se após a conclusão integral dos serviços e o cumprimento de todas as obrigações assumidas pelas partes.
+      </p>
+      <p class="contrato-clausula contrato-justificado">
+        5.2. O presente contrato poderá ser prorrogado mediante acordo escrito entre as partes.
+      </p>
+      <p class="contrato-clausula contrato-justificado">
+        5.3. Em caso de cancelamento por parte da CONTRATANTE com mais de 30 (trinta) dias de antecedência do evento, será devolvido o valor total pago. Caso o cancelamento ocorra com menos de 30 (trinta) dias, o valor total do contrato será devido integralmente.
+      </p>
+
+      ${_contratoFooter(3)}
+    </div>
+  </div>`;
+
+  /* ==================== PÁGINA 4 ==================== */
+  const page4 = `
+  <div class="contrato-pagina contrato-page-break">
+    <div class="contrato-marca-dagua" aria-hidden="true"></div>
+    <div class="contrato-pagina__conteudo">
+      ${header}
+
+      <h2 class="contrato-secao-titulo">DA RESCISÃO E ALTERAÇÃO DE CLÁUSULAS</h2>
+
+      <p class="contrato-clausula contrato-justificado">
+        6.1. Em caso de cancelamento por parte da CONTRATANTE, esta perderá o valor já pago a título de reserva de data e arcará com multa rescisória proporcional ao tempo faltante para o evento.
+      </p>
+      <p class="contrato-clausula contrato-justificado">
+        6.2. Se o cancelamento ocorrer a menos de 30 (trinta) dias do evento, o valor total do contrato será devido integralmente.
+      </p>
+      <p class="contrato-clausula contrato-justificado">
+        6.3. Em caso de cancelamento por parte da CONTRATADA, esta deverá devolver integralmente os valores recebidos e indenizar a CONTRATANTE pelos prejuízos comprovados.
+      </p>
+      <p class="contrato-clausula contrato-justificado">
+        6.4. O cancelamento deverá ser comunicado por escrito, com antecedência mínima de 15 (quinze) dias do evento.
+      </p>
+      <p class="contrato-clausula contrato-justificado">
+        6.5. Qualquer alteração neste contrato somente terá validade se feita por escrito e assinada por ambas as partes.
+      </p>
+
+      <h2 class="contrato-secao-titulo">DO FORO</h2>
+
+      <p class="contrato-clausula contrato-justificado">
+        7.1. Para dirimir quaisquer controvérsias oriundas do presente contrato, as partes elegem o foro da comarca de Fortaleza – CE, renunciando a qualquer outro, por mais privilegiado que seja.
+      </p>
+
+      <p class="contrato-clausula contrato-justificado" style="margin-top: 10mm;">
+        Por estarem assim justos e contratados, assinam o presente instrumento em 2 (duas) vias de igual teor e forma.
+      </p>
+
+      <p class="contrato-clausula" style="text-align: right; margin-top: 6mm;">
+        Fortaleza – CE, ${dataEmissaoExtenso}.
+      </p>
+
+      <div class="contrato-assinaturas">
+        <div class="contrato-assinatura-col">
+          <div class="contrato-assinatura-linha"></div>
+          <p><strong>${nome}</strong></p>
+          <p>CONTRATANTE</p>
+        </div>
+        <div class="contrato-assinatura-col">
+          <div class="contrato-assinatura-linha"></div>
+          <p><strong>Agência Blue Organização de Eventos</strong></p>
+          <p>e Inteligência Empresarial Ltda.</p>
+          <p>CONTRATADA</p>
+        </div>
+      </div>
+
+      ${_contratoFooter(4)}
+    </div>
+  </div>`;
+
+  return `<div class="contrato-documento">${page1}${page2}${page3}${page4}</div>`;
+}
+
+/* ---- Validate required fields (returns structured result) ----- */
+const _contratoRequiredFields = [
+  { id: 'contratoLeadId', label: 'Lead vinculado' },
+  { id: 'contratoNome', label: 'Nome/Razão Social' },
+  { id: 'contratoCpfCnpj', label: 'CPF/CNPJ' },
+  { id: 'contratoTelefone', label: 'Telefone' },
+  { id: 'contratoEndereco', label: 'Endereço completo' },
+  { id: 'contratoBairro', label: 'Bairro' },
+  { id: 'contratoCidade', label: 'Cidade' },
+  { id: 'contratoEstado', label: 'Estado' },
+  { id: 'contratoCep', label: 'CEP' },
+  { id: 'contratoServicosDesc', label: 'Serviço contratado' },
+  { id: 'contratoDataEvento', label: 'Data do evento' },
+  { id: 'contratoHoraInicio', label: 'Horário de início' },
+  { id: 'contratoHoraFim', label: 'Horário de encerramento' },
+  { id: 'contratoQtdHoras', label: 'Quantidade de horas' },
+  { id: 'contratoEnderecoEvento', label: 'Endereço do evento' },
+  { id: 'contratoValorTotal', label: 'Valor total' },
+  { id: 'contratoCondicaoPagamento', label: 'Condição de pagamento' },
+];
+
+function clearFieldErrors() {
+  document.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
+  const leadCtrl = document.querySelector('.lead-searchable__control');
+  if (leadCtrl) leadCtrl.classList.remove('field-error');
+}
+
+function highlightFieldErrors(fieldIds) {
+  fieldIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.classList.add('field-error');
+      // For hidden lead input, also highlight the visual control
+      if (id === 'contratoLeadId') {
+        const ctrl = document.querySelector('.lead-searchable__control');
+        if (ctrl) ctrl.classList.add('field-error');
+      }
+      const clearErr = () => {
+        el.classList.remove('field-error');
+        if (id === 'contratoLeadId') {
+          const ctrl = document.querySelector('.lead-searchable__control');
+          if (ctrl) ctrl.classList.remove('field-error');
+        }
+      };
+      el.addEventListener('input', clearErr, { once: true });
+      el.addEventListener('change', clearErr, { once: true });
+      // For lead, also listen on the control click
+      if (id === 'contratoLeadId') {
+        const ctrl = document.querySelector('.lead-searchable__control');
+        if (ctrl) ctrl.addEventListener('click', clearErr, { once: true });
+      }
+    }
+  });
+}
+
+function validateContratoForm() {
+  clearFieldErrors();
+  const missing = [];
+  _contratoRequiredFields.forEach(f => {
+    const el = document.getElementById(f.id);
+    const val = el ? (el.value || '').trim() : '';
+    if (!val) missing.push(f);
+  });
+  if (missing.length) {
+    highlightFieldErrors(missing.map(f => f.id));
+  }
+  return missing;
+}
+
+/* ---- Collect form data ----- */
+function collectContratoFormData() {
+  const condicao = parseInt(document.getElementById('contratoCondicaoPagamento')?.value || '1');
+  const valorTotal = parseFloat(document.getElementById('contratoValorTotal')?.value || 0);
+  const servicoDesc = document.getElementById('contratoServicosDesc')?.value || '';
+
+  let parcelas = [];
+  if (condicao === 1) {
+    parcelas = [{ parcela: 1, valor: valorTotal, vencimento: document.getElementById('contratoVencimentoP1')?.value || '' }];
+  } else if (condicao === 2) {
+    parcelas = [
+      { parcela: 1, valor: parseFloat(document.getElementById('contratoValorP1')?.value || 0), vencimento: document.getElementById('contratoVencimentoP1')?.value || '' },
+      { parcela: 2, valor: parseFloat(document.getElementById('contratoValorP2')?.value || 0), vencimento: document.getElementById('contratoVencimentoP2')?.value || '' }
+    ];
+  }
+
+  return {
+    lead_id: document.getElementById('contratoLeadId')?.value || null,
+    contratante_nome: document.getElementById('contratoNome')?.value || '',
+    contratante_cpf_cnpj: document.getElementById('contratoCpfCnpj')?.value || '',
+    contratante_email: document.getElementById('contratoEmail')?.value || '',
+    contratante_telefone: document.getElementById('contratoTelefone')?.value || '',
+    contratante_endereco: document.getElementById('contratoEndereco')?.value || '',
+    contratante_bairro: document.getElementById('contratoBairro')?.value || '',
+    contratante_cidade: document.getElementById('contratoCidade')?.value || '',
+    contratante_estado: document.getElementById('contratoEstado')?.value || '',
+    contratante_cep: document.getElementById('contratoCep')?.value || '',
+    servico_principal: servicoDesc,
+    descricao_servicos: servicoDesc,
+    servicos: servicoDesc ? servicoDesc.split(',').map(s => s.trim()).filter(Boolean) : [],
+    data_evento: document.getElementById('contratoDataEvento')?.value || null,
+    hora_inicio: document.getElementById('contratoHoraInicio')?.value || null,
+    hora_fim: document.getElementById('contratoHoraFim')?.value || null,
+    quantidade_horas: parseFloat(document.getElementById('contratoQtdHoras')?.value || 0) || null,
+    endereco_evento: document.getElementById('contratoEnderecoEvento')?.value || '',
+    valor_total: valorTotal,
+    quantidade_parcelas: condicao,
+    parcelas,
+    data_emissao: new Date().toISOString().split('T')[0],
+    membro_id: currentUser?.id || null,
+    owner_id: currentUser?.id || null,
+    centro_custo_id: currentUser?.centro_custo_ids?.[0] || null
+  };
+}
+
+/* ---- Searchable Lead Selector ----- */
+function _resetLeadSearchable() {
+  const hidden = document.getElementById('contratoLeadId');
+  if (hidden) hidden.value = '';
+  const placeholder = document.getElementById('leadSearchPlaceholder');
+  const value = document.getElementById('leadSearchValue');
+  if (placeholder) { placeholder.style.display = ''; placeholder.textContent = 'Pesquisar por nome, CPF/CNPJ ou telefone...'; }
+  if (value) value.style.display = 'none';
+  const dropdown = document.getElementById('leadSearchDropdown');
+  if (dropdown) dropdown.style.display = 'none';
+  const input = document.getElementById('leadSearchInput');
+  if (input) input.value = '';
+  const control = document.getElementById('leadSearchControl');
+  if (control) control.setAttribute('aria-expanded', 'false');
+}
+
+function _selectLeadById(leadId) {
+  const lead = _contratosLeadsList.find(l => l.id === leadId);
+  if (!lead) return;
+  const hidden = document.getElementById('contratoLeadId');
+  if (hidden) hidden.value = lead.id;
+  const placeholder = document.getElementById('leadSearchPlaceholder');
+  const value = document.getElementById('leadSearchValue');
+  if (placeholder) placeholder.style.display = 'none';
+  if (value) {
+    value.style.display = '';
+    value.innerHTML = `<strong>${lead.nome || '—'}</strong>${lead.telefone ? ' <span style="opacity:0.6;margin-left:6px;">' + lead.telefone + '</span>' : ''}`;
+  }
+}
+
+function _renderLeadSearchOptions(filter) {
+  const container = document.getElementById('leadSearchOptions');
+  if (!container) return;
+  const b = (filter || '').toLowerCase();
+  const list = b ? _contratosLeadsList.filter(l =>
+    (l.nome || '').toLowerCase().includes(b) ||
+    (l.cpf_cnpj || l.cpf || l.cnpj || '').includes(b) ||
+    (l.telefone || '').includes(b)
+  ) : _contratosLeadsList;
+
+  if (!list.length) {
+    container.innerHTML = '<div class="lead-searchable__empty">Nenhum lead encontrado.</div>';
+    return;
+  }
+
+  container.innerHTML = list.map(l => {
+    const cpf = l.cpf_cnpj || l.cpf || l.cnpj || '';
+    const tel = l.telefone || '';
+    const meta = [cpf, tel].filter(Boolean).join(' · ');
+    return `<div class="lead-searchable__option" role="option" data-lead-id="${l.id}">
+      <div class="lead-searchable__option-name">${l.nome || '—'}</div>
+      ${meta ? `<div class="lead-searchable__option-meta">${meta}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function _initLeadSearchable() {
+  const control = document.getElementById('leadSearchControl');
+  const dropdown = document.getElementById('leadSearchDropdown');
+  const input = document.getElementById('leadSearchInput');
+  const options = document.getElementById('leadSearchOptions');
+  if (!control || !dropdown || !input || !options) return;
+
+  control.addEventListener('click', () => {
+    const isOpen = dropdown.style.display !== 'none';
+    if (isOpen) {
+      dropdown.style.display = 'none';
+      control.setAttribute('aria-expanded', 'false');
+    } else {
+      dropdown.style.display = '';
+      control.setAttribute('aria-expanded', 'true');
+      input.value = '';
+      _renderLeadSearchOptions();
+      setTimeout(() => input.focus(), 10);
+    }
+  });
+
+  control.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      control.click();
+    } else if (e.key === 'Escape') {
+      dropdown.style.display = 'none';
+      control.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  input.addEventListener('input', () => {
+    _renderLeadSearchOptions(input.value);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      dropdown.style.display = 'none';
+      control.setAttribute('aria-expanded', 'false');
+      control.focus();
+    }
+  });
+
+  options.addEventListener('click', (e) => {
+    const opt = e.target.closest('[data-lead-id]');
+    if (!opt) return;
+    const leadId = opt.dataset.leadId;
+    const lead = _contratosLeadsList.find(l => l.id === leadId);
+    if (!lead) return;
+
+    _selectLeadById(leadId);
+    fillContratoFromLead(lead);
+
+    dropdown.style.display = 'none';
+    control.setAttribute('aria-expanded', 'false');
+  });
+
+  // Close on outside click
+  document.addEventListener('click', (e) => {
+    if (!control.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = 'none';
+      control.setAttribute('aria-expanded', 'false');
+    }
+  });
+}
+
+/* ---- Open modal to create new contrato ----- */
+async function openNovoContratoModal() {
+  _currentContratoData = null;
+  const idEl = document.getElementById('contratoId');
+  if (idEl) idEl.value = '';
+  const form = document.getElementById('formContrato');
+  if (form) form.reset();
+  const title = document.getElementById('modalContratoTitle');
+  if (title) title.textContent = 'Gerar Contrato';
+  // Reset parcela 2 rows
+  ['rowParcelaVal2', 'rowParcelaVenc2'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+
+  // Reset lead searchable
+  _resetLeadSearchable();
+
+  // Populate lead list
+  _contratosLeadsList = await loadContratoLeads();
+  _renderLeadSearchOptions();
+
+  _openContratoModal();
+}
+
+/* ---- Open modal to edit an existing contrato ----- */
+async function contratoEdit(id) {
+  if (!_supabase) return;
+  const { data, error } = await _supabase.from('contratos').select('*').eq('id', id).single();
+  if (error || !data) { toast('Erro ao carregar contrato.', 'error'); return; }
+
+  _currentContratoData = data;
+  const idEl = document.getElementById('contratoId');
+  if (idEl) idEl.value = data.id;
+  const title = document.getElementById('modalContratoTitle');
+  if (title) title.textContent = 'Editar Contrato – ' + (data.numero_contrato || '');
+
+  // Populate lead list and select current
+  if (!_contratosLeadsList.length) _contratosLeadsList = await loadContratoLeads();
+  _renderLeadSearchOptions();
+  if (data.lead_id) {
+    _selectLeadById(data.lead_id);
+  }
+
+  // Fill form
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+  set('contratoNome', data.contratante_nome);
+  set('contratoCpfCnpj', data.contratante_cpf_cnpj);
+  set('contratoEmail', data.contratante_email);
+  set('contratoTelefone', data.contratante_telefone);
+  set('contratoEndereco', data.contratante_endereco);
+  set('contratoBairro', data.contratante_bairro);
+  set('contratoCidade', data.contratante_cidade);
+  set('contratoEstado', data.contratante_estado);
+  set('contratoCep', data.contratante_cep);
+  set('contratoServicosDesc', data.descricao_servicos);
+  set('contratoDataEvento', data.data_evento);
+  set('contratoHoraInicio', data.hora_inicio ? data.hora_inicio.substring(0, 5) : '');
+  set('contratoHoraFim', data.hora_fim ? data.hora_fim.substring(0, 5) : '');
+  set('contratoQtdHoras', data.quantidade_horas);
+  set('contratoEnderecoEvento', data.endereco_evento);
+  set('contratoValorTotal', data.valor_total);
+
+  const qtdParcelas = data.quantidade_parcelas || 1;
+  const condicaoSel = document.getElementById('contratoCondicaoPagamento');
+  if (condicaoSel) condicaoSel.value = String(Math.min(qtdParcelas, 2));
+  const showP2 = qtdParcelas >= 2 ? '' : 'none';
+  ['rowParcelaVal2', 'rowParcelaVenc2'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = showP2;
+  });
+
+  const parcelas = data.parcelas || [];
+  if (parcelas[0]) { set('contratoValorP1', parcelas[0].valor); set('contratoVencimentoP1', parcelas[0].vencimento); }
+  if (parcelas[1]) { set('contratoValorP2', parcelas[1].valor); set('contratoVencimentoP2', parcelas[1].vencimento); }
+
+  _openContratoModal();
+}
+
+/* ---- Internal helpers to open/close modals ----- */
+const _contratoFormFields = [
+  'contratoLeadId', 'contratoNome', 'contratoCpfCnpj', 'contratoTelefone',
+  'contratoEmail', 'contratoEndereco', 'contratoBairro', 'contratoCidade',
+  'contratoEstado', 'contratoCep', 'contratoServicosDesc', 'contratoDataEvento',
+  'contratoHoraInicio', 'contratoHoraFim', 'contratoQtdHoras',
+  'contratoEnderecoEvento', 'contratoValorTotal', 'contratoCondicaoPagamento',
+  'contratoValorP1', 'contratoVencimentoP1', 'contratoValorP2', 'contratoVencimentoP2'
+];
+
+function _snapshotContratoForm() {
+  return _contratoFormFields.map(id => {
+    const el = document.getElementById(id);
+    return el ? el.value : '';
+  }).join('|');
+}
+
+function _isContratoFormDirty() {
+  if (!_contratoFormSnapshot) return false;
+  return _snapshotContratoForm() !== _contratoFormSnapshot;
+}
+
+function _onContratoFormInput() {
+  const form = document.getElementById('formContrato');
+  if (form) form.dataset.dirty = 'true';
+}
+
+function _contratoModalFocusableEls() {
+  const modal = document.getElementById('modalContrato');
+  if (!modal) return [];
+  return Array.from(modal.querySelectorAll(
+    'button:not([disabled]):not([tabindex="-1"]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  ));
+}
+
+function _contratoTrapFocus(e) {
+  if (e.key !== 'Tab') return;
+  const els = _contratoModalFocusableEls();
+  if (!els.length) return;
+  const first = els[0];
+  const last = els[els.length - 1];
+  if (e.shiftKey) {
+    if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+  } else {
+    if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+}
+
+function _contratoKeydown(e) {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    _requestCloseContratoModal();
+  }
+  _contratoTrapFocus(e);
+}
+
+function _openContratoModal() {
+  _contratoPreviousFocus = document.activeElement;
+  _contratoFormSnapshot = _snapshotContratoForm();
+  const form = document.getElementById('formContrato');
+  if (form) form.dataset.dirty = 'false';
+
+  const overlay = document.getElementById('contratoOverlay');
+  const modal = document.getElementById('modalContrato');
+  if (overlay) overlay.classList.add('open');
+  if (modal) { modal.classList.add('open'); modal.scrollTop = 0; }
+  if (typeof initIcons === 'function') initIcons();
+
+  // Focus first field
+  setTimeout(() => {
+    const firstInput = modal?.querySelector('select:not([disabled]), input:not([disabled]):not([type="hidden"])');
+    if (firstInput) firstInput.focus();
+  }, 50);
+
+  // Attach listeners
+  if (form) form.addEventListener('input', _onContratoFormInput);
+  if (form) form.addEventListener('change', _onContratoFormInput);
+  document.addEventListener('keydown', _contratoKeydown);
+}
+
+function _closeContratoModal() {
+  const overlay = document.getElementById('contratoOverlay');
+  const modal = document.getElementById('modalContrato');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+
+  // Remove listeners
+  const form = document.getElementById('formContrato');
+  if (form) { form.removeEventListener('input', _onContratoFormInput); form.removeEventListener('change', _onContratoFormInput); form.dataset.dirty = 'false'; }
+  document.removeEventListener('keydown', _contratoKeydown);
+
+  // Restore focus
+  if (_contratoPreviousFocus && typeof _contratoPreviousFocus.focus === 'function') {
+    _contratoPreviousFocus.focus();
+  }
+  _contratoFormSnapshot = null;
+  _contratoPreviousFocus = null;
+}
+
+function _requestCloseContratoModal() {
+  // Don't trigger if discard modal is already open
+  const discardModal = document.getElementById('contratoDiscardModal');
+  if (discardModal && discardModal.classList.contains('open')) return;
+
+  if (_isContratoFormDirty()) {
+    // Remove contrato modal keydown handler while discard modal is open
+    document.removeEventListener('keydown', _contratoKeydown);
+    _openContratoDiscardModal();
+  } else {
+    _closeContratoModal();
+  }
+}
+
+/* ---- Discard confirmation modal ----- */
+function _openContratoDiscardModal() {
+  const overlay = document.getElementById('contratoDiscardOverlay');
+  const modal = document.getElementById('contratoDiscardModal');
+  if (overlay) overlay.classList.add('open');
+  if (modal) { modal.classList.add('open'); }
+  if (typeof initIcons === 'function') initIcons();
+  setTimeout(() => {
+    const cancelBtn = document.getElementById('contratoDiscardCancel');
+    if (cancelBtn) cancelBtn.focus();
+  }, 50);
+  // Esc on discard modal closes it (back to form)
+  document.addEventListener('keydown', _discardKeydownHandler);
+}
+
+function _discardKeydownHandler(e) {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    _closeContratoDiscardModal();
+  }
+}
+
+function _closeContratoDiscardModal() {
+  const overlay = document.getElementById('contratoDiscardOverlay');
+  const modal = document.getElementById('contratoDiscardModal');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+  document.removeEventListener('keydown', _discardKeydownHandler);
+  // Re-attach contrato modal keydown handler
+  document.addEventListener('keydown', _contratoKeydown);
+}
+
+function _confirmContratoDiscard() {
+  _closeContratoDiscardModal();
+  _closeContratoModal();
+}
+
+/* ---- Save (insert/update) contrato ----- */
+async function saveContrato(status = 'rascunho') {
+  if (!_supabase) return null;
+  const formData = collectContratoFormData();
+  const existingId = document.getElementById('contratoId')?.value || '';
+  const dataHoje = new Date().toISOString().split('T')[0];
+
+  const htmlContent = buildPDFContent({ ...formData, data_emissao: dataHoje });
+
+  const payload = {
+    ...formData,
+    status,
+    conteudo_contrato: htmlContent,
+    updated_at: new Date().toISOString()
+  };
+
+  if (existingId) {
+    const { data, error } = await _supabase.from('contratos').update(payload).eq('id', existingId).select().single();
+    if (error) {
+      console.error('[Contratos] Erro ao salvar:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+        payload
+      });
+      toast('Erro ao salvar contrato: ' + error.message, 'error');
+      return null;
+    }
+    return data;
+  } else {
+    const seq = await nextContratoSeq();
+    payload.numero_contrato = gerarNumeroContrato(seq);
+    payload.created_at = new Date().toISOString();
+    const { data, error } = await _supabase.from('contratos').insert([payload]).select().single();
+    if (error) {
+      console.error('[Contratos] Erro ao criar:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+        payload
+      });
+      toast('Erro ao criar contrato: ' + error.message, 'error');
+      return null;
+    }
+    return data;
+  }
+}
+
+/* ---- Validate that a canvas has visible (non-white) content ----- */
+function canvasHasVisibleContent(canvas) {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  let sampledPixels = 0;
+  let visiblePixels = 0;
+
+  // Sample every 20th pixel — lightweight and sufficient for text detection
+  const totalPixelSlots = canvas.width * canvas.height;
+  const step = 20;
+
+  for (let pixel = 0; pixel < totalPixelSlots; pixel += step) {
+    const idx = pixel * 4;
+    const r = data[idx];
+    const g = data[idx + 1];
+    const b = data[idx + 2];
+    const a = data[idx + 3];
+
+    sampledPixels++;
+
+    const isWhiteOrNearlyWhite = r > 245 && g > 245 && b > 245;
+    if (a > 20 && !isWhiteOrNearlyWhite) {
+      visiblePixels++;
+    }
+  }
+
+  const visibleRatio = sampledPixels > 0 ? visiblePixels / sampledPixels : 0;
+
+  console.log('[PDF] Diagnóstico visual do canvas:', {
+    width: canvas.width,
+    height: canvas.height,
+    sampledPixels,
+    visiblePixels,
+    visibleRatio: visibleRatio.toFixed(6)
+  });
+
+  // At least 50 visible pixels AND a non-negligible ratio
+  return visiblePixels >= 50 && visibleRatio > 0.0001;
+}
+
+/* ---- Generate PDF from a saved contrato ----- */
+async function contratoGeneratePDF(id) {
+  if (!_supabase) return;
+
+  const { data: contrato, error } = await _supabase.from('contratos').select('*').eq('id', id).single();
+  if (error || !contrato) { toast('Contrato não encontrado.', 'error'); return; }
+
+  toast('Gerando PDF…', 'info');
+
+  // ---- 1. Validate libraries ----
+  const h2c = window.html2canvas;
+  const { jsPDF } = window.jspdf || {};
+
+  console.log('[PDF] html2canvas disponível:', typeof h2c);
+  console.log('[PDF] jsPDF disponível:', typeof jsPDF);
+
+  if (typeof h2c !== 'function') {
+    toast('Biblioteca html2canvas não foi carregada.', 'error');
+    return;
+  }
+  if (typeof jsPDF !== 'function') {
+    toast('Biblioteca jsPDF não foi carregada.', 'error');
+    return;
+  }
+
+  // ---- 2. Preload watermark image ----
+  const watermarkUrl = '/assets/bluepro-marca-dagua.png';
+  const watermarkPreload = new Image();
+  watermarkPreload.src = watermarkUrl;
+
+  await new Promise((resolve, reject) => {
+    watermarkPreload.onload = resolve;
+    watermarkPreload.onerror = () =>
+      reject(new Error('Não foi possível carregar a marca-d\'água do contrato.'));
+  });
+
+  // ---- 3. Create dedicated off-screen export container ----
+  const htmlContent = contrato.conteudo_contrato || buildPDFContent(contrato);
+  const A4_W_PX = 794;
+
+  const exportRoot = document.createElement('div');
+  exportRoot.id = 'contratoPdfExport';
+  exportRoot.style.cssText = `
+    position: fixed !important;
+    top: 0 !important;
+    left: -100000px !important;
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    width: ${A4_W_PX}px !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    z-index: -1 !important;
+  `;
+  exportRoot.innerHTML = htmlContent;
+  document.body.appendChild(exportRoot);
+
+  // Force explicit styles on each page
+  exportRoot.querySelectorAll('.contrato-pagina').forEach(p => {
+    p.style.cssText = `
+      display: block !important;
+      position: relative !important;
+      box-sizing: border-box !important;
+      width: ${A4_W_PX}px !important;
+      min-height: 1123px !important;
+      margin: 0 !important;
+      padding: 60px 68px 60px 68px !important;
+      overflow: hidden !important;
+      isolation: isolate !important;
+      background: #ffffff !important;
+      color: #111111 !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+    `;
+
+    // Watermark layer
+    const wm = p.querySelector('.contrato-marca-dagua');
+    if (wm) {
+      wm.style.cssText = `
+        position: absolute !important;
+        inset: 0 !important;
+        z-index: 0 !important;
+        pointer-events: none !important;
+        background-image: url('${watermarkUrl}') !important;
+        background-repeat: no-repeat !important;
+        background-position: center center !important;
+        background-size: 100% auto !important;
+        opacity: 0.15 !important;
+      `;
+    }
+
+    // Content layer above watermark
+    const conteudo = p.querySelector('.contrato-pagina__conteudo');
+    if (conteudo) {
+      conteudo.style.cssText = `
+        position: relative !important;
+        z-index: 1 !important;
+      `;
+    }
+  });
+
+  // ---- 3. Wait for layout + paint + fonts + images ----
+  await new Promise(r => requestAnimationFrame(r));
+  await new Promise(r => requestAnimationFrame(r));
+  await new Promise(r => setTimeout(r, 300));
+  if (document.fonts?.ready) {
+    try { await document.fonts.ready; } catch (_) { /* ignore */ }
+  }
+
+  await new Promise(r => requestAnimationFrame(r));
+  await new Promise(r => requestAnimationFrame(r));
+
+  // ---- 4. Collect pages ----
+  const pages = Array.from(exportRoot.querySelectorAll('.contrato-pagina'));
+
+  console.log('[PDF] Páginas no exportRoot:', pages.length);
+
+  if (pages.length === 0) {
+    document.body.removeChild(exportRoot);
+    toast('Nenhuma página A4 encontrada.', 'error');
+    return;
+  }
+
+  // Validate first page
+  const firstRect = pages[0].getBoundingClientRect();
+  const firstW = firstRect.width || pages[0].offsetWidth;
+  const firstH = firstRect.height || pages[0].offsetHeight;
+  const firstText = (pages[0].innerText || '').trim();
+
+  console.log('[PDF] Texto primeira página:', firstText.length, 'caracteres');
+  console.log('[PDF] Dimensões primeira página:', { width: Math.round(firstW), height: Math.round(firstH) });
+
+  if (firstText.length < 50 || firstW < 100 || firstH < 100) {
+    document.body.removeChild(exportRoot);
+    toast('O conteúdo do contrato não foi renderizado corretamente.', 'error');
+    return;
+  }
+
+  // ---- 5. Generate PDF page by page with html2canvas ----
+  const nomeSlug = (contrato.contratante_nome || 'Lead').replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '');
+  const dataEvento = (contrato.data_evento || '').split('-').reverse().join('-');
+  const filename = `Contrato_${nomeSlug}_${dataEvento}_${contrato.numero_contrato || 'CT'}.pdf`;
+
+  try {
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+    const A4_W_MM = 210;
+    const A4_H_MM = 297;
+
+    for (let i = 0; i < pages.length; i++) {
+      const page = pages[i];
+      console.log('[PDF] Capturando página', i + 1, 'de', pages.length);
+
+      // Ensure page is rendered
+      page.style.display = 'block';
+      page.style.visibility = 'visible';
+      page.style.opacity = '1';
+
+      const canvas = await h2c(page, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: true,
+        scrollX: 0,
+        scrollY: 0,
+        width: page.scrollWidth || A4_W_PX,
+        height: page.scrollHeight || 1123
+      });
+
+      if (!canvas || !canvas.width || !canvas.height) {
+        document.body.removeChild(exportRoot);
+        toast(`Página ${i + 1} não foi renderizada no canvas.`, 'error');
+        return;
+      }
+
+      console.log('[PDF] Canvas página', i + 1, ':', canvas.width, 'x', canvas.height);
+
+      // Validate canvas is not blank
+      if (!canvasHasVisibleContent(canvas)) {
+        document.body.removeChild(exportRoot);
+        toast(`Página ${i + 1} foi capturada em branco. PDF não será salvo.`, 'error');
+        return;
+      }
+
+      console.log('[PDF] Página', i + 1, '— conteúdo visual confirmado');
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+      if (i > 0) pdf.addPage('a4', 'portrait');
+
+      pdf.addImage(imgData, 'JPEG', 0, 0, A4_W_MM, A4_H_MM, undefined, 'FAST');
+    }
+
+    // ---- 6. Validate blob ----
+    const pdfBlob = pdf.output('blob');
+
+    if (!pdfBlob || pdfBlob.size < 30000) {
+      document.body.removeChild(exportRoot);
+      toast(`PDF inválido ou sem conteúdo visual. Tamanho: ${pdfBlob?.size ?? 0} bytes.`, 'error');
+      return;
+    }
+
+    console.log('[PDF] Tamanho do blob:', pdfBlob.size, 'bytes');
+    console.log('[PDF] Páginas exportadas:', pages.length);
+
+    // ---- 7. Upload to private bucket ----
+    const storagePath = `${contrato.centro_custo_id || 'geral'}/${filename}`;
+    const { error: uploadErr } = await _supabase.storage
+      .from('contratos')
+      .upload(storagePath, pdfBlob, { contentType: 'application/pdf', upsert: true });
+
+    if (uploadErr) {
+      console.error('[Contratos] Erro ao subir PDF:', uploadErr);
+      document.body.removeChild(exportRoot);
+      toast('Erro ao salvar PDF: ' + uploadErr.message, 'error');
+      return;
+    }
+
+    console.log('[PDF] Upload concluído:', storagePath);
+
+    // ---- 8. Create signed URL ----
+    const { data: signedData, error: signedErr } = await _supabase.storage
+      .from('contratos')
+      .createSignedUrl(storagePath, 600);
+
+    if (signedErr || !signedData?.signedUrl) {
+      console.error('[Contratos] Erro ao criar URL assinada:', signedErr);
+      document.body.removeChild(exportRoot);
+      toast('Erro ao gerar link de download: ' + (signedErr?.message || 'desconhecido'), 'error');
+      return;
+    }
+
+    // ---- 9. Update contrato status ----
+    await _supabase.from('contratos').update({
+      status: 'gerado',
+      gerado_em: new Date().toISOString(),
+      pdf_storage_path: storagePath,
+      updated_at: new Date().toISOString()
+    }).eq('id', id);
+
+    // ---- 10. Open PDF in new tab ----
+    window.open(signedData.signedUrl, '_blank');
+
+    toast('PDF gerado com sucesso!', 'success');
+    await refreshContratosTable();
+  } catch (e) {
+    console.error('[Contratos] Erro ao gerar PDF:', e);
+    toast('Erro ao gerar PDF: ' + e.message, 'error');
+  } finally {
+    const el = document.getElementById('contratoPdfExport');
+    if (el && document.body.contains(el)) document.body.removeChild(el);
+  }
+}
+
+/* ---- Download PDF via signed URL from private bucket ----- */
+async function contratoDownloadPDF(id) {
+  if (!_supabase) return;
+
+  const { data: contrato, error } = await _supabase.from('contratos').select('pdf_storage_path, contratante_nome').eq('id', id).single();
+  if (error || !contrato) { toast('Contrato não encontrado.', 'error'); return; }
+
+  if (!contrato.pdf_storage_path) {
+    toast('Este contrato ainda não tem PDF gerado.', 'error');
+    return;
+  }
+
+  const { data: signedData, error: signedErr } = await _supabase.storage
+    .from('contratos')
+    .createSignedUrl(contrato.pdf_storage_path, 600);
+
+  if (signedErr || !signedData?.signedUrl) {
+    console.error('[Contratos] Erro ao criar URL assinada:', signedErr);
+    toast('Erro ao baixar PDF: ' + (signedErr?.message || 'desconhecido'), 'error');
+    return;
+  }
+
+  window.open(signedData.signedUrl, '_blank');
+}
+
+/* ---- Generate PDF from current modal form ----- */
+async function contratoGenerateFromModal() {
+  const missing = validateContratoForm();
+  if (missing.length) {
+    const nomes = missing.map(f => f.label).join(', ');
+    toast('Campos obrigatórios ausentes: ' + nomes, 'error');
+    return;
+  }
+  toast('Salvando e gerando PDF…', 'info');
+  const saved = await saveContrato('gerado');
+  if (!saved) return;
+  _closeContratoModal();
+  // Keep preview open during PDF generation so html2canvas can capture visible pages
+  await contratoGeneratePDF(saved.id);
+  // Close preview after generation
+  const previewModal = document.getElementById('contratoPreviewModal');
+  if (previewModal) previewModal.classList.remove('is-open');
+}
+
+/* ---- Preview modal ----- */
+async function openContratoPreview() {
+  const missing = validateContratoForm();
+  if (missing.length) {
+    const nomes = missing.map(f => '• ' + f.label).join('\n');
+    toast('Complete as informações obrigatórias antes de visualizar o contrato:\n' + missing.map(f => f.label).join(', '), 'error');
+    console.warn('[Contratos] Campos obrigatórios ausentes:', missing.map(f => f.id));
+    return;
+  }
+  const formData = collectContratoFormData();
+  formData.data_emissao = new Date().toISOString().split('T')[0];
+  const html = buildPDFContent(formData);
+  const a4 = document.getElementById('contratoA4Document');
+  if (a4) a4.innerHTML = html;
+  const previewModal = document.getElementById('contratoPreviewModal');
+  if (previewModal) previewModal.classList.add('is-open');
+  if (typeof initIcons === 'function') initIcons();
+}
+
+/* ---- Actions dropdown ----- */
+/* ---- Actions menu (replaces window.prompt) ----- */
+let _contratoActiveMenu = null;
+let _contratoMenuCloseHandler = null;
+
+function _closeContratoActionsMenu() {
+  if (_contratoActiveMenu) {
+    _contratoActiveMenu.remove();
+    _contratoActiveMenu = null;
+  }
+  if (_contratoMenuCloseHandler) {
+    document.removeEventListener('click', _contratoMenuCloseHandler, true);
+    document.removeEventListener('keydown', _contratoMenuCloseHandler, true);
+    _contratoMenuCloseHandler = null;
+  }
+}
+
+function _openContratoActionsMenu(btnEl, id, status, numeroContrato) {
+  _closeContratoActionsMenu();
+
+  const actions = [
+    { label: 'Marcar como enviado', value: 'enviado', icon: 'send', visible: ['gerado', 'rascunho'] },
+    { label: 'Marcar como assinado', value: 'assinado', icon: 'check-circle', visible: ['enviado', 'gerado'] },
+    { label: 'Gerar / baixar PDF', value: 'gerar', icon: 'file-down', visible: ['rascunho', 'gerado', 'enviado', 'assinado'] },
+    { label: 'Cancelar contrato', value: 'cancelado', icon: 'x-circle', visible: ['rascunho', 'gerado', 'enviado'], danger: true },
+  ].filter(a => a.visible.includes(status));
+
+  if (!actions.length) { toast('Nenhuma ação disponível para este status.'); return; }
+
+  const menu = document.createElement('div');
+  menu.className = 'contract-actions-menu';
+  menu.setAttribute('role', 'menu');
+
+  menu.innerHTML = actions.map((a, i) => {
+    const parts = [];
+    if (i > 0 && actions[i - 1].danger !== a.danger) {
+      parts.push('<div class="contract-actions-menu__divider"></div>');
+    }
+    const cls = a.danger ? ' contract-actions-menu__item--danger' : '';
+    parts.push(`<button type="button" role="menuitem" class="${cls}" data-action="${a.value}">
+      <span class="action-menu-icon"><i data-lucide="${a.icon}"></i></span>
+      <span>${a.label}</span>
+    </button>`);
+    return parts.join('');
+  }).join('');
+
+  document.body.appendChild(menu);
+  _contratoActiveMenu = menu;
+
+  // Position menu
+  const rect = btnEl.getBoundingClientRect();
+  const menuW = 220;
+  const menuH = actions.length * 44 + 16;
+  let top = rect.bottom + 6;
+  let left = rect.left;
+
+  if (top + menuH > window.innerHeight) top = rect.top - menuH - 6;
+  if (left + menuW > window.innerWidth) left = rect.right - menuW;
+  if (left < 8) left = 8;
+
+  menu.style.top = top + 'px';
+  menu.style.left = left + 'px';
+
+  if (typeof initIcons === 'function') initIcons();
+
+  btnEl.setAttribute('aria-expanded', 'true');
+
+  // Click handler for menu items
+  menu.addEventListener('click', (e) => {
+    const item = e.target.closest('[data-action]');
+    if (!item) return;
+    const action = item.dataset.action;
+    _closeContratoActionsMenu();
+    btnEl.setAttribute('aria-expanded', 'false');
+
+    if (action === 'cancelado') {
+      _openContratoCancelModal(id, numeroContrato);
+    } else if (action === 'gerar') {
+      contratoGeneratePDF(id);
+    } else {
+      _executeContratoStatusAction(id, action);
+    }
+  });
+
+  // Close on outside click or Esc
+  setTimeout(() => {
+    _contratoMenuCloseHandler = (e) => {
+      if (_contratoActiveMenu && !_contratoActiveMenu.contains(e.target) && e.target !== btnEl && !btnEl.contains(e.target)) {
+        if (e.type === 'keydown' && e.key !== 'Escape') return;
+        _closeContratoActionsMenu();
+        btnEl.setAttribute('aria-expanded', 'false');
+      }
+    };
+    document.addEventListener('click', _contratoMenuCloseHandler, true);
+    document.addEventListener('keydown', _contratoMenuCloseHandler, true);
+  }, 0);
+}
+
+async function _executeContratoStatusAction(id, actionValue) {
+  if (!_supabase) return;
+  const upd = { status: actionValue, updated_at: new Date().toISOString() };
+  if (actionValue === 'enviado') upd.enviado_em = new Date().toISOString();
+  if (actionValue === 'assinado') upd.assinado_em = new Date().toISOString();
+  await _supabase.from('contratos').update(upd).eq('id', id);
+  const labels = { enviado: 'Contrato marcado como enviado.', assinado: 'Contrato marcado como assinado.' };
+  toast(labels[actionValue] || 'Status atualizado.', 'success');
+  await refreshContratosTable();
+}
+
+/* ---- Cancel confirmation modal ----- */
+let _contratoCancelTargetId = null;
+
+function _openContratoCancelModal(id, numeroContrato) {
+  _contratoCancelTargetId = id;
+  const numEl = document.getElementById('contratoCancelNumber');
+  if (numEl) numEl.textContent = numeroContrato || '—';
+  const overlay = document.getElementById('contratoCancelOverlay');
+  const modal = document.getElementById('contratoCancelModal');
+  if (overlay) overlay.classList.add('open');
+  if (modal) modal.classList.add('open');
+  if (typeof initIcons === 'function') initIcons();
+  setTimeout(() => {
+    const backBtn = document.getElementById('contratoCancelBack');
+    if (backBtn) backBtn.focus();
+  }, 50);
+}
+
+function _closeContratoCancelModal() {
+  const overlay = document.getElementById('contratoCancelOverlay');
+  const modal = document.getElementById('contratoCancelModal');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+  _contratoCancelTargetId = null;
+}
+
+async function _confirmContratoCancel() {
+  if (!_contratoCancelTargetId || !_supabase) return;
+  const id = _contratoCancelTargetId;
+  _closeContratoCancelModal();
+  await _supabase.from('contratos').update({
+    status: 'cancelado',
+    cancelado_em: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }).eq('id', id);
+  toast('Contrato cancelado com sucesso.', 'success');
+  await refreshContratosTable();
+}
+
+/* ---- Original contratoAcoes (replaced by menu) ----- */
+async function contratoAcoes(id, status) {
+  const contrato = _contratosData.find(c => c.id === id);
+  const numero = contrato?.numero_contrato || '';
+  const btn = document.querySelector(`[data-contrato-actions="${id}"]`);
+  if (btn) {
+    _openContratoActionsMenu(btn, id, status, numero);
+  }
+}
+
+/* ---- Refresh table ----- */
+async function refreshContratosTable() {
+  const busca = document.getElementById('filterContratoBusca')?.value || '';
+  const status = document.getElementById('filterContratoStatus')?.value || '';
+  const mesEvento = document.getElementById('filterContratoMesEvento')?.value || '';
+  _contratosData = await loadContratos({ busca, status, mesEvento });
+  renderContratosTable(_contratosData);
+}
+
+/* ---- Save as draft shortcut ----- */
+async function salvarContratoComoRascunho() {
+  if (!_supabase) return null;
+  const formData = collectContratoFormData();
+  const existingId = document.getElementById('contratoId')?.value || '';
+
+  const payload = {
+    ...formData,
+    status: 'rascunho',
+    membro_id: currentUser?.id || null,
+    owner_id: currentUser?.id || null,
+    centro_custo_id: currentUser?.centro_custo_ids?.[0] || null,
+    updated_at: new Date().toISOString()
+  };
+
+  if (existingId) {
+    payload.id = existingId;
+  } else {
+    const seq = await nextContratoSeq();
+    payload.numero_contrato = gerarNumeroContrato(seq);
+    payload.created_at = new Date().toISOString();
+  }
+
+  const { data, error } = await _supabase
+    .from('contratos')
+    .upsert(payload, { onConflict: 'id' })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[Contratos] Erro ao salvar rascunho:', error.message, error.code);
+    toast('Não foi possível salvar o rascunho: ' + error.message, 'error');
+    return null;
+  }
+
+  if (!existingId && data) {
+    const idEl = document.getElementById('contratoId');
+    if (idEl) idEl.value = data.id;
+  }
+
+  toast('Rascunho salvo com sucesso.', 'success');
+  await refreshContratosTable();
+  return data;
+}
+
+/* ---- Generic closeModal helper (used by Contratos module) ----- */
+function closeModal(modalId) {
+  const modal = document.getElementById(modalId);
+  if (!modal) return;
+  modal.classList.remove('open');
+  let sibling = modal.previousElementSibling;
+  while (sibling) {
+    if (sibling.classList && sibling.classList.contains('modal-overlay')) {
+      if (sibling.classList.contains('open')) sibling.classList.remove('open');
+      break;
+    }
+    sibling = sibling.previousElementSibling;
+  }
+}
+
+/* ---- Main init ----- */
+function _updateContratosClearBtn() {
+  const busca = document.getElementById('filterContratoBusca')?.value || '';
+  const status = document.getElementById('filterContratoStatus')?.value || '';
+  const mes = document.getElementById('filterContratoMesEvento')?.value || '';
+  const hasFilter = !!(busca || status || mes);
+  const btn = document.getElementById('btnClearContratos');
+  if (btn) btn.style.display = hasFilter ? '' : 'none';
+}
+
+async function initContratos() {
+  if (_contratosInited) { await refreshContratosTable(); return; }
+  _contratosInited = true;
+
+  _contratosData = await loadContratos();
+  renderContratosTable(_contratosData);
+
+  document.getElementById('btnNovoContrato')?.addEventListener('click', openNovoContratoModal);
+  document.getElementById('btnFilterContratos')?.addEventListener('click', async () => { await refreshContratosTable(); _updateContratosClearBtn(); });
+  document.getElementById('filterContratoBusca')?.addEventListener('keypress', e => { if (e.key === 'Enter') { refreshContratosTable().then(() => _updateContratosClearBtn()); } });
+
+  document.getElementById('btnClearContratos')?.addEventListener('click', async () => {
+    const busca = document.getElementById('filterContratoBusca');
+    const status = document.getElementById('filterContratoStatus');
+    const mes = document.getElementById('filterContratoMesEvento');
+    if (busca) busca.value = '';
+    if (status) status.value = '';
+    if (mes) mes.value = '';
+    await refreshContratosTable();
+    _updateContratosClearBtn();
+  });
+
+  document.getElementById('contratoCondicaoPagamento')?.addEventListener('change', function () {
+    const v = parseInt(this.value);
+    const show = v >= 2 ? '' : 'none';
+    ['rowParcelaVal2', 'rowParcelaVenc2'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = show;
+    });
+  });
+
+  const btnPreview = document.getElementById('btnContratoPreview');
+  if (btnPreview) btnPreview.addEventListener('click', openContratoPreview);
+
+  const btnSaveDraft = document.getElementById('btnContratoSaveDraft');
+  if (btnSaveDraft) btnSaveDraft.addEventListener('click', async () => { await salvarContratoComoRascunho(); });
+
+  const btnGen = document.getElementById('btnContratoGenerate');
+  if (btnGen) btnGen.addEventListener('click', openContratoPreview);
+
+  const btnBackToEdit = document.getElementById('btnContratoBackToEdit');
+  if (btnBackToEdit) btnBackToEdit.addEventListener('click', () => {
+    const previewModal = document.getElementById('contratoPreviewModal');
+    if (previewModal) previewModal.classList.remove('is-open');
+    _openContratoModal();
+  });
+
+  const btnSaveDraftPreview = document.getElementById('btnContratoSaveDraftPreview');
+  if (btnSaveDraftPreview) btnSaveDraftPreview.addEventListener('click', async () => {
+    await salvarContratoComoRascunho();
+  });
+
+  const btnGeneratePdf = document.getElementById('btnContratoGeneratePdf');
+  if (btnGeneratePdf) btnGeneratePdf.addEventListener('click', async () => {
+    const previewModal = document.getElementById('contratoPreviewModal');
+    if (previewModal) previewModal.classList.remove('is-open');
+    await contratoGenerateFromModal();
+  });
+
+  document.querySelectorAll('#modalContrato .close-modal').forEach(btn => {
+    btn.addEventListener('click', () => {
+      closeModal('modalContrato');
+    });
+  });
+
+  // X button close
+  document.getElementById('btnCloseContratoModal')?.addEventListener('click', _requestCloseContratoModal);
+
+  // Cancel button
+  document.getElementById('btnContratoCancel')?.addEventListener('click', _requestCloseContratoModal);
+
+  // Overlay backdrop click
+  document.getElementById('contratoOverlay')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) _requestCloseContratoModal();
+  });
+
+  // Discard confirmation modal
+  document.getElementById('contratoDiscardCancel')?.addEventListener('click', _closeContratoDiscardModal);
+  document.getElementById('contratoDiscardConfirm')?.addEventListener('click', _confirmContratoDiscard);
+  document.querySelector('.contrato-discard-close-x')?.addEventListener('click', _closeContratoDiscardModal);
+  document.getElementById('contratoDiscardOverlay')?.addEventListener('click', _closeContratoDiscardModal);
+
+  // Cancel contract confirmation modal
+  document.getElementById('contratoCancelBack')?.addEventListener('click', _closeContratoCancelModal);
+  document.getElementById('contratoCancelConfirm')?.addEventListener('click', _confirmContratoCancel);
+  document.querySelector('.contrato-cancel-close-x')?.addEventListener('click', _closeContratoCancelModal);
+  document.getElementById('contratoCancelOverlay')?.addEventListener('click', _closeContratoCancelModal);
+
+  // Searchable lead selector
+  _initLeadSearchable();
+}
+
+// Expose global functions (called from onclick attributes in table rows)
+window.contratoEdit = contratoEdit;
+window.contratoGeneratePDF = contratoGeneratePDF;
+window.contratoDownloadPDF = contratoDownloadPDF;
+window.contratoAcoes = contratoAcoes;
