@@ -322,10 +322,11 @@ async function fetchLeadsSupabase(filterMemberId) {
 async function insertLeadSupabase(data) {
   if (!_supabase) throw new Error('Supabase client não inicializado. CDN pode ter falhado.');
 
-  const { nome, telefone, data_evento, endereco_evento,
+  const { nome, telefone, data_evento, hora_inicio, hora_final, endereco_evento,
           quantidade_horas, temperatura, honorarios, observacoes,
           tipo_servico_id, cadencia_id, owner_id, centro_custo_id,
-          cpf, cnpj, email, endereco_residencial } = data;
+          cpf, cnpj, email, endereco_residencial,
+          bairro, cidade, estado, cep, servicos_selecionados } = data;
 
   console.log('[Supabase] Inserindo lead:', { nome, telefone, data_evento });
 
@@ -333,6 +334,8 @@ async function insertLeadSupabase(data) {
     nome,
     telefone,
     data_evento,
+    hora_inicio: hora_inicio || null,
+    hora_final: hora_final || null,
     endereco_evento,
     quantidade_horas,
     temperatura,
@@ -343,7 +346,12 @@ async function insertLeadSupabase(data) {
     cpf: cpf || null,
     cnpj: cnpj || null,
     email: email || null,
-    endereco_residencial: endereco_residencial || null
+    endereco_residencial: endereco_residencial || null,
+    bairro: bairro || null,
+    cidade: cidade || null,
+    estado: estado || null,
+    cep: cep || null,
+    servicos_selecionados: servicos_selecionados || null
   };
   if (owner_id) payload.owner_id = owner_id;
   if (tipo_servico_id) payload.tipo_servico_id = Array.isArray(tipo_servico_id) ? tipo_servico_id : [tipo_servico_id];

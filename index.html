@@ -605,6 +605,12 @@
                 <span>Mês do evento</span>
                 <input type="month" id="filterContratoMesEvento" class="form-control contract-event-month-input" aria-label="Filtrar por mês do evento" />
               </label>
+              <label class="filter-field">
+                <span>Empresa</span>
+                <select id="filterContratoEmpresa" class="form-control">
+                  <option value="">Todas as Empresas</option>
+                </select>
+              </label>
               <div class="filter-actions">
                 <button class="btn btn-primary btn-sm" id="btnFilterContratos">
                   <i data-lucide="filter"></i> Filtrar
@@ -1101,88 +1107,132 @@
 
         <!-- ============ CONVERSAS ============ -->
         <section class="page" id="page-conversas">
-          <div class="conversas-layout">
-            <!-- Coluna 1: Lista de chats -->
-            <div class="conversas-sidebar" id="conversasSidebar">
-              <div class="conversas-sidebar-header">
-                <h3>Conversas</h3>
-                <div class="conversas-search">
-                  <i data-lucide="search"></i>
-                  <input type="text" id="conversasSearchInput" placeholder="Buscar conversa..." />
-                </div>
+          <!-- Cabeçalho da Central -->
+          <div class="conv-header">
+            <div class="conv-header-left">
+              <div class="conv-header-icon"><i data-lucide="message-circle"></i></div>
+              <div>
+                <h1 class="conv-header-title">Central de Atendimento WhatsApp</h1>
+                <p class="conv-header-subtitle">Conversas vinculadas aos seus leads e clientes</p>
               </div>
-              <div class="conversas-list" id="conversasList">
-                <div class="conversas-loading">
-                  <div class="skeleton-card"></div>
-                  <div class="skeleton-card"></div>
-                  <div class="skeleton-card"></div>
-                </div>
+            </div>
+            <div class="conv-header-center">
+              <div class="conv-connection" id="convConnectionStatus">
+                <span class="conv-connection-dot conv-connection-dot--disconnected"></span>
+                <span>Desconectado</span>
+              </div>
+              <div class="conv-stats">
+                <div class="conv-stat"><span class="conv-stat-value" id="convStatUnread">0</span><span class="conv-stat-label">Não lidas</span></div>
+                <div class="conv-stat"><span class="conv-stat-value" id="convStatHot">0</span><span class="conv-stat-label">Quentes</span></div>
+                <div class="conv-stat"><span class="conv-stat-value" id="convStatOnline">0</span><span class="conv-stat-label">Online</span></div>
+              </div>
+            </div>
+            <div class="conv-header-right">
+              <span class="conv-sync-time" id="convSyncTime"></span>
+              <button class="btn-ghost btn-sm" id="btnConvRefresh" title="Atualizar conversas"><i data-lucide="refresh-cw"></i></button>
+              <button class="btn btn-primary btn-sm" id="btnConvNew"><i data-lucide="plus"></i> Nova conversa</button>
+            </div>
+          </div>
+
+          <!-- Layout 3 painéis -->
+          <div class="conv-layout">
+            <!-- Painel esquerdo: lista de conversas -->
+            <div class="conv-sidebar" id="convSidebar">
+              <div class="conv-sidebar-search">
+                <i data-lucide="search"></i>
+                <input type="text" id="convSearchInput" placeholder="Buscar por nome ou telefone..." />
+              </div>
+              <div class="conv-sidebar-filters" id="convFilterChips"></div>
+              <div class="conv-sidebar-unidentified" id="convUnidentifiedBtn">
+                <i data-lucide="help-circle"></i>
+                <span>Contatos não identificados</span>
+                <span class="conv-badge" id="convUnidentifiedCount">0</span>
+              </div>
+              <div class="conv-sidebar-list" id="convChatList">
+                <div class="conv-loading-state"><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div></div>
               </div>
             </div>
 
-            <!-- Coluna 2: Detalhes do lead -->
-            <div class="conversas-detail" id="conversasDetail">
-              <div class="conversas-empty-state" id="conversasDetailEmpty">
-                <i data-lucide="message-circle"></i>
-                <p>Selecione uma conversa para ver os detalhes</p>
-              </div>
-              <div class="conversas-detail-content" id="conversasDetailContent" style="display:none;">
-                <div class="conversas-detail-header">
-                  <div class="conversas-detail-avatar" id="detailAvatar"></div>
-                  <div class="conversas-detail-info">
-                    <h4 id="detailName"></h4>
-                    <span class="conversas-detail-phone" id="detailPhone"></span>
-                  </div>
-                </div>
-                <div class="conversas-detail-section">
-                  <label>Status</label>
-                  <select id="detailStatus" class="conversas-status-select">
-                    <option value="open">Aberto</option>
-                    <option value="pending">Pendente</option>
-                    <option value="closed">Fechado</option>
-                  </select>
-                </div>
-                <div class="conversas-detail-section">
-                  <label>Responsável</label>
-                  <select id="detailAssignee" class="conversas-status-select">
-                    <option value="">Não atribuído</option>
-                  </select>
-                </div>
-                <div class="conversas-detail-section">
-                  <label>Lead Vinculado</label>
-                  <div class="conversas-linked-lead" id="detailLinkedLead">
-                    <span>Nenhum lead vinculado</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Coluna 3: Janela de mensagens -->
-            <div class="conversas-chat" id="conversasChat">
-              <div class="conversas-empty-state" id="conversasChatEmpty">
+            <!-- Painel central: atendimento -->
+            <div class="conv-chat" id="convChat">
+              <div class="conv-chat-empty" id="convChatEmpty">
                 <i data-lucide="message-square"></i>
-                <p>Selecione uma conversa para iniciar</p>
+                <h3>Nenhuma conversa selecionada</h3>
+                <p>Selecione uma conversa na lista para visualizar o atendimento.</p>
               </div>
-              <div class="conversas-chat-content" id="conversasChatContent" style="display:none;">
-                <div class="conversas-chat-header" id="chatHeader">
-                  <span class="chat-header-name" id="chatHeaderName"></span>
-                  <span class="chat-header-status" id="chatHeaderStatus"></span>
-                </div>
-                <div class="conversas-messages" id="conversasMessages">
-                  <!-- Mensagens carregadas aqui -->
-                </div>
-                <div class="conversas-input-area" id="conversasInputArea">
-                  <div class="conversas-input-wrap">
-                    <input type="text" id="conversasMessageInput" placeholder="Digite sua mensagem..." autocomplete="off" />
-                    <button class="conversas-send-btn" id="conversasSendBtn" title="Enviar">
-                      <i data-lucide="send"></i>
-                    </button>
+              <div class="conv-chat-content" id="convChatContent" style="display:none;">
+                <div class="conv-chat-header" id="convChatHeader"></div>
+                <div class="conv-chat-suggestion" id="convSuggestion" style="display:none;"></div>
+                <div class="conv-chat-messages" id="convMessages"></div>
+                <div class="conv-chat-composer" id="convComposer">
+                  <button class="conv-composer-btn" id="btnConvAttach" title="Anexar arquivo"><i data-lucide="paperclip"></i></button>
+                  <div class="conv-composer-input-wrap">
+                    <textarea id="convMessageInput" placeholder="Digite sua mensagem..." rows="1"></textarea>
                   </div>
+                  <button class="conv-composer-btn" id="btnConvEmoji" title="Emoji"><i data-lucide="smile"></i></button>
+                  <button class="conv-composer-send" id="convSendBtn" title="Enviar"><i data-lucide="send"></i></button>
                 </div>
               </div>
+            </div>
+
+            <!-- Painel direito: CRM e gestão -->
+            <div class="conv-crm-panel" id="convCrmPanel">
+              <div class="conv-crm-empty">
+                <i data-lucide="user"></i>
+                <p>Selecione uma conversa para ver os dados CRM</p>
+              </div>
+              <div class="conv-crm-content" id="convCrmContent" style="display:none;"></div>
             </div>
           </div>
         </section>
+
+        <!-- Modal: Nova Conversa -->
+        <div class="modal-overlay" id="convNewOverlay"></div>
+        <div class="modal modal-sm" id="convNewModal" role="dialog" aria-labelledby="convNewTitle">
+          <div class="modal-head">
+            <div class="modal-head-left">
+              <div class="modal-avatar"><i data-lucide="message-circle"></i></div>
+              <div>
+                <h2 id="convNewTitle">Nova Conversa</h2>
+                <p class="modal-meta">Iniciar um novo atendimento</p>
+              </div>
+            </div>
+            <button class="icon-btn small" id="btnConvNewClose" title="Fechar"><i data-lucide="x"></i></button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label>Telefone <span class="req">*</span></label>
+              <input type="tel" id="convNewPhone" class="form-control" placeholder="(00) 00000-0000" required />
+            </div>
+            <div class="form-group">
+              <label>Nome</label>
+              <input type="text" id="convNewName" class="form-control" placeholder="Nome do contato" />
+            </div>
+            <div class="form-group">
+              <label>Vincular a lead existente</label>
+              <input type="text" id="convNewLeadSearch" class="form-control" placeholder="Buscar lead por nome ou telefone..." />
+              <div class="conv-new-lead-results" id="convNewLeadResults"></div>
+              <input type="hidden" id="convNewLeadId" />
+            </div>
+            <div class="form-group">
+              <label>Responsável</label>
+              <select id="convNewAssignee" class="form-control">
+                <option value="">Não atribuído</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Primeira mensagem</label>
+              <textarea id="convNewMessage" class="form-control" rows="3" placeholder="Mensagem de abertura (opcional)"></textarea>
+            </div>
+          </div>
+          <div class="modal-foot">
+            <div></div>
+            <div class="modal-foot-actions">
+              <button class="btn-ghost" id="btnConvNewCancel">Cancelar</button>
+              <button class="btn btn-primary" id="btnConvNewConfirm"><i data-lucide="send"></i> Iniciar conversa</button>
+            </div>
+          </div>
+        </div>
 
         <!-- ============ AUDITORIA ============ -->
         <section class="page" id="page-auditoria">
@@ -2366,8 +2416,29 @@
 
           <div class="form-group full">
             <label>Endereço Residencial</label>
-            <input type="text" name="enderecoResidencial" placeholder="Rua, número, bairro, cidade/UF" />
+            <input type="text" name="enderecoResidencial" placeholder="Rua, número" />
             <span class="form-error" data-error="enderecoResidencial"></span>
+          </div>
+
+          <div class="form-group">
+            <label>Bairro</label>
+            <input type="text" name="bairro" placeholder="Bairro" />
+            <span class="form-error" data-error="bairro"></span>
+          </div>
+          <div class="form-group">
+            <label>Cidade</label>
+            <input type="text" name="cidade" placeholder="Cidade" />
+            <span class="form-error" data-error="cidade"></span>
+          </div>
+          <div class="form-group">
+            <label>Estado</label>
+            <input type="text" name="estado" placeholder="UF" maxlength="2" />
+            <span class="form-error" data-error="estado"></span>
+          </div>
+          <div class="form-group">
+            <label>CEP</label>
+            <input type="text" name="cep" placeholder="00000-000" maxlength="9" />
+            <span class="form-error" data-error="cep"></span>
           </div>
 
           <div class="form-group">
@@ -2379,6 +2450,16 @@
             <label>Data do Evento</label>
             <input type="date" name="dataEvento" />
             <span class="form-error" data-error="dataEvento"></span>
+          </div>
+          <div class="form-group">
+            <label>Hora Início</label>
+            <input type="time" name="horaInicio" />
+            <span class="form-error" data-error="horaInicio"></span>
+          </div>
+          <div class="form-group">
+            <label>Hora Final</label>
+            <input type="time" name="horaFinal" />
+            <span class="form-error" data-error="horaFinal"></span>
           </div>
 
           <div class="form-group full">
@@ -2948,10 +3029,37 @@
             <div class="form-group" id="rowParcelaVenc2" style="display:none;">
               <label>Vencimento 2ª Parcela</label>
               <input type="date" id="contratoVencimentoP2" />
-            </div>
           </div>
         </div>
-      </form>
+      </div>
+
+      <!-- Section 5: Contrato Assinado -->
+      <div class="admin-form-section" id="contratoAssinadoSection">
+        <h3 class="admin-form-section-title"><i data-lucide="file-check"></i> Contrato Assinado</h3>
+        <div class="contrato-upload-area">
+          <div class="contrato-upload-info" id="contratoUploadInfo">
+            <p class="contrato-upload-hint">Anexe o PDF do contrato assinado. O status será atualizado automaticamente para <strong>Assinado</strong>.</p>
+          </div>
+          <div class="contrato-upload-file" id="contratoUploadFile">
+            <input type="file" id="contratoAssinadoInput" accept="application/pdf" style="display:none;" />
+            <button type="button" class="btn-ghost" id="contratoSelectFileBtn"><i data-lucide="upload"></i> Selecionar PDF</button>
+            <span class="contrato-upload-filename" id="contratoUploadFilename"></span>
+          </div>
+          <div class="contrato-upload-progress" id="contratoUploadProgress" style="display:none;">
+            <div class="contrato-upload-progress-bar"><div class="contrato-upload-progress-fill" id="contratoUploadProgressFill"></div></div>
+            <span class="contrato-upload-progress-text" id="contratoUploadProgressText">Enviando...</span>
+          </div>
+          <div class="contrato-upload-actions" id="contratoUploadActions" style="display:none;">
+            <button type="button" class="btn-primary" id="contratoUploadBtn"><i data-lucide="upload-cloud"></i> Anexar Contrato Assinado</button>
+          </div>
+          <div class="contrato-upload-done" id="contratoUploadDone" style="display:none;">
+            <i data-lucide="check-circle" class="contrato-upload-done-icon"></i>
+            <span id="contratoUploadDoneText">Contrato assinado anexado com sucesso!</span>
+            <a href="#" target="_blank" class="btn-ghost contrato-upload-view-link" id="contratoUploadViewLink"><i data-lucide="external-link"></i> Visualizar</a>
+          </div>
+        </div>
+      </div>
+    </form>
     </div>
     <div class="modal-actions" style="display:flex; gap:8px; justify-content:space-between; padding: 16px 24px; border-top: 1px solid var(--gray-200);">
       <button type="button" class="btn-ghost" id="btnContratoCancel"><i data-lucide="x"></i> Cancelar</button>

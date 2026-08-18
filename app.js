@@ -2564,7 +2564,7 @@ const pageConfig = {
   },
   conversas: {
     title: 'Conversas',
-    subtitle: 'Central de conversas',
+    subtitle: 'Central de Atendimento WhatsApp',
     primary: '',
     primaryIcon: 'message-circle'
   },
@@ -5773,9 +5773,14 @@ async function saveLead() {
       _cadenciaId: (window._cadenciaColToUuid || {})['novo-lead'] || null,
       enderecoEvento: fields.enderecoEvento || '',
       enderecoResidencial: fields.enderecoResidencial || '',
+      bairro: fields.bairro || '',
+      cidade: fields.cidade || '',
+      estado: fields.estado || '',
+      cep: fields.cep || '',
       quantidadeHoras: fields.quantidadeHoras,
-      cidade: '',
-      estado: '',
+      horaFinal: fields.horaFinal || '',
+      horaInicio: fields.horaInicio || '',
+      servicosSelecionados: (fields.tiposServico || []).join(', '),
       segmento: '',
       tipoEmpresa: '',
       regime: '',
@@ -5805,9 +5810,16 @@ async function saveLead() {
         nome: fields.empresa,
         telefone: fields.telefone,
         data_evento: fields.dataEvento || null,
+        hora_inicio: fields.horaInicio || null,
+        hora_final: fields.horaFinal || null,
         endereco_evento: fields.enderecoEvento || '',
         endereco_residencial: fields.enderecoResidencial || '',
+        bairro: fields.bairro || '',
+        cidade: fields.cidade || '',
+        estado: fields.estado || '',
+        cep: fields.cep || '',
         quantidade_horas: fields.quantidadeHoras || 0,
+        servicos_selecionados: (fields.tiposServico || []).join(', ') || null,
         temperatura: fields.thermal || 'frio',
         honorarios: fields.honorarios,
         observacoes: fields.observacoes || '',
@@ -5855,9 +5867,16 @@ async function saveLead() {
         nome: fields.empresa,
         telefone: fields.telefone,
         data_evento: fields.dataEvento || null,
+        hora_inicio: fields.horaInicio || null,
+        hora_final: fields.horaFinal || null,
         endereco_evento: fields.enderecoEvento || '',
         endereco_residencial: fields.enderecoResidencial || '',
+        bairro: fields.bairro || '',
+        cidade: fields.cidade || '',
+        estado: fields.estado || '',
+        cep: fields.cep || '',
         quantidade_horas: fields.quantidadeHoras || 0,
+        servicos_selecionados: (fields.tiposServico || []).join(', ') || null,
         temperatura: fields.thermal || 'frio',
         honorarios: fields.honorarios,
         observacoes: fields.observacoes || '',
@@ -9961,18 +9980,41 @@ function bindCalibragemReport() {
 }
 
 /* ============================================
-   CONVERSAS - CENTRAL DE MENSAGENS
+   CONVERSAS - CENTRAL DE ATENDIMENTO WHATSAPP
    ============================================ */
-let conversasState = {
+const conversasState = {
   chats: [],
+  allChats: [],
   selectedChatId: null,
   messages: [],
   members: [],
+  leads: [],
+  filter: 'all',
+  searchTerm: '',
   realtimeChannel: null
 };
 
+const _CONV_STATUS_LABELS = { open: 'Aberto', pending: 'Pendente', closed: 'Fechado' };
+const _CONV_THERMO_LABELS = { frio: 'Frio', morno: 'Morno', quente: 'Quente' };
+
+/* ---------- helpers ---------- */
+function _convHtmlEscape(s) { return escapeHtml(s || ''); }
+function _convTimeAgo(iso) {
+  if (!iso) return '';
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60000) return 'agora';
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'min';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h';
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+}
+function _convInitials(name, phone) {
+  const src = name || phone || '?';
+  return src.split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+}
+
+/* ---------- load chats ---------- */
 async function loadConversasChats() {
-  const list = $('#conversasList');
+  const list = $('#convChatList');
   if (!list) return;
 
   try {
@@ -9981,354 +10023,631 @@ async function loadConversasChats() {
 
     let query = _supabase
       .from('chats')
-      .select('id, contact_name, contact_phone, status, assigned_to, lead_id, last_message, last_message_at, created_at')
+      .select('id, contact_name, contact_phone, contact_email, contact_location, status, assigned_to, lead_id, last_message, last_message_at, created_at, temperature, priority, tags, notes')
       .order('last_message_at', { ascending: false, nullsFirst: false });
 
-    if (!canViewAll && userId) {
-      query = query.eq('assigned_to', userId);
-    }
+    if (!canViewAll && userId) query = query.eq('assigned_to', userId);
 
     const { data, error } = await query;
     if (error) throw error;
 
-    conversasState.chats = data || [];
-    renderConversasList();
+    conversasState.allChats = data || [];
+    _convApplyFilter();
+    _convUpdateStats();
+    _convUpdateSyncTime();
 
-    // Carregar membros para o select de atribuição
-    const { data: membrosData } = await _supabase
-      .from('membros')
-      .select('id, nome')
-      .eq('status', 'Ativo')
-      .order('nome');
+    const { data: membrosData } = await _supabase.from('membros').select('id, nome').eq('status', 'Ativo').order('nome');
     conversasState.members = membrosData || [];
+
+    const { data: leadsData } = await _supabase.from('leads').select('id, nome, telefone, email').order('nome').limit(200);
+    conversasState.leads = leadsData || [];
 
   } catch (err) {
     console.error('[Conversas] Erro ao carregar chats:', err);
-    list.innerHTML = '<div class="conversas-empty-state"><p>Erro ao carregar conversas</p></div>';
+    list.innerHTML = '<div class="conv-empty-state"><p>Erro ao carregar conversas</p></div>';
   }
 }
 
-function renderConversasList() {
-  const list = $('#conversasList');
+/* ---------- filter & render list ---------- */
+function _convApplyFilter() {
+  let list = [...conversasState.allChats];
+  const term = conversasState.searchTerm.toLowerCase();
+
+  if (term) {
+    list = list.filter(c =>
+      (c.contact_name || '').toLowerCase().includes(term) ||
+      (c.contact_phone || '').toLowerCase().includes(term)
+    );
+  }
+
+  const f = conversasState.filter;
+  if (f === 'unread') list = list.filter(c => (c.unread_count || 0) > 0);
+  else if (f === 'open') list = list.filter(c => c.status === 'open');
+  else if (f === 'pending') list = list.filter(c => c.status === 'pending');
+  else if (f === 'closed') list = list.filter(c => c.status === 'closed');
+  else if (f === 'mine') {
+    const uid = getCurrentUserId();
+    list = list.filter(c => c.assigned_to === uid);
+  } else if (f === 'hot') list = list.filter(c => c.temperature === 'quente');
+  else if (f === 'unidentified') list = list.filter(c => !c.contact_name || c.contact_name === c.contact_phone);
+
+  conversasState.chats = list;
+  _renderConvChatList();
+}
+
+function _renderConvChatList() {
+  const list = $('#convChatList');
   if (!list) return;
 
   const chats = conversasState.chats;
-
   if (!chats.length) {
-    list.innerHTML = `<div class="conversas-empty-state">
-      <i data-lucide="message-circle"></i>
-      <p>Nenhuma conversa encontrada</p>
-    </div>`;
-    initIcons();
+    list.innerHTML = '<div class="conv-empty-state"><p>Nenhuma conversa encontrada</p></div>';
     return;
   }
 
   list.innerHTML = chats.map(chat => {
-    const initials = (chat.contact_name || chat.contact_phone || '?')
-      .split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
-    const time = chat.last_message_at
-      ? new Date(chat.last_message_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-      : '';
-    const isActive = chat.id === conversasState.selectedChatId;
-    const statusColors = { open: '#22c55e', pending: '#f59e0b', closed: '#94a3b8' };
-    const dotColor = statusColors[chat.status] || '#94a3b8';
+    const active = chat.id === conversasState.selectedChatId ? ' active' : '';
+    const unread = (chat.unread_count || 0) > 0 ? ' unread' : '';
+    const initials = _convInitials(chat.contact_name, chat.contact_phone);
+    const time = _convTimeAgo(chat.last_message_at);
+    const thermo = chat.temperature || 'frio';
+    const thermoTag = thermo === 'quente' ? '<span class="conv-tag conv-tag--quente">Quente</span>' :
+                      thermo === 'morno' ? '<span class="conv-tag conv-tag--morno">Morno</span>' : '';
+    const prioTag = chat.priority ? '<span class="conv-tag conv-tag--priority">!</span>' : '';
+    const unreadBadge = (chat.unread_count || 0) > 0
+      ? `<span class="conv-card-unread-badge">${chat.unread_count}</span>` : '';
+    const dotHtml = `<span class="conv-card-unread-dot"></span>`;
 
     return `
-      <div class="conversas-chat-item${isActive ? ' active' : ''}" data-chat-id="${chat.id}">
-        <div class="conversas-chat-avatar">${initials}</div>
-        <div class="conversas-chat-info">
-          <div class="conversas-chat-name">${escapeHtml(chat.contact_name || chat.contact_phone)}</div>
-          <div class="conversas-chat-preview">${escapeHtml(chat.last_message || 'Sem mensagens')}</div>
-        </div>
-        <div class="conversas-chat-meta">
-          <span class="conversas-chat-time">${time}</span>
-          <span style="width:8px;height:8px;border-radius:50%;background:${dotColor};display:inline-block;"></span>
+      <div class="conv-chat-card${active}${unread}" data-chat-id="${chat.id}">
+        <div class="conv-card-avatar">${initials}${(chat.unread_count || 0) > 0 ? dotHtml : ''}</div>
+        <div class="conv-card-body">
+          <div class="conv-card-top">
+            <span class="conv-card-name">${_convHtmlEscape(chat.contact_name || chat.contact_phone || 'Desconhecido')}</span>
+            <span class="conv-card-time">${time}</span>
+          </div>
+          <div class="conv-card-bottom">
+            <span class="conv-card-preview">${_convHtmlEscape(chat.last_message || 'Sem mensagens')}</span>
+            <div class="conv-card-tags">${thermoTag}${prioTag}${unreadBadge}</div>
+          </div>
         </div>
       </div>`;
   }).join('');
 
-  initIcons();
-
-  list.querySelectorAll('.conversas-chat-item').forEach(item => {
-    item.addEventListener('click', () => selectConversasChat(item.dataset.chatId));
+  list.querySelectorAll('.conv-chat-card').forEach(el => {
+    el.addEventListener('click', () => _convSelectChat(el.dataset.chatId));
   });
 }
 
-async function selectConversasChat(chatId) {
-  conversasState.selectedChatId = chatId;
-  const chat = conversasState.chats.find(c => c.id === chatId);
-  if (!chat) return;
-
-  renderConversasList();
-
-  // Coluna 2: Detalhes
-  $('#conversasDetailEmpty').style.display = 'none';
-  $('#conversasDetailContent').style.display = 'block';
-
-  const initials = (chat.contact_name || chat.contact_phone || '?')
-    .split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
-
-  $('#detailAvatar').textContent = initials;
-  $('#detailName').textContent = chat.contact_name || 'Sem nome';
-  $('#detailPhone').textContent = chat.contact_phone ? `+${chat.contact_phone}` : '';
-  $('#detailStatus').value = chat.status || 'open';
-
-  // Select de responsável
-  const assigneeSelect = $('#detailAssignee');
-  assigneeSelect.innerHTML = '<option value="">Não atribuído</option>' +
-    conversasState.members.map(m =>
-      `<option value="${m.id}"${chat.assigned_to === m.id ? ' selected' : ''}>${m.nome}</option>`
-    ).join('');
-
-  // Lead vinculado
-  const linkedLead = $('#detailLinkedLead');
-  if (chat.lead_id) {
-    const { data: lead } = await _supabase.from('leads').select('nome').eq('id', chat.lead_id).single();
-    linkedLead.innerHTML = lead ? `<span style="color:var(--blue-600);font-weight:600;">${escapeHtml(lead.nome)}</span>` : '<span>Lead não encontrado</span>';
-  } else {
-    linkedLead.innerHTML = '<span>Nenhum lead vinculado</span>';
-  }
-
-  // Coluna 3: Mensagens
-  $('#conversasChatEmpty').style.display = 'none';
-  $('#conversasChatContent').style.display = 'flex';
-  $('#chatHeaderName').textContent = chat.contact_name || chat.contact_phone;
-  $('#chatHeaderStatus').textContent = chat.status === 'open' ? 'Online' : chat.status === 'pending' ? 'Pendente' : 'Fechado';
-
-  await loadConversasMessages(chatId);
+function _convUpdateStats() {
+  const all = conversasState.allChats;
+  const $ = id => document.getElementById(id);
+  const unread = el => el && (el.textContent = all.filter(c => (c.unread_count || 0) > 0).length);
+  const hot = el => el && (el.textContent = all.filter(c => c.temperature === 'quente').length);
+  const online = el => el && (el.textContent = all.filter(c => c.status === 'open').length);
+  unread($('#convStatUnread'));
+  hot($('#convStatHot'));
+  online($('#convStatOnline'));
+  const uid = getCurrentUserId();
+  const unassigned = all.filter(c => !c.assigned_to).length;
+  const el = $('#convUnidentifiedCount');
+  if (el) el.textContent = unassigned;
+}
+function _convUpdateSyncTime() {
+  const el = $('#convSyncTime');
+  if (el) el.textContent = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
-async function loadConversasMessages(chatId) {
-  const container = $('#conversasMessages');
+/* ---------- filter chips ---------- */
+function _renderConvFilterChips() {
+  const container = $('#convFilterChips');
   if (!container) return;
+  const chips = [
+    { key: 'all', label: 'Todas' },
+    { key: 'unread', label: 'Não lidas' },
+    { key: 'open', label: 'Abertas' },
+    { key: 'pending', label: 'Pendentes' },
+    { key: 'closed', label: 'Fechadas' },
+    { key: 'mine', label: 'Minhas' },
+    { key: 'hot', label: 'Quentes' }
+  ];
+  container.innerHTML = chips.map(c =>
+    `<button class="conv-chip${conversasState.filter === c.key ? ' active' : ''}" data-filter="${c.key}">${c.label}</button>`
+  ).join('');
+  container.querySelectorAll('.conv-chip').forEach(el => {
+    el.addEventListener('click', () => {
+      conversasState.filter = el.dataset.filter;
+      _convApplyFilter();
+      _renderConvFilterChips();
+    });
+  });
+}
 
+/* ---------- select chat ---------- */
+async function _convSelectChat(chatId) {
+  conversasState.selectedChatId = chatId;
+  _renderConvChatList();
+
+  const chat = conversasState.allChats.find(c => c.id === chatId);
+  if (!chat) return;
+
+  $('#convChatEmpty').style.display = 'none';
+  $('#convChatContent').style.display = 'flex';
+
+  _renderConvChatHeader(chat);
+  _renderConvSuggestion(chat);
+  await _convLoadMessages(chatId);
+  _renderConvCrmPanel(chat);
+
+  // Mark as read
+  if ((chat.unread_count || 0) > 0) {
+    await _supabase.from('chats').update({ unread_count: 0, updated_at: new Date().toISOString() }).eq('id', chatId);
+    chat.unread_count = 0;
+    _convUpdateStats();
+    _renderConvChatList();
+  }
+}
+
+function _renderConvChatHeader(chat) {
+  const header = $('#convChatHeader');
+  if (!header) return;
+  const statusLabel = _CONV_STATUS_LABELS[chat.status] || chat.status;
+  const statusClass = chat.status === 'open' ? 'conv-connection-dot--connected' : '';
+  header.innerHTML = `
+    <div class="conv-chat-header-avatar">${_convInitials(chat.contact_name, chat.contact_phone)}</div>
+    <div class="conv-chat-header-info">
+      <div class="conv-chat-header-name">${_convHtmlEscape(chat.contact_name || chat.contact_phone || 'Desconhecido')}</div>
+      <div class="conv-chat-header-meta">
+        <span class="conv-connection-dot ${statusClass}" style="width:6px;height:6px;display:inline-block;border-radius:50%;"></span>
+        <span>${statusLabel}</span>
+        <span>&middot;</span>
+        <span>${chat.contact_phone ? '+' + chat.contact_phone : 'Sem telefone'}</span>
+      </div>
+    </div>
+    <div class="conv-chat-header-actions">
+      <button title="Telefone" onclick="window.open('https://wa.me/${chat.contact_phone || ''}','_blank')"><i data-lucide="phone"></i></button>
+      <button title="Arquivar" onclick="convArchiveChat('${chat.id}')"><i data-lucide="archive"></i></button>
+      <button title="Mais opções"><i data-lucide="more-vertical"></i></button>
+    </div>`;
+  initIcons();
+}
+
+/* ---------- suggestion ---------- */
+function _convRenderSuggestion(chat) {
+  const el = $('#convSuggestion');
+  if (!el) return;
+  const thermo = chat.temperature || 'frio';
+  if (thermo !== 'quente') { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div class="conv-suggestion-label">Sugestao Inteligente</div>
+    <div class="conv-suggestion-text">Este contato esta com temperatura <strong>Quente</strong>. Recomenda-se responder em ate 5 minutos para maximizar a conversao.</div>
+    <div class="conv-suggestion-actions">
+      <button onclick="convSendMessageSuggestion('Ola! Obrigado pelo contato. Como posso ajudar?')">Saudacao</button>
+      <button onclick="convSendMessageSuggestion('Tenho uma proposta especial para voce!')">Proposta</button>
+      <button class="primary" onclick="convSendMessageSuggestion('Vou te enviar as informacoes agora mesmo.')">Enviar</button>
+    </div>`;
+}
+
+/* ---------- messages ---------- */
+async function _convLoadMessages(chatId) {
+  const container = $('#convMessages');
+  if (!container) return;
   try {
     const { data, error } = await _supabase
       .from('messages')
-      .select('id, chat_id, content, sender_type, sender_name, created_at')
+      .select('id, chat_id, content, sender_type, sender_name, created_at, status')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true });
-
     if (error) throw error;
-
     conversasState.messages = data || [];
-    renderConversasMessages();
-
+    _renderConvMessages();
   } catch (err) {
     console.error('[Conversas] Erro ao carregar mensagens:', err);
-    container.innerHTML = '<div class="conversas-empty-state"><p>Erro ao carregar mensagens</p></div>';
+    container.innerHTML = '<div class="conv-empty-state"><p>Erro ao carregar mensagens</p></div>';
   }
 }
 
-function renderConversasMessages() {
-  const container = $('#conversasMessages');
+function _renderConvMessages() {
+  const container = $('#convMessages');
   if (!container) return;
-
   const msgs = conversasState.messages;
 
   if (!msgs.length) {
-    container.innerHTML = `<div class="conversas-empty-state">
-      <i data-lucide="message-square"></i>
-      <p>Nenhuma mensagem ainda</p>
-    </div>`;
-    initIcons();
+    container.innerHTML = '<div class="conv-empty-state"><p>Nenhuma mensagem ainda</p></div>';
     return;
   }
 
-  container.innerHTML = msgs.map(msg => {
+  let html = '';
+  let lastDate = '';
+  msgs.forEach(msg => {
+    const d = new Date(msg.created_at).toLocaleDateString('pt-BR');
+    if (d !== lastDate) {
+      html += `<div class="conv-date-separator"><span>${d}</span></div>`;
+      lastDate = d;
+    }
     const type = msg.sender_type === 'agent' ? 'agent' : 'lead';
     const time = new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    return `
-      <div class="conversas-msg ${type}">
-        <div>${escapeHtml(msg.content)}</div>
-        <div class="conversas-msg-time">${time}</div>
+    const statusIcon = msg.status === 'read' ? '<span class="conv-msg-status read">&#10003;&#10003;</span>' :
+                       msg.status === 'delivered' ? '<span class="conv-msg-status">&#10003;&#10003;</span>' :
+                       '<span class="conv-msg-status">&#10003;</span>';
+    html += `
+      <div class="conv-msg ${type}">
+        <div class="conv-msg-content">${_convHtmlEscape(msg.content)}</div>
+        <div class="conv-msg-meta">
+          <span class="conv-msg-time">${time}</span>
+          ${type === 'agent' ? statusIcon : ''}
+        </div>
       </div>`;
-  }).join('');
-
+  });
+  container.innerHTML = html;
   container.scrollTop = container.scrollHeight;
   initIcons();
 }
 
-async function sendConversasMessage() {
-  const input = $('#conversasMessageInput');
+/* ---------- send message ---------- */
+async function _convSendMessage() {
+  const input = $('#convMessageInput');
   if (!input) return;
-
   const content = input.value.trim();
   if (!content || !conversasState.selectedChatId) return;
-
   input.value = '';
+  input.style.height = 'auto';
 
   try {
-    const { error } = await _supabase
-      .from('messages')
-      .insert([{
-        chat_id: conversasState.selectedChatId,
-        sender_type: 'agent',
-        sender_name: currentUser?.nome || 'Atendente',
-        content: content,
-        status: 'sent'
-      }]);
-
+    const { error } = await _supabase.from('messages').insert([{
+      chat_id: conversasState.selectedChatId,
+      sender_type: 'agent',
+      sender_name: currentUser?.nome || 'Atendente',
+      content: content,
+      status: 'sent'
+    }]);
     if (error) throw error;
 
-    // Atualizar last_message no chat
-    await _supabase
-      .from('chats')
-      .update({
-        last_message: content,
-        last_message_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', conversasState.selectedChatId);
+    await _supabase.from('chats').update({
+      last_message: content,
+      last_message_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }).eq('id', conversasState.selectedChatId);
+
+    const chat = conversasState.allChats.find(c => c.id === conversasState.selectedChatId);
+    if (chat) { chat.last_message = content; chat.last_message_at = new Date().toISOString(); }
+
+    await _convLoadMessages(conversasState.selectedChatId);
 
   } catch (err) {
     console.error('[Conversas] Erro ao enviar mensagem:', err);
     toast('Erro ao enviar mensagem');
   }
 }
+function convSendMessageSuggestion(text) {
+  const input = $('#convMessageInput');
+  if (input) { input.value = text; input.focus(); }
+}
 
-function subscribeConversasRealtime() {
-  if (conversasState.realtimeChannel) {
-    _supabase.removeChannel(conversasState.realtimeChannel);
+/* ---------- CRM panel ---------- */
+function _renderConvCrmPanel(chat) {
+  const panel = $('#convCrmContent');
+  if (!panel) return;
+  const lead = conversasState.leads.find(l => l.id === chat.lead_id);
+  const assignee = conversasState.members.find(m => m.id === chat.assigned_to);
+  const thermo = chat.temperature || 'frio';
+  const tags = chat.tags || [];
+  const notes = chat.notes || [];
+
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <div class="conv-crm-section">
+      <div class="conv-crm-section-header" onclick="this.parentElement.classList.toggle('collapsed')">
+        <h4><i data-lucide="user"></i> Perfil do Contato</h4>
+        <i data-lucide="chevron-down" class="chevron"></i>
+      </div>
+      <div class="conv-crm-section-body">
+        <div class="conv-profile-avatar">${_convInitials(chat.contact_name, chat.contact_phone)}</div>
+        <div class="conv-profile-name">${_convHtmlEscape(chat.contact_name || 'Sem nome')}</div>
+        <div class="conv-profile-phone">${chat.contact_phone ? '+' + chat.contact_phone : ''}</div>
+        ${chat.contact_email ? `<div class="conv-profile-field"><span class="label">Email</span><span class="value">${_convHtmlEscape(chat.contact_email)}</span></div>` : ''}
+        ${chat.contact_location ? `<div class="conv-profile-field"><span class="label">Local</span><span class="value">${_convHtmlEscape(chat.contact_location)}</span></div>` : ''}
+        <div class="conv-profile-field"><span class="label">Status</span><span class="value">${_CONV_STATUS_LABELS[chat.status] || chat.status}</span></div>
+        <div class="conv-profile-field"><span class="label">Responsavel</span><span class="value">${assignee ? _convHtmlEscape(assignee.nome) : 'Nao atribuido'}</span></div>
+        ${lead ? `<a class="conv-btn-link" href="#" onclick="navigateTo('crm');return false;">Ver lead: ${_convHtmlEscape(lead.nome)}</a>` : ''}
+      </div>
+    </div>
+
+    <div class="conv-crm-section">
+      <div class="conv-crm-section-header" onclick="this.parentElement.classList.toggle('collapsed')">
+        <h4><i data-lucide="thermometer"></i> Termometro</h4>
+        <i data-lucide="chevron-down" class="chevron"></i>
+      </div>
+      <div class="conv-crm-section-body">
+        <div class="conv-thermo">
+          <button class="conv-thermo-btn frio${thermo === 'frio' ? ' active' : ''}" onclick="convSetTemperature('${chat.id}','frio')">Frio</button>
+          <button class="conv-thermo-btn morno${thermo === 'morno' ? ' active' : ''}" onclick="convSetTemperature('${chat.id}','morno')">Morno</button>
+          <button class="conv-thermo-btn quente${thermo === 'quente' ? ' active' : ''}" onclick="convSetTemperature('${chat.id}','quente')">Quente</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="conv-crm-section">
+      <div class="conv-crm-section-header" onclick="this.parentElement.classList.toggle('collapsed')">
+        <h4><i data-lucide="settings"></i> Gestao</h4>
+        <i data-lucide="chevron-down" class="chevron"></i>
+      </div>
+      <div class="conv-crm-section-body">
+        <div class="conv-crm-field">
+          <label>Status</label>
+          <select onchange="convSetStatus('${chat.id}', this.value)">
+            <option value="open"${chat.status === 'open' ? ' selected' : ''}>Aberto</option>
+            <option value="pending"${chat.status === 'pending' ? ' selected' : ''}>Pendente</option>
+            <option value="closed"${chat.status === 'closed' ? ' selected' : ''}>Fechado</option>
+          </select>
+        </div>
+        <div class="conv-crm-field">
+          <label>Responsavel</label>
+          <select onchange="convSetAssignee('${chat.id}', this.value)">
+            <option value="">Nao atribuido</option>
+            ${conversasState.members.map(m => `<option value="${m.id}"${chat.assigned_to === m.id ? ' selected' : ''}>${_convHtmlEscape(m.nome)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="conv-priority-toggle">
+          <input type="checkbox" id="convPriority" ${chat.priority ? 'checked' : ''} onchange="convSetPriority('${chat.id}', this.checked)">
+          <label for="convPriority">Prioridade alta</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="conv-crm-section">
+      <div class="conv-crm-section-header" onclick="this.parentElement.classList.toggle('collapsed')">
+        <h4><i data-lucide="file-text"></i> Observacoes</h4>
+        <i data-lucide="chevron-down" class="chevron"></i>
+      </div>
+      <div class="conv-crm-section-body">
+        <textarea class="form-control" rows="3" placeholder="Adicionar observacao..." id="convNotesInput" style="font-size:12px;"></textarea>
+        <button class="btn btn-primary btn-sm" style="margin-top:8px;width:100%;" onclick="convAddNote('${chat.id}')">Salvar observacao</button>
+        <div id="convNotesList" style="margin-top:10px;">
+          ${(Array.isArray(notes) ? notes : []).slice(-5).reverse().map(n => `
+            <div class="conv-note-item">
+              <div class="conv-note-header"><span class="conv-note-author">${_convHtmlEscape(n.author || 'Sistema')}</span><span class="conv-note-time">${_convTimeAgo(n.time)}</span></div>
+              <div class="conv-note-text">${_convHtmlEscape(n.text)}</div>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+  initIcons();
+}
+
+/* ---------- CRM actions ---------- */
+async function convSetTemperature(chatId, temp) {
+  await _supabase.from('chats').update({ temperature: temp, updated_at: new Date().toISOString() }).eq('id', chatId);
+  const chat = conversasState.allChats.find(c => c.id === chatId);
+  if (chat) chat.temperature = temp;
+  if (conversasState.selectedChatId === chatId) _renderConvCrmPanel(chat);
+  _convUpdateStats();
+}
+async function convSetStatus(chatId, status) {
+  await _supabase.from('chats').update({ status, updated_at: new Date().toISOString() }).eq('id', chatId);
+  const chat = conversasState.allChats.find(c => c.id === chatId);
+  if (chat) chat.status = status;
+  if (conversasState.selectedChatId === chatId) { _renderConvChatHeader(chat); _renderConvCrmPanel(chat); }
+  _convUpdateStats();
+  _convApplyFilter();
+}
+async function convSetAssignee(chatId, userId) {
+  await _supabase.from('chats').update({ assigned_to: userId || null, updated_at: new Date().toISOString() }).eq('id', chatId);
+  const chat = conversasState.allChats.find(c => c.id === chatId);
+  if (chat) chat.assigned_to = userId || null;
+  if (conversasState.selectedChatId === chatId) _renderConvCrmPanel(chat);
+}
+async function convSetPriority(chatId, on) {
+  await _supabase.from('chats').update({ priority: on, updated_at: new Date().toISOString() }).eq('id', chatId);
+  const chat = conversasState.allChats.find(c => c.id === chatId);
+  if (chat) chat.priority = on;
+  _convApplyFilter();
+}
+async function convAddNote(chatId) {
+  const input = $('#convNotesInput');
+  if (!input || !input.value.trim()) return;
+  const chat = conversasState.allChats.find(c => c.id === chatId);
+  const notes = Array.isArray(chat?.notes) ? [...chat.notes] : [];
+  notes.push({ text: input.value.trim(), author: currentUser?.nome || 'Atendente', time: new Date().toISOString() });
+  await _supabase.from('chats').update({ notes, updated_at: new Date().toISOString() }).eq('id', chatId);
+  if (chat) chat.notes = notes;
+  input.value = '';
+  _renderConvCrmPanel(chat);
+  toast('Observacao salva');
+}
+async function convArchiveChat(chatId) {
+  if (!confirm('Arquivar esta conversa?')) return;
+  await _supabase.from('chats').update({ status: 'closed', updated_at: new Date().toISOString() }).eq('id', chatId);
+  const chat = conversasState.allChats.find(c => c.id === chatId);
+  if (chat) chat.status = 'closed';
+  _convUpdateStats();
+  _convApplyFilter();
+  toast('Conversa arquivada');
+}
+
+/* ---------- new conversation modal ---------- */
+function _convOpenNewModal() {
+  const overlay = $('#convNewOverlay');
+  const modal = $('#convNewModal');
+  if (overlay) overlay.style.display = 'flex';
+  if (modal) modal.style.display = 'flex';
+  initIcons();
+}
+function _convCloseNewModal() {
+  const overlay = $('#convNewOverlay');
+  const modal = $('#convNewModal');
+  if (overlay) overlay.style.display = 'none';
+  if (modal) modal.style.display = 'none';
+  ['convNewPhone', 'convNewName', 'convNewLeadSearch', 'convNewMessage'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const leadIdEl = document.getElementById('convNewLeadId');
+  if (leadIdEl) leadIdEl.value = '';
+  const results = $('#convNewLeadResults');
+  if (results) results.innerHTML = '';
+}
+async function _convCreateChat() {
+  const phone = ($('#convNewPhone')?.value || '').replace(/\D/g, '');
+  const name = $('#convNewName')?.value || '';
+  const leadId = $('#convNewLeadId')?.value || null;
+  const assignee = $('#convNewAssignee')?.value || null;
+  const message = $('#convNewMessage')?.value || '';
+
+  if (!phone) { toast('Informe o telefone'); return; }
+
+  try {
+    const insertData = {
+      contact_phone: phone,
+      contact_name: name || null,
+      lead_id: leadId || null,
+      assigned_to: assignee || getCurrentUserId(),
+      status: 'open',
+      temperature: 'frio',
+      last_message: message || null,
+      last_message_at: message ? new Date().toISOString() : null
+    };
+
+    const { data, error } = await _supabase.from('chats').insert([insertData]).select().single();
+    if (error) throw error;
+
+    if (message) {
+      await _supabase.from('messages').insert([{
+        chat_id: data.id,
+        sender_type: 'agent',
+        sender_name: currentUser?.nome || 'Atendente',
+        content: message,
+        status: 'sent'
+      }]);
+    }
+
+    toast('Conversa criada');
+    _convCloseNewModal();
+    await loadConversasChats();
+    _convSelectChat(data.id);
+
+  } catch (err) {
+    console.error('[Conversas] Erro ao criar conversa:', err);
+    toast('Erro ao criar conversa');
   }
+}
+function _convLeadSearch() {
+  const term = ($('#convNewLeadSearch')?.value || '').toLowerCase();
+  const results = $('#convNewLeadResults');
+  if (!results) return;
+  if (!term) { results.innerHTML = ''; return; }
+
+  const matches = conversasState.leads.filter(l =>
+    (l.nome || '').toLowerCase().includes(term) ||
+    (l.telefone || '').toLowerCase().includes(term)
+  ).slice(0, 5);
+
+  results.innerHTML = matches.map(l => `
+    <div class="conv-new-lead-item" data-lead-id="${l.id}" data-lead-name="${_convHtmlEscape(l.nome)}" data-lead-phone="${l.telefone || ''}">
+      <i data-lucide="user" style="width:14px;height:14px;"></i>
+      ${_convHtmlEscape(l.nome)}${l.telefone ? ' &middot; ' + l.telefone : ''}
+    </div>`).join('');
+
+  results.querySelectorAll('.conv-new-lead-item').forEach(el => {
+    el.addEventListener('click', () => {
+      document.getElementById('convNewLeadId').value = el.dataset.leadId;
+      document.getElementById('convNewName').value = el.dataset.leadName;
+      if (el.dataset.leadPhone) document.getElementById('convNewPhone').value = el.dataset.leadPhone;
+      results.innerHTML = '';
+    });
+  });
+  initIcons();
+}
+
+/* ---------- realtime ---------- */
+function _convSubscribeRealtime() {
+  if (conversasState.realtimeChannel) _supabase.removeChannel(conversasState.realtimeChannel);
 
   conversasState.realtimeChannel = _supabase
     .channel('conversas-realtime')
-    .on('postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'messages' },
-      (payload) => {
-        console.log('[Conversas] Nova mensagem recebida:', payload);
-        const newMsg = payload.new;
-
-        // Se é do chat selecionado, adicionar à lista
-        if (newMsg.chat_id === conversasState.selectedChatId) {
-          conversasState.messages.push(newMsg);
-          renderConversasMessages();
-        }
-
-        // Atualizar last_message na lista de chats
-        const chatItem = conversasState.chats.find(c => c.id === newMsg.chat_id);
-        if (chatItem) {
-          chatItem.last_message = newMsg.content;
-          chatItem.last_message_at = newMsg.created_at;
-          renderConversasList();
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+      const newMsg = payload.new;
+      if (newMsg.chat_id === conversasState.selectedChatId) {
+        conversasState.messages.push(newMsg);
+        _renderConvMessages();
+      }
+      const chat = conversasState.allChats.find(c => c.id === newMsg.chat_id);
+      if (chat) {
+        chat.last_message = newMsg.content;
+        chat.last_message_at = newMsg.created_at;
+        if (newMsg.chat_id !== conversasState.selectedChatId) chat.unread_count = (chat.unread_count || 0) + 1;
+        _convApplyFilter();
+        _convUpdateStats();
+      }
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chats' }, payload => {
+      const updated = payload.new;
+      const idx = conversasState.allChats.findIndex(c => c.id === updated.id);
+      if (idx >= 0) {
+        conversasState.allChats[idx] = { ...conversasState.allChats[idx], ...updated };
+        _convApplyFilter();
+        if (updated.id === conversasState.selectedChatId) {
+          _renderConvChatHeader(conversasState.allChats[idx]);
+          _renderConvCrmPanel(conversasState.allChats[idx]);
         }
       }
-    )
-    .on('postgres_changes',
-      { event: 'UPDATE', schema: 'public', table: 'chats' },
-      (payload) => {
-        console.log('[Conversas] Chat atualizado:', payload);
-        const updatedChat = payload.new;
-        const idx = conversasState.chats.findIndex(c => c.id === updatedChat.id);
-        if (idx >= 0) {
-          conversasState.chats[idx] = { ...conversasState.chats[idx], ...updatedChat };
-          renderConversasList();
-        }
-      }
-    )
+    })
     .subscribe();
 }
 
+/* ---------- auto-resize textarea ---------- */
+function _convAutoResize(textarea) {
+  textarea.style.height = 'auto';
+  textarea.style.height = Math.min(textarea.scrollHeight, 100) + 'px';
+}
+
+/* ---------- init ---------- */
 function initConversas() {
-  const searchInput = $('#conversasSearchInput');
-  const sendBtn = $('#conversasSendBtn');
-  const msgInput = $('#conversasMessageInput');
-  const statusSelect = $('#detailStatus');
-  const assigneeSelect = $('#detailAssignee');
+  const searchInput = $('#convSearchInput');
+  const sendBtn = $('#convSendBtn');
+  const msgInput = $('#convMessageInput');
+  const newBtn = $('#btnConvNew');
+  const newCloseBtn = $('#btnConvNewClose');
+  const newOverlay = $('#convNewOverlay');
+  const newSubmitBtn = document.querySelector('#convNewModal .modal-actions .btn-primary');
+  const leadSearch = $('#convNewLeadSearch');
+  const refreshBtn = $('#btnConvRefresh');
+  const unidentifiedBtn = $('#convUnidentifiedBtn');
 
   if (searchInput) {
-    let conversasDebounce;
-    const filterConversas = (term) => {
-      const q = term.toLowerCase();
-      const filtered = conversasState.chats.filter(c =>
-        (c.contact_name || '').toLowerCase().includes(q) ||
-        (c.contact_phone || '').toLowerCase().includes(q)
-      );
-      const list = $('#conversasList');
-      if (!list) return;
-
-      if (!filtered.length) {
-        list.innerHTML = '<div class="conversas-empty-state"><p>Nenhuma conversa encontrada</p></div>';
-        return;
-      }
-
-      const chats = filtered;
-      list.innerHTML = chats.map(chat => {
-        const initials = (chat.contact_name || chat.contact_phone || '?')
-          .split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
-        const time = chat.last_message_at
-          ? new Date(chat.last_message_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-          : '';
-        const isActive = chat.id === conversasState.selectedChatId;
-        const statusColors = { open: '#22c55e', pending: '#f59e0b', closed: '#94a3b8' };
-        const dotColor = statusColors[chat.status] || '#94a3b8';
-
-        return `
-          <div class="conversas-chat-item${isActive ? ' active' : ''}" data-chat-id="${chat.id}">
-            <div class="conversas-chat-avatar">${initials}</div>
-            <div class="conversas-chat-info">
-              <div class="conversas-chat-name">${escapeHtml(chat.contact_name || chat.contact_phone)}</div>
-              <div class="conversas-chat-preview">${escapeHtml(chat.last_message || 'Sem mensagens')}</div>
-            </div>
-            <div class="conversas-chat-meta">
-              <span class="conversas-chat-time">${time}</span>
-              <span style="width:8px;height:8px;border-radius:50%;background:${dotColor};display:inline-block;"></span>
-            </div>
-          </div>`;
-      }).join('');
-
-      list.querySelectorAll('.conversas-chat-item').forEach(item => {
-        item.addEventListener('click', () => selectConversasChat(item.dataset.chatId));
-      });
-    };
-
-    searchInput.addEventListener('input', (e) => {
-      clearTimeout(conversasDebounce);
-      conversasDebounce = setTimeout(() => filterConversas(e.target.value), 150);
-    });
-    searchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        clearTimeout(conversasDebounce);
-        filterConversas(searchInput.value);
-      }
+    let debounce;
+    searchInput.addEventListener('input', e => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => { conversasState.searchTerm = e.target.value; _convApplyFilter(); }, 150);
     });
   }
 
-  if (sendBtn) sendBtn.addEventListener('click', sendConversasMessage);
-
+  if (sendBtn) sendBtn.addEventListener('click', _convSendMessage);
   if (msgInput) {
-    msgInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendConversasMessage();
-      }
+    msgInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); _convSendMessage(); }
+    });
+    msgInput.addEventListener('input', () => _convAutoResize(msgInput));
+  }
+
+  if (newBtn) newBtn.addEventListener('click', _convOpenNewModal);
+  if (newCloseBtn) newCloseBtn.addEventListener('click', _convCloseNewModal);
+  if (newOverlay) newOverlay.addEventListener('click', _convCloseNewModal);
+  if (newSubmitBtn) newSubmitBtn.addEventListener('click', _convCreateChat);
+  if (leadSearch) leadSearch.addEventListener('input', _convLeadSearch);
+  if (refreshBtn) refreshBtn.addEventListener('click', loadConversasChats);
+  if (unidentifiedBtn) {
+    unidentifiedBtn.addEventListener('click', () => {
+      conversasState.filter = 'unidentified';
+      _convApplyFilter();
+      _renderConvFilterChips();
     });
   }
 
-  if (statusSelect) {
-    statusSelect.addEventListener('change', async (e) => {
-      if (!conversasState.selectedChatId) return;
-      await _supabase
-        .from('chats')
-        .update({ status: e.target.value, updated_at: new Date().toISOString() })
-        .eq('id', conversasState.selectedChatId);
-    });
-  }
-
-  if (assigneeSelect) {
-    assigneeSelect.addEventListener('change', async (e) => {
-      if (!conversasState.selectedChatId) return;
-      await _supabase
-        .from('chats')
-        .update({ assigned_to: e.target.value || null, updated_at: new Date().toISOString() })
-        .eq('id', conversasState.selectedChatId);
-    });
-  }
-
-  // Carregar dados e inscrever em realtime
+  _renderConvFilterChips();
   loadConversasChats();
-  subscribeConversasRealtime();
+  _convSubscribeRealtime();
 }
 
 /* ============================================
@@ -11002,9 +11321,12 @@ async function loadContratoLeads() {
 /* ---- Load contratos from Supabase ----- */
 async function loadContratos(filters = {}) {
   if (!_supabase) return [];
-  let q = _supabase.from('contratos').select('*').order('created_at', { ascending: false });
+  let q = _supabase.from('contratos').select('*')
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false });
 
   if (filters.status) q = q.eq('status', filters.status);
+  if (filters.centroCustoId) q = q.eq('centro_custo_id', filters.centroCustoId);
   if (filters.mesEvento) {
     const [y, m] = filters.mesEvento.split('-');
     const inicio = `${y}-${m}-01`;
@@ -11106,10 +11428,17 @@ function fillContratoFromLead(lead) {
   set('contratoEnderecoEvento', lead.endereco_evento || '');
   set('contratoQtdHoras', lead.quantidade_horas || '');
   if (lead.data_evento) set('contratoDataEvento', lead.data_evento);
+  if (lead.hora_inicio) set('contratoHoraInicio', lead.hora_inicio.substring(0, 5));
+  if (lead.hora_final) set('contratoHoraFim', lead.hora_final.substring(0, 5));
   if (lead.honorarios) set('contratoValorTotal', parseFloat(lead.honorarios) || '');
 
-  const nomesServicos = resolveServicoNamesFromLead(lead);
-  set('contratoServicosDesc', nomesServicos.length ? nomesServicos.join(', ') : '');
+  const servicos = lead.servicos_selecionados || '';
+  if (servicos) {
+    set('contratoServicosDesc', servicos);
+  } else {
+    const nomesServicos = resolveServicoNamesFromLead(lead);
+    set('contratoServicosDesc', nomesServicos.length ? nomesServicos.join(', ') : '');
+  }
 }
 
 /* ---- Build the PDF HTML content (4-page A4 layout) ----- */
@@ -11631,6 +11960,9 @@ async function openNovoContratoModal() {
   // Reset lead searchable
   _resetLeadSearchable();
 
+  // Reset upload UI
+  _resetContratoUploadUI();
+
   // Populate lead list
   _contratosLeadsList = await loadContratoLeads();
   _renderLeadSearchOptions();
@@ -11690,6 +12022,12 @@ async function contratoEdit(id) {
   if (parcelas[1]) { set('contratoValorP2', parcelas[1].valor); set('contratoVencimentoP2', parcelas[1].vencimento); }
 
   _openContratoModal();
+
+  // Show signed PDF state if already uploaded
+  _resetContratoUploadUI();
+  if (data.assinado_storage_path) {
+    _showContratoUploadDone(data.assinado_storage_path);
+  }
 }
 
 /* ---- Internal helpers to open/close modals ----- */
@@ -12447,7 +12785,10 @@ async function _confirmContratoDelete() {
   const numero = contrato?.numero_contrato || '';
   _closeContratoDeleteModal();
   try {
-    const { error } = await _supabase.from('contratos').delete().eq('id', id);
+    const { error } = await _supabase.from('contratos').update({
+      deleted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }).eq('id', id);
     if (error) throw error;
     _contratosData = _contratosData.filter(c => c.id !== id);
     renderContratosTable(_contratosData);
@@ -12473,7 +12814,8 @@ async function refreshContratosTable() {
   const busca = document.getElementById('filterContratoBusca')?.value || '';
   const status = document.getElementById('filterContratoStatus')?.value || '';
   const mesEvento = document.getElementById('filterContratoMesEvento')?.value || '';
-  _contratosData = await loadContratos({ busca, status, mesEvento });
+  const centroCustoId = document.getElementById('filterContratoEmpresa')?.value || '';
+  _contratosData = await loadContratos({ busca, status, mesEvento, centroCustoId });
   renderContratosTable(_contratosData);
 }
 
@@ -12542,9 +12884,131 @@ function _updateContratosClearBtn() {
   const busca = document.getElementById('filterContratoBusca')?.value || '';
   const status = document.getElementById('filterContratoStatus')?.value || '';
   const mes = document.getElementById('filterContratoMesEvento')?.value || '';
-  const hasFilter = !!(busca || status || mes);
+  const empresa = document.getElementById('filterContratoEmpresa')?.value || '';
+  const hasFilter = !!(busca || status || mes || empresa);
   const btn = document.getElementById('btnClearContratos');
   if (btn) btn.style.display = hasFilter ? '' : 'none';
+}
+
+/* ---- Populate empresa filter for contratos ----- */
+function populateContratoEmpresaFilter() {
+  const select = document.getElementById('filterContratoEmpresa');
+  if (!select) return;
+  const isAdmin = isCurrentUserAdmin();
+  const empresas = isAdmin
+    ? centrosCustoData
+    : centrosCustoData.filter(cc => currentUser.centro_custo_ids?.includes(cc.id));
+  select.innerHTML = '<option value="">Todas as Empresas</option>';
+  empresas.forEach(cc => {
+    const opt = document.createElement('option');
+    opt.value = cc.id;
+    opt.textContent = cc.nome;
+    select.appendChild(opt);
+  });
+  if (!isAdmin && empresas.length === 1) {
+    select.value = empresas[0].id;
+  }
+}
+
+/* ---- Contrato Assinado Upload ---- */
+let _contratoAssinadoFile = null;
+
+function _resetContratoUploadUI() {
+  _contratoAssinadoFile = null;
+  const input = document.getElementById('contratoAssinadoInput');
+  if (input) input.value = '';
+  const filename = document.getElementById('contratoUploadFilename');
+  if (filename) filename.textContent = '';
+  const actions = document.getElementById('contratoUploadActions');
+  if (actions) actions.style.display = 'none';
+  const progress = document.getElementById('contratoUploadProgress');
+  if (progress) progress.style.display = 'none';
+  const done = document.getElementById('contratoUploadDone');
+  if (done) done.style.display = 'none';
+  const info = document.getElementById('contratoUploadInfo');
+  if (info) info.style.display = '';
+  const fileRow = document.getElementById('contratoUploadFile');
+  if (fileRow) fileRow.style.display = '';
+}
+
+function _showContratoUploadDone(storagePath) {
+  const info = document.getElementById('contratoUploadInfo');
+  const fileRow = document.getElementById('contratoUploadFile');
+  const actions = document.getElementById('contratoUploadActions');
+  const progress = document.getElementById('contratoUploadProgress');
+  const done = document.getElementById('contratoUploadDone');
+  if (info) info.style.display = 'none';
+  if (fileRow) fileRow.style.display = 'none';
+  if (actions) actions.style.display = 'none';
+  if (progress) progress.style.display = 'none';
+  if (done) done.style.display = 'flex';
+  const viewLink = document.getElementById('contratoUploadViewLink');
+  if (viewLink) {
+    viewLink.onclick = async (e) => {
+      e.preventDefault();
+      if (!storagePath || !_supabase) return;
+      const { data, error } = await _supabase.storage.from('contratos').createSignedUrl(storagePath, 600);
+      if (error || !data?.signedUrl) { toast('Erro ao gerar link do PDF.', 'error'); return; }
+      window.open(data.signedUrl, '_blank');
+    };
+  }
+}
+
+async function _contratoUploadAssinado() {
+  if (!_contratoAssinadoFile || !_supabase) return;
+  const contratoId = document.getElementById('contratoId')?.value;
+  if (!contratoId) { toast('Salve o contrato antes de anexar o PDF assinado.', 'error'); return; }
+
+  const progress = document.getElementById('contratoUploadProgress');
+  const progressFill = document.getElementById('contratoUploadProgressFill');
+  const progressText = document.getElementById('contratoUploadProgressText');
+  const actions = document.getElementById('contratoUploadActions');
+  if (progress) progress.style.display = 'flex';
+  if (actions) actions.style.display = 'none';
+  if (progressFill) progressFill.style.width = '30%';
+  if (progressText) progressText.textContent = 'Enviando...';
+
+  const ext = _contratoAssinadoFile.name.split('.').pop() || 'pdf';
+  const storagePath = `assinados/${contratoId}_${Date.now()}.${ext}`;
+
+  const { error: uploadErr } = await _supabase.storage
+    .from('contratos')
+    .upload(storagePath, _contratoAssinadoFile, { contentType: 'application/pdf', upsert: true });
+
+  if (uploadErr) {
+    console.error('[Contratos] Erro ao enviar PDF assinado:', uploadErr);
+    toast('Erro ao enviar PDF: ' + uploadErr.message, 'error');
+    if (progress) progress.style.display = 'none';
+    if (actions) actions.style.display = 'flex';
+    return;
+  }
+
+  if (progressFill) progressFill.style.width = '70%';
+  if (progressText) progressText.textContent = 'Registrando...';
+
+  const { error: dbErr } = await _supabase.from('contratos').update({
+    assinado_storage_path: storagePath,
+    status: 'assinado',
+    assinado_em: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }).eq('id', contratoId);
+
+  if (dbErr) {
+    console.error('[Contratos] Erro ao atualizar contrato:', dbErr);
+    toast('Erro ao registrar PDF: ' + dbErr.message, 'error');
+    if (progress) progress.style.display = 'none';
+    if (actions) actions.style.display = 'flex';
+    return;
+  }
+
+  if (progressFill) progressFill.style.width = '100%';
+  if (progressText) progressText.textContent = 'Concluído!';
+
+  setTimeout(() => {
+    _showContratoUploadDone(storagePath);
+    toast('Contrato assinado anexado e status atualizado para Assinado!', 'success');
+    refreshContratosTable();
+  }, 400);
 }
 
 async function initContratos() {
@@ -12554,6 +13018,8 @@ async function initContratos() {
   _contratosData = await loadContratos();
   renderContratosTable(_contratosData);
 
+  populateContratoEmpresaFilter();
+
   document.getElementById('btnNovoContrato')?.addEventListener('click', openNovoContratoModal);
   document.getElementById('btnFilterContratos')?.addEventListener('click', async () => { await refreshContratosTable(); _updateContratosClearBtn(); });
   document.getElementById('filterContratoBusca')?.addEventListener('keypress', e => { if (e.key === 'Enter') { refreshContratosTable().then(() => _updateContratosClearBtn()); } });
@@ -12562,9 +13028,11 @@ async function initContratos() {
     const busca = document.getElementById('filterContratoBusca');
     const status = document.getElementById('filterContratoStatus');
     const mes = document.getElementById('filterContratoMesEvento');
+    const empresa = document.getElementById('filterContratoEmpresa');
     if (busca) busca.value = '';
     if (status) status.value = '';
     if (mes) mes.value = '';
+    if (empresa) empresa.value = '';
     await refreshContratosTable();
     _updateContratosClearBtn();
   });
@@ -12643,6 +13111,24 @@ async function initContratos() {
 
   // Searchable lead selector
   _initLeadSearchable();
+
+  // Contrato assinado upload
+  document.getElementById('contratoSelectFileBtn')?.addEventListener('click', () => {
+    document.getElementById('contratoAssinadoInput')?.click();
+  });
+  document.getElementById('contratoAssinadoInput')?.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf') { toast('Selecione um arquivo PDF.', 'error'); return; }
+    _contratoAssinadoFile = file;
+    const filename = document.getElementById('contratoUploadFilename');
+    if (filename) filename.textContent = file.name;
+    const actions = document.getElementById('contratoUploadActions');
+    if (actions) actions.style.display = 'flex';
+    const done = document.getElementById('contratoUploadDone');
+    if (done) done.style.display = 'none';
+  });
+  document.getElementById('contratoUploadBtn')?.addEventListener('click', _contratoUploadAssinado);
 }
 
 // Expose global functions (called from onclick attributes in table rows)
@@ -12651,3 +13137,4 @@ window.contratoGeneratePDF = contratoGeneratePDF;
 window.contratoDownloadPDF = contratoDownloadPDF;
 window.contratoAcoes = contratoAcoes;
 window.contratoExcluir = contratoExcluir;
+window._contratoUploadAssinado = _contratoUploadAssinado;
