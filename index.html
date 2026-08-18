@@ -2779,6 +2779,31 @@
     </div>
   </div>
 
+  <!-- Modal: Confirmar exclusão de contrato -->
+  <div class="contrato-cancel-overlay" id="contratoDeleteOverlay"></div>
+  <div class="modal modal-sm contrato-cancel-modal" id="contratoDeleteModal" role="dialog" aria-labelledby="contratoDeleteTitle" aria-modal="true">
+    <div class="modal-head">
+      <div class="modal-head-left">
+        <div class="modal-avatar" style="background:#FDECEC;color:#E14C4C"><i data-lucide="alert-triangle"></i></div>
+        <div>
+          <h2 id="contratoDeleteTitle">Confirmar exclusão</h2>
+          <p class="modal-meta">Essa ação não poderá ser desfeita.</p>
+        </div>
+      </div>
+      <button type="button" class="icon-btn small contrato-delete-close-x" title="Fechar"><i data-lucide="x"></i></button>
+    </div>
+    <div class="modal-body">
+      <p class="contrato-cancel-text" id="contratoDeleteText">Tem certeza que deseja excluir este contrato?</p>
+    </div>
+    <div class="modal-foot">
+      <div></div>
+      <div class="modal-foot-actions">
+        <button type="button" class="btn-ghost" id="contratoDeleteBack">Cancelar</button>
+        <button type="button" class="btn-primary" style="background:#E14C4C" id="contratoDeleteConfirm"><i data-lucide="trash-2"></i> Excluir</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Overlay + Modal: Criar/Editar Contrato -->
   <div class="modal-overlay" id="contratoOverlay"></div>
   <div class="modal modal-lg" id="modalContrato" role="dialog" aria-labelledby="modalContratoTitle" aria-modal="true">

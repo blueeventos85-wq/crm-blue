@@ -7522,6 +7522,12 @@ textarea:focus-visible,
   border: 1px solid var(--gray-200);
 }
 .btn-ghost.btn-sm:hover { background: var(--gray-100, #f1f5f9); color: var(--text-primary); }
+.btn-ghost.btn-sm.btn-disabled,
+.btn-ghost.btn-sm:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 
 /* Responsivo: bottom bar */
 @media (max-width: 768px) {

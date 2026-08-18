@@ -11059,6 +11059,16 @@ function renderContratosTable(list) {
       ? `<button class="btn-ghost btn-sm" onclick="contratoDownloadPDF('${c.id}')" title="Baixar PDF" aria-label="Baixar PDF"><i data-lucide="download"></i></button>`
       : `<button class="btn-ghost btn-sm" onclick="contratoGeneratePDF('${c.id}')" title="Gerar PDF" aria-label="Gerar PDF"><i data-lucide="file-text"></i></button>`;
 
+    const canDelete = isCurrentUserAdmin();
+    const deleteAllowed = ['rascunho', 'cancelado'].includes(c.status);
+    const deleteDisabled = canDelete && !deleteAllowed;
+    const deleteTitle = deleteDisabled
+      ? 'Não é possível excluir contratos com este status'
+      : 'Excluir contrato';
+    const deleteBtn = canDelete
+      ? `<button class="btn-ghost btn-sm${deleteDisabled ? ' btn-disabled' : ''}" onclick="contratoExcluir('${c.id}', '${c.numero_contrato || ''}', '${c.contratante_nome || ''}', '${c.status}')" title="${deleteTitle}" aria-label="${deleteTitle}"${deleteDisabled ? ' disabled' : ''}><i data-lucide="trash-2"></i></button>`
+      : '';
+
     return `<tr>
       <td class="contract-number">${c.numero_contrato || '—'}</td>
       <td class="contract-client" title="${c.contratante_nome || ''}">${c.contratante_nome || '—'}</td>
@@ -11070,6 +11080,7 @@ function renderContratosTable(list) {
       <td class="contract-actions">
         <button class="btn-ghost btn-sm" onclick="contratoEdit('${c.id}')" title="Editar" aria-label="Editar contrato"><i data-lucide="edit"></i></button>
         ${pdfBtn}
+        ${deleteBtn}
         <button class="btn-ghost btn-sm contract-more-actions-button" data-contrato-actions="${c.id}" onclick="contratoAcoes('${c.id}', '${c.status}')" title="Mais ações" aria-label="Mais ações do contrato ${c.numero_contrato || ''}" aria-haspopup="menu" aria-expanded="false"><i data-lucide="more-vertical"></i></button>
       </td>
     </tr>`;
@@ -12389,6 +12400,64 @@ async function _confirmContratoCancel() {
   await refreshContratosTable();
 }
 
+/* ---- Delete confirmation modal ----- */
+let _contratoDeleteTargetId = null;
+let _contratoDeleteTargetStatus = null;
+
+function contratoExcluir(id, numero, contratante, status) {
+  if (!isCurrentUserAdmin()) return;
+  if (!['rascunho', 'cancelado'].includes(status)) {
+    toast('Não é possível excluir contratos com este status.', 'error');
+    return;
+  }
+  _openContratoDeleteModal(id, numero, contratante);
+}
+
+function _openContratoDeleteModal(id, numero, contratante) {
+  _contratoDeleteTargetId = id;
+  _contratoDeleteTargetStatus = 'delete';
+  const textEl = document.getElementById('contratoDeleteText');
+  if (textEl) {
+    textEl.innerHTML = `Tem certeza que deseja excluir o contrato <strong>${numero || '—'}</strong> de <strong>${contratante || '—'}</strong>? Esta ação não poderá ser desfeita.`;
+  }
+  const overlay = document.getElementById('contratoDeleteOverlay');
+  const modal = document.getElementById('contratoDeleteModal');
+  if (overlay) overlay.classList.add('open');
+  if (modal) modal.classList.add('open');
+  if (typeof initIcons === 'function') initIcons();
+  setTimeout(() => {
+    const backBtn = document.getElementById('contratoDeleteBack');
+    if (backBtn) backBtn.focus();
+  }, 50);
+}
+
+function _closeContratoDeleteModal() {
+  const overlay = document.getElementById('contratoDeleteOverlay');
+  const modal = document.getElementById('contratoDeleteModal');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+  _contratoDeleteTargetId = null;
+  _contratoDeleteTargetStatus = null;
+}
+
+async function _confirmContratoDelete() {
+  if (!_contratoDeleteTargetId || !_supabase) return;
+  const id = _contratoDeleteTargetId;
+  const contrato = _contratosData.find(c => c.id === id);
+  const numero = contrato?.numero_contrato || '';
+  _closeContratoDeleteModal();
+  try {
+    const { error } = await _supabase.from('contratos').delete().eq('id', id);
+    if (error) throw error;
+    _contratosData = _contratosData.filter(c => c.id !== id);
+    renderContratosTable(_contratosData);
+    toast(`Contrato ${numero} excluído com sucesso!`, 'success');
+  } catch (err) {
+    console.error('[Contratos] Erro ao excluir:', err);
+    toast(`Erro ao excluir o contrato ${numero}. Tente novamente.`, 'error');
+  }
+}
+
 /* ---- Original contratoAcoes (replaced by menu) ----- */
 async function contratoAcoes(id, status) {
   const contrato = _contratosData.find(c => c.id === id);
@@ -12566,6 +12635,12 @@ async function initContratos() {
   document.querySelector('.contrato-cancel-close-x')?.addEventListener('click', _closeContratoCancelModal);
   document.getElementById('contratoCancelOverlay')?.addEventListener('click', _closeContratoCancelModal);
 
+  // Delete contract confirmation modal
+  document.getElementById('contratoDeleteBack')?.addEventListener('click', _closeContratoDeleteModal);
+  document.getElementById('contratoDeleteConfirm')?.addEventListener('click', _confirmContratoDelete);
+  document.querySelector('.contrato-delete-close-x')?.addEventListener('click', _closeContratoDeleteModal);
+  document.getElementById('contratoDeleteOverlay')?.addEventListener('click', _closeContratoDeleteModal);
+
   // Searchable lead selector
   _initLeadSearchable();
 }
@@ -12575,3 +12650,4 @@ window.contratoEdit = contratoEdit;
 window.contratoGeneratePDF = contratoGeneratePDF;
 window.contratoDownloadPDF = contratoDownloadPDF;
 window.contratoAcoes = contratoAcoes;
+window.contratoExcluir = contratoExcluir;
