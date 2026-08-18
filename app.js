@@ -3465,6 +3465,24 @@ async function saveMassTransfer() {
 async function deleteMassLeads() {
   if (selectedClientIds.size === 0) return;
   const ids = [...selectedClientIds];
+
+  // Verificar contratos vinculados antes de excluir
+  if (_supabase) {
+    try {
+      const { data: vinculados, error: vincErr } = await _supabase
+        .from('contratos')
+        .select('id, lead_id')
+        .in('lead_id', ids);
+      if (!vincErr && vinculados && vinculados.length > 0) {
+        const leadsComContrato = [...new Set(vinculados.map(v => v.lead_id))];
+        toast(`Este(s) lead(s) não pode(m) ser apagado(s) pois possui(m) contratos vinculados (${leadsComContrato.length}). Exclua ou desvincule os contratos associados primeiro.`, 'error');
+        return;
+      }
+    } catch (e) {
+      console.error('[MassDelete] Erro ao verificar contratos:', e);
+    }
+  }
+
   const confirmed = confirm(`Tem certeza que deseja excluir ${ids.length} lead(s)? Esta ação não pode ser desfeita.`);
   if (!confirmed) return;
 
@@ -12783,13 +12801,19 @@ async function _confirmContratoDelete() {
   const id = _contratoDeleteTargetId;
   const contrato = _contratosData.find(c => c.id === id);
   const numero = contrato?.numero_contrato || '';
+  const storagePath = contrato?.assinado_storage_path;
   _closeContratoDeleteModal();
   try {
-    const { error } = await _supabase.from('contratos').update({
-      deleted_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    }).eq('id', id);
+    // Remover PDF assinado do Storage (se existir)
+    if (storagePath) {
+      const { error: storageErr } = await _supabase.storage.from('contratos').remove([storagePath]);
+      if (storageErr) console.warn('[Contratos] Aviso ao remover PDF do Storage:', storageErr.message);
+    }
+
+    // Excluir registro do contrato
+    const { error } = await _supabase.from('contratos').delete().eq('id', id);
     if (error) throw error;
+
     _contratosData = _contratosData.filter(c => c.id !== id);
     renderContratosTable(_contratosData);
     toast(`Contrato ${numero} excluído com sucesso!`, 'success');
