@@ -865,27 +865,27 @@ function closePermModal() {
 /* ── Perfil defaults ── */
 function applyPerfilDefaults(perfil) {
   const allModules = [
-    'permHome', 'permDashboard', 'permCrm', 'permClienteBase', 'permCalendario',
+    'permHome', 'permDashboard', 'permCrm', 'permContratos', 'permClienteBase', 'permCalendario',
     'permRotinaBlue', 'permPomodoro', 'permConversas', 'permConfiguracoes',
     'permAuditoria', 'permAdministrador', 'permObrigacoes', 'permDocumentos', 'permSuporte'
   ];
   const presets = {
     'Administrador': {
-      home: true, dashboard: true, crm: true, cliente_base: true, calendario: true,
+      home: true, dashboard: true, crm: true, contratos: true, cliente_base: true, calendario: true,
       rotina_blue: true, pomodoro: true, conversas: true, configuracoes: true,
       auditoria: true, administrador: true,
       calibragem: true,
       delete_telefone: true
     },
     'Atendente': {
-      home: false, dashboard: false, crm: true, cliente_base: true, calendario: true,
+      home: false, dashboard: false, crm: true, contratos: false, cliente_base: true, calendario: true,
       rotina_blue: true, pomodoro: true, conversas: true, configuracoes: false,
       auditoria: false, administrador: false,
       calibragem: false,
       delete_telefone: false
     },
     'Marketing': {
-      home: true, dashboard: true, crm: true, cliente_base: true, calendario: true,
+      home: true, dashboard: true, crm: true, contratos: false, cliente_base: true, calendario: true,
       rotina_blue: false, pomodoro: false, conversas: false, configuracoes: true,
       auditoria: true, administrador: false,
       calibragem: false,
@@ -896,6 +896,7 @@ function applyPerfilDefaults(perfil) {
   document.getElementById('permHome').checked = p.home;
   document.getElementById('permDashboard').checked = p.dashboard;
   document.getElementById('permCrm').checked = p.crm;
+  document.getElementById('permContratos').checked = p.contratos;
   document.getElementById('permClienteBase').checked = p.cliente_base;
   document.getElementById('permCalendario').checked = p.calendario;
   document.getElementById('permRotinaBlue').checked = p.rotina_blue;
@@ -949,6 +950,7 @@ function openPermModalForMember(member, perm) {
     document.getElementById('permHome').checked = !!perm.can_home;
     document.getElementById('permDashboard').checked = !!perm.can_dashboard;
     document.getElementById('permCrm').checked = !!perm.can_crm;
+    document.getElementById('permContratos').checked = !!perm.can_contratos;
     document.getElementById('permClienteBase').checked = !!perm.can_cliente_base;
     document.getElementById('permCalendario').checked = !!perm.can_calendario;
     document.getElementById('permRotinaBlue').checked = !!perm.can_rotina_blue;
@@ -981,6 +983,7 @@ async function handlePermSave() {
     can_home: document.getElementById('permHome').checked,
     can_dashboard: document.getElementById('permDashboard').checked,
     can_crm: document.getElementById('permCrm').checked,
+    can_contratos: document.getElementById('permContratos').checked,
     can_cliente_base: document.getElementById('permClienteBase').checked,
     can_calendario: document.getElementById('permCalendario').checked,
     can_rotina_blue: document.getElementById('permRotinaBlue').checked,
@@ -2362,6 +2365,7 @@ function renderHomeModules(filter = '') {
     home: _userPermCache.can_home,
     dashboard: _userPermCache.can_dashboard,
     crm: _userPermCache.can_crm,
+    contratos: _userPermCache.can_contratos,
     clientes: _userPermCache.can_cliente_base,
     calendario: _userPermCache.can_calendario,
     configuracoes: _userPermCache.can_configuracoes,
@@ -2497,6 +2501,7 @@ const homeModules = [
   { id: 'home', title: 'Home', desc: 'Acesse rapidamente os principais módulos do sistema.', icon: 'home', route: '/home', section: 'Principal' },
   { id: 'dashboard', title: 'Dashboard', desc: 'Indicadores e métricas em tempo real.', icon: 'layout-dashboard', route: '/dashboard', section: 'Principal' },
   { id: 'crm', title: 'CRM', desc: 'Centralize o relacionamento com clientes.', icon: 'kanban-square', route: '/crm', section: 'Principal' },
+  { id: 'contratos', title: 'Contratos', desc: 'Gere e gerencie contratos de prestação de serviços.', icon: 'file-text', route: '/contratos', section: 'Principal' },
   { id: 'clientes', title: 'Cliente da Base', desc: 'Organize e qualifique os clientes.', icon: 'users', route: '/cliente-da-base', section: 'Principal' },
   { id: 'calendario', title: 'Calendário', desc: 'Organize as datas dos eventos.', icon: 'calendar-days', route: '/calendario', section: 'Principal' },
   { id: 'configuracoes', title: 'Configurações', desc: 'Personalize conta e equipe.', icon: 'settings', route: '/configuracoes', section: 'Principal' },
