@@ -11303,7 +11303,11 @@ function parseTipoServicoIds(value) {
   if (!value) return [];
   if (Array.isArray(value)) return value.filter(Boolean);
   if (typeof value === 'string') {
-    return value.replace(/^\{|\}$/g, '').split(',').map(id => id.trim()).filter(Boolean);
+    const trimmed = value.trim();
+    if (trimmed.startsWith('[')) {
+      try { return JSON.parse(trimmed).filter(Boolean); } catch {}
+    }
+    return trimmed.replace(/^\{|\}$/g, '').split(',').map(id => id.trim()).filter(Boolean);
   }
   return [];
 }
