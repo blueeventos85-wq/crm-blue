@@ -12801,7 +12801,11 @@ function _closeContratoDeleteModal() {
 }
 
 async function _confirmContratoDelete() {
-  if (!_contratoDeleteTargetId || !_supabase) return;
+  if (!_contratoDeleteTargetId) return;
+  if (!_supabase) {
+    toast('Erro de conexão. Recarregue a página.', 'error');
+    return;
+  }
   const id = _contratoDeleteTargetId;
   const contrato = _contratosData.find(c => c.id === id);
   const numero = contrato?.numero_contrato || '';
@@ -12814,12 +12818,19 @@ async function _confirmContratoDelete() {
       if (storageErr) console.warn('[Contratos] Aviso ao remover PDF do Storage:', storageErr.message);
     }
 
-    // Excluir registro do contrato
-    const { error } = await _supabase.from('contratos').delete().eq('id', id);
+    // Soft delete: marcar deleted_at em vez de hard delete
+    const { data, error } = await _supabase
+      .from('contratos')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('id');
     if (error) throw error;
+    if (!data || data.length === 0) {
+      throw new Error('Nenhum registro afetado. Verifique sua permissão.');
+    }
 
-    _contratosData = _contratosData.filter(c => c.id !== id);
-    renderContratosTable(_contratosData);
+    // Recarregar do banco para refletir o estado real
+    await refreshContratosTable();
     toast(`Contrato ${numero} excluído com sucesso!`, 'success');
   } catch (err) {
     console.error('[Contratos] Erro ao excluir:', err);
