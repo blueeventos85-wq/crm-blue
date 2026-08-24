@@ -146,14 +146,30 @@ async function fetchCadenciasMap() {
     }
   });
 
-  console.log('[Supabase] Mapa cadência:', map);
+  console.log('[Supabase] Mapa cadência (DB):', map);
+
   _cadenciaUuidToCol = map;
   _cadenciaColToUuid = {};
   Object.entries(map).forEach(([uuid, colId]) => { _cadenciaColToUuid[colId] = uuid; });
+
+  // Se mapaCadencias (hardcoded em app.js) estiver disponível, usá-lo como fonte primária
+  // para col→UUID. O mapa do DB pode ter falhas de fuzzy matching.
+  if (typeof window.mapaCadencias !== 'undefined' && window.mapaCadencias) {
+    Object.entries(window.mapaCadencias).forEach(([colId, uuid]) => {
+      if (uuid) {
+        if (!_cadenciaColToUuid[colId]) {
+          console.log(`[Supabase]补充 col→UUID via mapaCadencias: ${colId} → ${uuid}`);
+        }
+        _cadenciaColToUuid[colId] = uuid;
+        _cadenciaUuidToCol[uuid] = colId;
+      }
+    });
+  }
+
   // Expor no window para que app.js acesse o mesmo objeto
   window._cadenciaColToUuid = _cadenciaColToUuid;
   window._cadenciaUuidToCol = _cadenciaUuidToCol;
-  console.log('[Supabase] Coluna→UUID:', _cadenciaColToUuid);
+  console.log('[Supabase] Coluna→UUID (final):', _cadenciaColToUuid);
   return map;
 }
 
@@ -226,6 +242,18 @@ async function fetchLeadsSupabase(filterMemberId) {
   }
 
   let { data, error } = await q;
+
+  if (error && filterMemberId) {
+    console.warn('[Supabase] Query com .or() falhou, tentando filtro simplificado:', error.message, error.code);
+    let q2 = _supabase
+      .from('leads')
+      .select('*')
+      .order('created_at', { ascending: false });
+    q2 = q2.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId);
+    const retry = await q2;
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error) {
     console.error('[Supabase] Erro ao buscar leads:', error.message, error.code);
@@ -597,10 +625,17 @@ async function fetchClientsSupabase(filterMemberId) {
     console.log('[Supabase-Clientes] SEM FILTRO — retornando TODOS os leads');
   }
 
-  const [leadsRes, svcRes] = await Promise.all([
+  let [leadsRes, svcRes] = await Promise.all([
     leadsQuery,
     _supabase.from('servicos').select('*')
   ]);
+
+  if (leadsRes.error && filterMemberId) {
+    console.warn('[Supabase-Clientes] Query .or() falhou, retry simplificado:', leadsRes.error.message);
+    let retryQuery = _supabase.from('leads').select('*').order('created_at', { ascending: false });
+    retryQuery = retryQuery.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId);
+    leadsRes = await retryQuery;
+  }
 
   console.log('[Supabase-Clientes] Resultado:', leadsRes.data?.length, 'leads retornados');
 

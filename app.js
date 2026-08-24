@@ -4462,6 +4462,7 @@ const mapaCadencias = {
   "pos-vendas": "1c8d3c69-442a-49bf-9eef-9840f4e8d415",
   "geracao-de-contrato": "1c8d3c69-442a-49bf-9eef-9840f4e8d415"
 };
+window.mapaCadencias = mapaCadencias;
 
 function getVisibleCadences(centroCustoId) {
   // Admin sees everything
@@ -5200,9 +5201,20 @@ async function onDrop(e) {
   if (!newCadenciaUuid && Object.keys(_cadMap).length === 0) {
     console.warn('[onDrop] Mapa cadência vazio, reconstruindo...');
     try {
-      const rebuilt = await rebuildCadenciaMaps();
+      await rebuildCadenciaMaps();
       newCadenciaUuid = (window._cadenciaColToUuid || {})[newStatus] || null;
-    } catch { }
+    } catch (err) { console.error('[onDrop] Erro ao reconstruir mapa cadência:', err); }
+  }
+
+  if (!newCadenciaUuid && typeof mapaCadencias !== 'undefined') {
+    newCadenciaUuid = mapaCadencias[newStatus] || null;
+    if (newCadenciaUuid) {
+      console.log('[onDrop] UUID obtido via mapaCadencias (fallback):', newStatus, '->', newCadenciaUuid);
+    }
+  }
+
+  if (!newCadenciaUuid) {
+    console.warn('[onDrop] Não encontrou UUID para coluna:', newStatus, '| _cadenciaColToUuid:', window._cadenciaColToUuid, '| mapaCadencias:', typeof mapaCadencias !== 'undefined' ? mapaCadencias : 'N/A');
   }
 
   if (newCadenciaUuid) {
@@ -5210,8 +5222,6 @@ async function onDrop(e) {
     updateLeadSupabase(lead.id, { cadencia_id: newCadenciaUuid })
       .then(() => console.log('[Supabase] cadencia_id salvo:', newCadenciaUuid))
       .catch(err => console.error('[Supabase] Erro ao salvar cadencia_id:', err));
-  } else {
-    console.warn('[onDrop] Não encontrou UUID para coluna:', newStatus, '| Mapa:', window._cadenciaColToUuid);
   }
 
   // visual feedback
@@ -5788,7 +5798,7 @@ async function saveLead() {
       dataEvento: fields.dataEvento,
       tiposServico: fields.tiposServico,
       _tipoServicoIds: fields.tiposServico.map(name => _servicosByName[name]?.id).filter(Boolean),
-      _cadenciaId: (window._cadenciaColToUuid || {})['novo-lead'] || null,
+      _cadenciaId: (window._cadenciaColToUuid || {})['novo-lead'] || (typeof mapaCadencias !== 'undefined' ? mapaCadencias['novo-lead'] : null) || null,
       enderecoEvento: fields.enderecoEvento || '',
       enderecoResidencial: fields.enderecoResidencial || '',
       bairro: fields.bairro || '',
@@ -5908,7 +5918,7 @@ async function saveLead() {
         if (ids.length > 0) payload.tipo_servico_id = ids;
       }
 
-      const cadUuid = (window._cadenciaColToUuid || {})[lead.status] || lead._cadenciaId;
+      const cadUuid = (window._cadenciaColToUuid || {})[lead.status] || (typeof mapaCadencias !== 'undefined' ? mapaCadencias[lead.status] : null) || lead._cadenciaId;
       if (cadUuid) payload.cadencia_id = cadUuid;
 
       console.log('[Edit] Payload para Supabase:', JSON.stringify(payload, null, 2));
@@ -10042,7 +10052,7 @@ async function loadConversasChats() {
     let query = _supabase
       .from('chats')
       .select('id, contact_name, contact_phone, contact_email, contact_location, status, assigned_to, lead_id, last_message, last_message_at, created_at, temperature, priority, tags, notes')
-      .order('last_message_at', { ascending: false, nullsFirst: false });
+      .order('last_message_at', { ascending: false });
 
     if (!canViewAll && userId) query = query.eq('assigned_to', userId);
 
@@ -11335,7 +11345,15 @@ async function loadContratoLeads() {
     q = q.or('membro_id.eq.' + filterId + ',qualificador_id.eq.' + filterId + ',owner_id.eq.' + filterId);
   }
 
-  const { data, error } = await q;
+  let { data, error } = await q;
+  if (error && filterId) {
+    console.warn('[Contratos] Query .or() falhou, retry simplificado:', error.message);
+    let rq = _supabase.from('leads').select('*').order('nome', { ascending: true });
+    rq = rq.or('membro_id.eq.' + filterId + ',qualificador_id.eq.' + filterId);
+    const retry = await rq;
+    data = retry.data;
+    error = retry.error;
+  }
   if (error) { console.error('[Contratos] Erro ao carregar leads:', error.message, error.code); return []; }
   return data || [];
 }
