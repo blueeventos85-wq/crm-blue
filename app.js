@@ -1712,14 +1712,256 @@ let _settingsBound = false;
 
 function showSettingsTab(tab) {
   $$('.settings-content > .card').forEach(c => c.style.display = '');
+  $$('.settings-tab-content').forEach(c => c.style.display = 'none');
   if (tab === 'perfil') {
     $$('.settings-content > .card')[0].style.display = '';
     $$('.settings-content > .card')[1].style.display = '';
   } else if (tab === 'equipe') {
     $$('.settings-content > .card')[0].style.display = 'none';
     $$('.settings-content > .card')[1].style.display = '';
+  } else if (tab === 'whatsapp') {
+    $$('.settings-content > .card').forEach(c => c.style.display = 'none');
+    const waTab = document.getElementById('settingsTabWhatsapp');
+    if (waTab) { waTab.style.display = ''; initWhatsAppConfig(); }
   } else {
     $$('.settings-content > .card').forEach(c => c.style.display = 'none');
+  }
+}
+
+/* ============================================
+   WHATSAPP CONFIG · QR Code & Conexao
+   ============================================ */
+let _waConfigBound = false;
+let _waQrPolling = null;
+
+async function initWhatsAppConfig() {
+  if (!currentUser.id) return;
+
+  // Bind eventos uma unica vez
+  if (!_waConfigBound) {
+    _waConfigBound = true;
+    const connectBtn = document.getElementById('waConnectBtn');
+    const disconnectBtn = document.getElementById('waDisconnectBtn');
+    const refreshBtn = document.getElementById('waRefreshBtn');
+    const qrRefresh = document.getElementById('waQrRefresh');
+
+    if (connectBtn) connectBtn.addEventListener('click', waHandleConnect);
+    if (disconnectBtn) disconnectBtn.addEventListener('click', waHandleDisconnect);
+    if (refreshBtn) refreshBtn.addEventListener('click', waLoadStatus);
+    if (qrRefresh) qrRefresh.addEventListener('click', waHandleConnect);
+
+    // Popular dropdown de centros de custo
+    await _populateWaCentroCustoDropdown();
+  }
+
+  await waLoadStatus();
+}
+
+async function _populateWaCentroCustoDropdown() {
+  const select = document.getElementById('waCentroCustoSelect');
+  if (!select) return;
+
+  const { data: mccData } = await _supabase
+    .from('membro_centros_custo')
+    .select('centro_custo_id, centros_custo(id, nome)')
+    .eq('membro_id', currentUser.id);
+
+  const list = (mccData || [])
+    .map(r => r.centros_custo)
+    .filter(Boolean)
+    .sort((a, b) => a.nome.localeCompare(b.nome));
+
+  select.innerHTML = '<option value="">Selecione a empresa...</option>' +
+    list.map(cc => `<option value="${cc.id}">${escapeHtml(cc.nome)}</option>`).join('');
+
+  // Ao trocar o centro de custo, recarregar status
+  select.addEventListener('change', () => waLoadStatus());
+}
+
+async function waLoadStatus() {
+  const dot = document.getElementById('waStatusDot');
+  const label = document.getElementById('waStatusLabel');
+  const sub = document.getElementById('waStatusSub');
+  const connectBtn = document.getElementById('waConnectBtn');
+  const disconnectBtn = document.getElementById('waDisconnectBtn');
+  const refreshBtn = document.getElementById('waRefreshBtn');
+  const qrSection = document.getElementById('waQrSection');
+  const ccSelect = document.getElementById('waCentroCustoSelect');
+
+  if (dot) dot.className = 'wa-status-dot';
+
+  // Ler centro de custo selecionado
+  const centrosCustoId = ccSelect?.value || null;
+
+  try {
+    const config = await waFetchConfig(currentUser.id, centrosCustoId);
+
+    if (!config) {
+      if (dot) dot.classList.add('disconnected');
+      if (label) label.textContent = 'Nao conectado';
+      if (sub) sub.textContent = 'Configure sua instancia WhatsApp';
+      if (connectBtn) connectBtn.style.display = '';
+      if (disconnectBtn) disconnectBtn.style.display = 'none';
+      if (refreshBtn) refreshBtn.style.display = 'none';
+      if (qrSection) qrSection.style.display = 'none';
+      waStopQrPolling();
+      return;
+    }
+
+    const status = config.status || 'disconnected';
+    const instanceName = config.provider_config?.instanceName || '--';
+
+    if (dot) dot.classList.add(status);
+    if (sub) sub.textContent = 'Instance: ' + instanceName;
+
+    if (status === 'connected') {
+      if (label) label.textContent = 'Conectado';
+      if (connectBtn) connectBtn.style.display = 'none';
+      if (disconnectBtn) disconnectBtn.style.display = '';
+      if (refreshBtn) refreshBtn.style.display = '';
+      if (qrSection) qrSection.style.display = 'none';
+      waStopQrPolling();
+    } else if (status === 'connecting') {
+      if (label) label.textContent = 'Aguardando leitura do QR Code...';
+      if (connectBtn) connectBtn.style.display = 'none';
+      if (disconnectBtn) disconnectBtn.style.display = 'none';
+      if (refreshBtn) refreshBtn.style.display = '';
+      if (qrSection) qrSection.style.display = '';
+      waStartQrPolling(instanceName);
+    } else {
+      if (label) label.textContent = 'Desconectado';
+      if (connectBtn) connectBtn.style.display = '';
+      if (disconnectBtn) disconnectBtn.style.display = 'none';
+      if (refreshBtn) refreshBtn.style.display = 'none';
+      if (qrSection) qrSection.style.display = 'none';
+      waStopQrPolling();
+    }
+  } catch (err) {
+    console.error('[WA Config] Erro ao carregar status:', err);
+    if (dot) dot.classList.add('error');
+    if (label) label.textContent = 'Erro ao verificar status';
+    if (sub) sub.textContent = err.message || 'Tente novamente';
+    if (connectBtn) connectBtn.style.display = '';
+    if (disconnectBtn) disconnectBtn.style.display = 'none';
+  }
+}
+
+async function waHandleConnect() {
+  const instanceInput = document.getElementById('waInstanceName');
+  const integrationSelect = document.getElementById('waIntegration');
+  const ccSelect = document.getElementById('waCentroCustoSelect');
+  const qrSection = document.getElementById('waQrSection');
+  const qrLoading = document.getElementById('waQrLoading');
+  const qrImage = document.getElementById('waQrImage');
+
+  const centrosCustoId = ccSelect?.value || null;
+
+  let instanceName = instanceInput?.value?.trim() || '';
+  if (!instanceName) {
+    // Gerar nome baseado no centro de custo ou no usuário
+    if (centrosCustoId) {
+      const ccText = ccSelect.options[ccSelect.selectedIndex]?.text || '';
+      instanceName = 'blue-crm-' + ccText.toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+    } else {
+      instanceName = 'blue-crm-' + (currentUser.nome || 'user').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+    }
+    if (instanceInput) instanceInput.value = instanceName;
+  }
+
+  const integration = integrationSelect?.value || 'WHATSAPP-BAILEYS';
+
+  // Mostrar QR section
+  if (qrSection) qrSection.style.display = '';
+  if (qrLoading) qrLoading.style.display = '';
+  if (qrImage) qrImage.style.display = 'none';
+
+  // Atualizar status
+  const dot = document.getElementById('waStatusDot');
+  const label = document.getElementById('waStatusLabel');
+  if (dot) { dot.className = 'wa-status-dot'; dot.classList.add('connecting'); }
+  if (label) label.textContent = 'Conectando...';
+
+  try {
+    const result = await waConnect(currentUser.id, instanceName, centrosCustoId);
+
+    if (result.qr) {
+      if (qrLoading) qrLoading.style.display = 'none';
+      if (qrImage) {
+        // Garantir que o prefixo data:image exista
+        let qrSrc = result.qr;
+        if (qrSrc && !qrSrc.startsWith('data:')) {
+          qrSrc = 'data:image/png;base64,' + qrSrc;
+        }
+        qrImage.src = qrSrc;
+        qrImage.style.display = '';
+        qrImage.onerror = () => {
+          console.error('[WA] Erro ao carregar QR Code');
+          qrImage.style.display = 'none';
+          qrLoading.style.display = '';
+        };
+      }
+      waStartQrPolling(instanceName);
+    } else {
+      // QR ainda nao disponivel, iniciar polling
+      waStartQrPolling(instanceName);
+    }
+
+    toast('Instancia criada. Escaneie o QR Code.');
+  } catch (err) {
+    console.error('[WA Config] Erro ao conectar:', err);
+    toast('Erro ao conectar: ' + (err.message || 'Tente novamente'), 'error');
+    if (qrSection) qrSection.style.display = 'none';
+    await waLoadStatus();
+  }
+}
+
+async function waHandleDisconnect() {
+  if (!confirm('Desconectar WhatsApp? As mensagens anteriores serao mantidas.')) return;
+
+  const ccSelect = document.getElementById('waCentroCustoSelect');
+  const centrosCustoId = ccSelect?.value || null;
+
+  try {
+    await waDisconnect(currentUser.id, centrosCustoId);
+    toast('WhatsApp desconectado');
+    await waLoadStatus();
+  } catch (err) {
+    console.error('[WA Config] Erro ao desconectar:', err);
+    toast('Erro ao desconectar: ' + err.message, 'error');
+  }
+}
+
+function waStartQrPolling(instanceName) {
+  waStopQrPolling();
+  let attempts = 0;
+  const maxAttempts = 30;
+
+  _waQrPolling = setInterval(async () => {
+    attempts++;
+    if (attempts > maxAttempts) {
+      waStopQrPolling();
+      toast('QR Code expirado. Tente novamente.', 'error');
+      await waLoadStatus();
+      return;
+    }
+
+    try {
+      const config = await waFetchConfig(currentUser.id);
+      if (config?.status === 'connected') {
+        waStopQrPolling();
+        toast('WhatsApp conectado com sucesso!');
+        await waLoadStatus();
+      }
+    } catch (e) {
+      // Silently retry
+    }
+  }, 3000);
+}
+
+function waStopQrPolling() {
+  if (_waQrPolling) {
+    clearInterval(_waQrPolling);
+    _waQrPolling = null;
   }
 }
 
@@ -2793,6 +3035,18 @@ function setActivePage(page) {
   }
   if (page === 'contratos') {
     initContratos();
+  }
+  if (page === 'conversas') {
+    console.log('[Nav] Conversas page, pending:', !!_pendingConvNavigation);
+    _initConvCentroCustoDropdown().then(() => {
+      console.log('[Nav] CC dropdown ready, loading chats...');
+      return loadConversasChats();
+    }).then(() => {
+      console.log('[Nav] Chats loaded, processing deep-link...');
+      _processConvDeepLink();
+    }).catch(err => {
+      console.error('[Nav] Error in conversas navigation:', err);
+    });
   }
 }
 
@@ -5406,6 +5660,10 @@ function openLeadModal(id) {
   if (!lead) return;
   currentLeadId = id;
 
+  // Guardar valores anteriores para detectar movimentações
+  lead._prevThermal = lead.thermal || 'frio';
+  lead._prevStatus = lead.status || '';
+
   const modal = $('#leadModal');
   modal.classList.remove('is-new');
   modal.dataset.mode = 'edit';
@@ -5511,6 +5769,10 @@ function openLeadModal(id) {
 
   // Render history
   renderLeadHistory(lead);
+
+  // Pré-carregar dados das abas de Movimentação e Atividades
+  loadLeadMovements(id);
+  loadLeadActivities(id);
 
   // Show
   modal.classList.add('open');
@@ -5682,6 +5944,171 @@ function recordInteraction(id, title, icon, desc) {
   invalidateDashCache();
   toast('Interação registrada: ' + title);
   renderAll();
+}
+
+/* ============================================
+   LEAD MODAL · MOVIMENTAÇÃO (lead_movements)
+   ============================================ */
+async function loadLeadMovements(leadId) {
+  const container = $('#leadMovementsTimeline');
+  if (!container || !leadId) return;
+
+  try {
+    const { data, error } = await _supabase
+      .from('lead_movements')
+      .select('id, lead_id, movement_type, from_value, to_value, created_at')
+      .eq('lead_id', leadId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    if (!data || data.length === 0) {
+      container.innerHTML = '<div class="lead-timeline-empty">Nenhuma movimentação registrada.</div>';
+      return;
+    }
+
+    container.innerHTML = data.map(m => {
+      const date = new Date(m.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const dotClass = m.movement_type === 'cadencia' ? 'dot-cadencia' : 'dot-temperatura';
+      const badgeClass = m.movement_type === 'cadencia' ? 'badge-cadencia' : 'badge-temperatura';
+      const title = `${m.movement_type === 'cadencia' ? 'Cadência' : 'Temperatura'} alterada`;
+
+      return `
+        <div class="lead-timeline-item">
+          <div class="lead-timeline-dot ${dotClass}"></div>
+          <div class="lead-timeline-body">
+            <div class="lead-timeline-header">
+              <span class="lead-timeline-title">${escapeHtml(title)}</span>
+              <span class="lead-timeline-date">${date}</span>
+            </div>
+            ${m.from_value && m.to_value ? `<div class="lead-timeline-desc">De <strong>${escapeHtml(m.from_value)}</strong> para <strong>${escapeHtml(m.to_value)}</strong></div>` : ''}
+            <span class="lead-timeline-badge ${badgeClass}">${m.movement_type === 'cadencia' ? 'Cadência' : 'Temperatura'}</span>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (err) {
+    console.error('[Lead] Erro ao carregar movimentações:', err);
+    container.innerHTML = '<div class="lead-timeline-empty">Erro ao carregar movimentações.</div>';
+  }
+}
+
+/* ============================================
+   LEAD MODAL · SALVAR ATIVIDADE (lead_activities)
+   ============================================ */
+async function saveLeadActivity() {
+  const leadId = currentLeadId;
+  if (!leadId) { toast('Salve o lead primeiro', 'error'); return; }
+
+  const typeEl = $('#leadActivityType');
+  const descEl = $('#leadActivityDesc');
+  const type = typeEl?.value || '';
+  const description = descEl?.value?.trim() || '';
+
+  if (!description) { toast('Preencha a descrição', 'error'); return; }
+
+  // Obter user_id válido do membro logado
+  let userId = currentUser.id;
+  if (!userId) {
+    try {
+      const { data: { user } } = await _supabase.auth.getUser();
+      if (user) {
+        const { data: member } = await _supabase
+          .from('membros')
+          .select('id')
+          .eq('auth_user_id', user.id)
+          .single();
+        userId = member?.id || null;
+      }
+    } catch (_) {}
+  }
+  if (!userId) { toast('Erro: usuário não identificado', 'error'); return; }
+
+  try {
+    const { error } = await _supabase
+      .from('lead_activities')
+      .insert([{
+        lead_id: leadId,
+        user_id: userId,
+        activity_type: type,
+        description
+      }]);
+
+    if (error) throw error;
+
+    toast('Atividade salva com sucesso!');
+    descEl.value = '';
+    loadLeadActivities(leadId);
+  } catch (err) {
+    console.error('[Lead] Erro ao salvar atividade:', err);
+    toast('Erro ao salvar atividade: ' + err.message, 'error');
+  }
+}
+
+/* ============================================
+   LEAD MODAL · HISTÓRICO DE ATIVIDADES
+   ============================================ */
+async function loadLeadActivities(leadId) {
+  const container = $('#leadActivitiesTimeline');
+  if (!container || !leadId) return;
+
+  try {
+    const { data, error } = await _supabase
+      .from('lead_activities')
+      .select('id, lead_id, user_id, activity_type, description, created_at')
+      .eq('lead_id', leadId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    if (!data || data.length === 0) {
+      container.innerHTML = '<div class="lead-timeline-empty">Nenhuma atividade registrada.</div>';
+      return;
+    }
+
+    // Buscar nomes dos membros em lote
+    const userIds = [...new Set(data.map(a => a.user_id).filter(Boolean))];
+    let memberMap = {};
+    if (userIds.length > 0) {
+      const { data: members } = await _supabase
+        .from('membros')
+        .select('id, nome')
+        .in('id', userIds);
+      if (members) {
+        members.forEach(m => { memberMap[m.id] = m.nome; });
+      }
+    }
+
+    const typeDotMap = {
+      'Anotação': 'dot-anotacao',
+      'Ligação': 'dot-ligacao',
+      'Visita': 'dot-visita',
+      'WhatsApp': 'dot-whatsapp',
+      'Pré-vendas': 'dot-prevendas',
+      'Gerencial': 'dot-gerencial'
+    };
+
+    container.innerHTML = data.map(a => {
+      const date = new Date(a.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const userName = memberMap[a.user_id] || 'Usuário';
+      const dotClass = typeDotMap[a.activity_type] || 'dot-anotacao';
+
+      return `
+        <div class="lead-timeline-item">
+          <div class="lead-timeline-dot ${dotClass}"></div>
+          <div class="lead-timeline-body">
+            <div class="lead-timeline-header">
+              <span class="lead-timeline-title">${escapeHtml(a.activity_type)}</span>
+              <span class="lead-timeline-date">${date}</span>
+            </div>
+            <div class="lead-timeline-desc">Registrado por: <strong>${escapeHtml(userName)}</strong></div>
+            <div class="lead-timeline-desc">${escapeHtml(a.description)}</div>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (err) {
+    console.error('[Lead] Erro ao carregar atividades:', err);
+    container.innerHTML = '<div class="lead-timeline-empty">Erro ao carregar atividades.</div>';
+  }
 }
 
 /* ============================================
@@ -5889,6 +6316,34 @@ async function saveLead() {
       desc: 'Edição manual via modal'
     });
 
+    // Registrar movimentações automáticas (temperatura e cadência)
+    if (lead.id) {
+      try {
+        // Temperatura alterada
+        if (fields.thermal && lead._prevThermal && fields.thermal !== lead._prevThermal) {
+          await _supabase.from('lead_movements').insert([{
+            lead_id: lead.id,
+            movement_type: 'temperatura',
+            from_value: lead._prevThermal,
+            to_value: fields.thermal,
+            description: `Temperatura alterada de "${lead._prevThermal}" para "${fields.thermal}"`
+          }]);
+        }
+        // Cadência (status) alterada
+        if (fields.status && lead._prevStatus && fields.status !== lead._prevStatus) {
+          await _supabase.from('lead_movements').insert([{
+            lead_id: lead.id,
+            movement_type: 'cadencia',
+            from_value: lead._prevStatus,
+            to_value: fields.status,
+            description: `Cadência alterada de "${lead._prevStatus}" para "${fields.status}"`
+          }]);
+        }
+      } catch (e) {
+        console.error('[Lead] Erro ao registrar movimentação:', e);
+      }
+    }
+
     // Atualizar no Supabase
     try {
       const payload = {
@@ -6076,9 +6531,23 @@ function initCRM() {
     b.addEventListener('click', () => {
       const lead = leads.find(l => String(l.id) === String(currentLeadId));
       if (!lead) return;
-      const phone = lead.telefone.replace(/\D/g, '');
-      const text = encodeURIComponent(`Olá ${lead.empresa.split(' ')[0]}, tudo bem? Aqui é da Blue Contabilidade.`);
-      window.open(`https://wa.me/55${phone}?text=${text}`, '_blank');
+
+      const phone = (lead.telefone || '').replace(/\D/g, '');
+      if (!phone) {
+        toast('Este lead não possui um número de telefone cadastrado.', 'error');
+        return;
+      }
+
+      // Salvar dados para deep-link na tela de Conversas
+      _pendingConvNavigation = {
+        phone,
+        leadId: lead.id,
+        leadName: lead.empresa || '',
+        centroCustoId: lead._centroCustoId || null
+      };
+
+      closeLeadModal();
+      setActivePage('conversas');
     }));
 
   // Transferência (admin)
@@ -6086,6 +6555,24 @@ function initCRM() {
     b.addEventListener('click', () => switchLeadTab('transfer')));
   const transferBtnEl = $('#leadTransferBtn');
   if (transferBtnEl) transferBtnEl.addEventListener('click', transferLead);
+
+  // Novas abas: Movimentação, Anotação, Atividades
+  $$('#leadModal [data-action="movimentacao"]').forEach(b =>
+    b.addEventListener('click', () => {
+      switchLeadTab('movimentacao');
+      loadLeadMovements(currentLeadId);
+    }));
+  $$('#leadModal [data-action="nova-annotacao"]').forEach(b =>
+    b.addEventListener('click', () => switchLeadTab('nova-annotacao')));
+  $$('#leadModal [data-action="atividades"]').forEach(b =>
+    b.addEventListener('click', () => {
+      switchLeadTab('atividades');
+      loadLeadActivities(currentLeadId);
+    }));
+
+  // Salvar atividade
+  const activitySaveBtn = $('#leadActivitySaveBtn');
+  if (activitySaveBtn) activitySaveBtn.addEventListener('click', saveLeadActivity);
 
   // Inicial: esconder journey arrows errados
   renderAll();
@@ -10010,6 +10497,9 @@ function bindCalibragemReport() {
 /* ============================================
    CONVERSAS - CENTRAL DE ATENDIMENTO WHATSAPP
    ============================================ */
+function _isValidUUID(v) {
+  return typeof v === 'string' && v.length === 36 && v.includes('-');
+}
 const conversasState = {
   chats: [],
   allChats: [],
@@ -10019,8 +10509,14 @@ const conversasState = {
   leads: [],
   filter: 'all',
   searchTerm: '',
-  realtimeChannel: null
+  realtimeChannel: null,
+  selectedCentroCustoId: null,
+  centrosCustoList: []
 };
+
+/* Navegação pendente: CRM → Conversas (deep-link) */
+let _pendingConvNavigation = null;
+// { phone, leadId, leadName, centroCustoId }
 
 const _CONV_STATUS_LABELS = { open: 'Aberto', pending: 'Pendente', closed: 'Fechado' };
 const _CONV_THERMO_LABELS = { frio: 'Frio', morno: 'Morno', quente: 'Quente' };
@@ -10046,29 +10542,100 @@ async function loadConversasChats() {
   if (!list) return;
 
   try {
-    const canViewAll = canViewAllData();
-    const userId = getCurrentUserId();
+    const membroId = currentUser.id;
+    const ccId = conversasState.selectedCentroCustoId;
+    if (!membroId && !ccId) {
+      list.innerHTML = '<div class="conv-empty-state"><p>Selecione um Centro de Custo</p></div>';
+      return;
+    }
 
-    let query = _supabase
-      .from('chats')
-      .select('id, contact_name, contact_phone, contact_email, contact_location, status, assigned_to, lead_id, last_message, last_message_at, created_at, temperature, priority, tags, notes')
-      .order('last_message_at', { ascending: false });
+    // Buscar WhatsApp status
+    const waConfig = await waFetchConfig(membroId, ccId);
+    _convUpdateConnectionStatus(waConfig);
 
-    if (!canViewAll && userId) query = query.eq('assigned_to', userId);
+    // Buscar conversas (filtrar por centros_custo_id ou membro_id)
+    let convQuery = _supabase
+      .from('conversations')
+      .select('id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at')
+      .order('last_message_at', { ascending: false, nullsFirst: false });
 
-    const { data, error } = await query;
-    if (error) throw error;
+    if (ccId) {
+      convQuery = convQuery.eq('centros_custo_id', ccId);
+    } else if (membroId) {
+      convQuery = convQuery.eq('membro_id', membroId);
+    }
 
-    conversasState.allChats = data || [];
+    const { data: convData, error: convError } = await convQuery;
+
+    if (convError) {
+      console.error('[Conversas] Erro ao buscar conversas:', convError);
+      list.innerHTML = '<div class="conv-empty-state"><p>Erro ao carregar conversas: ' + convError.message + '</p></div>';
+      return;
+    }
+
+    // Buscar contatos separadamente
+    const contactIds = [...new Set((convData || []).map(c => c.contact_id).filter(Boolean))];
+    let contactsMap = {};
+
+    if (contactIds.length > 0) {
+      const { data: contactsData } = await _supabase
+        .from('contacts')
+        .select('id, phone, name, profile_pic_url')
+        .in('id', contactIds);
+
+      (contactsData || []).forEach(c => { contactsMap[c.id] = c; });
+    }
+
+    // Buscar leads vinculados às conversas
+    const leadIds = [...new Set((convData || []).map(c => c.lead_id).filter(_isValidUUID))];
+    let leadsMap = {};
+
+    if (leadIds.length > 0) {
+      const { data: leadsData } = await _supabase
+        .from('leads')
+        .select('id, nome, telefone, email, temperatura, status, membro_id, owner_id, observacoes, centro_custo_id')
+        .in('id', leadIds);
+
+      (leadsData || []).forEach(l => { leadsMap[l.id] = l; });
+    }
+
+    // Mapear para formato compativel com a UI
+    conversasState.allChats = (convData || []).map(c => {
+      const contact = contactsMap[c.contact_id] || {};
+      const lead = leadsMap[c.lead_id] || null;
+      let parsedNotes = [];
+      if (lead?.observacoes) {
+        try { parsedNotes = JSON.parse(lead.observacoes); } catch { parsedNotes = []; }
+      }
+      return {
+        id: c.id,
+        contact_name: lead?.nome || contact.name || '',
+        contact_phone: lead?.telefone || contact.phone || '',
+        contact_email: lead?.email || '',
+        contact_location: '',
+        status: c.status,
+        assigned_to: c.membro_id,
+        lead_id: c.lead_id || null,
+        last_message: c.last_message_text,
+        last_message_at: c.last_message_at,
+        created_at: c.created_at,
+        temperature: lead?.temperatura || 'frio',
+        priority: false,
+        tags: [],
+        notes: parsedNotes,
+        unread_count: c.unread_count || 0,
+        _conversationId: c.id,
+        _contactId: c.contact_id,
+        _centroCustoId: c.centros_custo_id || null,
+        _profilePicUrl: contact.profile_pic_url || null,
+        _leadData: lead
+      };
+    });
+
+    console.log('[Conversas] Conversas carregadas:', conversasState.allChats.length);
     _convApplyFilter();
     _convUpdateStats();
     _convUpdateSyncTime();
-
-    const { data: membrosData } = await _supabase.from('membros').select('id, nome').eq('status', 'Ativo').order('nome');
-    conversasState.members = membrosData || [];
-
-    const { data: leadsData } = await _supabase.from('leads').select('id, nome, telefone, email').order('nome').limit(200);
-    conversasState.leads = leadsData || [];
 
   } catch (err) {
     console.error('[Conversas] Erro ao carregar chats:', err);
@@ -10166,6 +10733,26 @@ function _convUpdateSyncTime() {
   if (el) el.textContent = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
+function _convUpdateConnectionStatus(waConfig) {
+  const statusEl = document.getElementById('convConnectionStatus');
+  if (!statusEl) return;
+
+  const status = waConfig?.status || 'disconnected';
+  const instanceName = waConfig?.provider_config?.instanceName || '--';
+
+  console.log('[Conversas] WhatsApp status:', status, '| Instance:', instanceName);
+
+  const dotClass = status === 'connected' ? 'conv-connection-dot--connected' :
+                   status === 'connecting' ? 'conv-connection-dot--connecting' : '';
+  const label = status === 'connected' ? 'Conectado' :
+                status === 'connecting' ? 'Conectando...' : 'Desconectado';
+
+  statusEl.innerHTML = `
+    <span class="conv-connection-dot ${dotClass}"></span>
+    <span>${label}</span>
+  `;
+}
+
 /* ---------- filter chips ---------- */
 function _renderConvFilterChips() {
   const container = $('#convFilterChips');
@@ -10202,14 +10789,37 @@ async function _convSelectChat(chatId) {
   $('#convChatEmpty').style.display = 'none';
   $('#convChatContent').style.display = 'flex';
 
+  // Buscar dados do lead se não foram carregados ainda
+  if (_isValidUUID(chat.lead_id) && !chat._leadData) {
+    try {
+      const { data: leadData } = await _supabase
+        .from('leads')
+        .select('id, nome, telefone, email, temperatura, status, membro_id, owner_id, observacoes, centro_custo_id')
+        .eq('id', chat.lead_id)
+        .maybeSingle();
+      if (leadData) {
+        chat._leadData = leadData;
+        chat.temperature = leadData.temperatura || 'frio';
+        chat.contact_name = leadData.nome || chat.contact_name;
+        chat.contact_phone = leadData.telefone || chat.contact_phone;
+        chat.contact_email = leadData.email || '';
+        if (leadData.observacoes) {
+          try { chat.notes = JSON.parse(leadData.observacoes); } catch { /* keep current */ }
+        }
+      }
+    } catch (e) {
+      console.error('[Conversas] Erro ao buscar lead:', e);
+    }
+  }
+
   _renderConvChatHeader(chat);
-  _renderConvSuggestion(chat);
-  await _convLoadMessages(chatId);
+  _convRenderSuggestion(chat);
+  await _convLoadMessages(chat._conversationId || chatId);
   _renderConvCrmPanel(chat);
 
   // Mark as read
   if ((chat.unread_count || 0) > 0) {
-    await _supabase.from('chats').update({ unread_count: 0, updated_at: new Date().toISOString() }).eq('id', chatId);
+    await waMarkAsRead(chat._conversationId || chatId);
     chat.unread_count = 0;
     _convUpdateStats();
     _renderConvChatList();
@@ -10264,8 +10874,9 @@ async function _convLoadMessages(chatId) {
   try {
     const { data, error } = await _supabase
       .from('messages')
-      .select('id, chat_id, content, sender_type, sender_name, created_at, status')
-      .eq('chat_id', chatId)
+      .select('id, conversation_id, membro_id, sender_type, content_type, content_text, media_url, status, created_at')
+      .eq('conversation_id', chatId)
+      .eq('membro_id', currentUser.id)
       .order('created_at', { ascending: true });
     if (error) throw error;
     conversasState.messages = data || [];
@@ -10294,14 +10905,26 @@ function _renderConvMessages() {
       html += `<div class="conv-date-separator"><span>${d}</span></div>`;
       lastDate = d;
     }
-    const type = msg.sender_type === 'agent' ? 'agent' : 'lead';
+    const type = msg.sender_type === 'member' ? 'agent' : 'lead';
     const time = new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     const statusIcon = msg.status === 'read' ? '<span class="conv-msg-status read">&#10003;&#10003;</span>' :
                        msg.status === 'delivered' ? '<span class="conv-msg-status">&#10003;&#10003;</span>' :
                        '<span class="conv-msg-status">&#10003;</span>';
+
+    // Exibir conteudo (texto ou placeholder de midia)
+    let contentHtml = '';
+    if (msg.content_text) {
+      contentHtml = _convHtmlEscape(msg.content_text);
+    } else if (msg.media_url) {
+      const mediaLabels = { image: '[Imagem]', video: '[Video]', audio: '[Audio]', document: '[Documento]', sticker: '[Figurinha]' };
+      contentHtml = `<em>${mediaLabels[msg.content_type] || '[Arquivo]'}</em>`;
+    } else {
+      contentHtml = '<em>[Mensagem vazia]</em>';
+    }
+
     html += `
       <div class="conv-msg ${type}">
-        <div class="conv-msg-content">${_convHtmlEscape(msg.content)}</div>
+        <div class="conv-msg-content">${contentHtml}</div>
         <div class="conv-msg-meta">
           <span class="conv-msg-time">${time}</span>
           ${type === 'agent' ? statusIcon : ''}
@@ -10322,30 +10945,65 @@ async function _convSendMessage() {
   input.value = '';
   input.style.height = 'auto';
 
-  try {
-    const { error } = await _supabase.from('messages').insert([{
-      chat_id: conversasState.selectedChatId,
-      sender_type: 'agent',
-      sender_name: currentUser?.nome || 'Atendente',
-      content: content,
-      status: 'sent'
-    }]);
-    if (error) throw error;
+  const chat = conversasState.allChats.find(c => c.id === conversasState.selectedChatId);
+  if (!chat) return;
 
-    await _supabase.from('chats').update({
-      last_message: content,
+  try {
+    // Enviar via WhatsApp (Evolution API) e salvar no banco
+    let ccId = chat._centroCustoId || conversasState.selectedCentroCustoId;
+    // Fallback: buscar centros_custo_id direto da conversa se ainda nulo
+    if (!ccId) {
+      try {
+        const { data: convCC } = await _supabase
+          .from('conversations')
+          .select('centros_custo_id')
+          .eq('id', chat._conversationId || conversasState.selectedChatId)
+          .maybeSingle();
+        ccId = convCC?.centros_custo_id || null;
+      } catch (e) { /* ignore */ }
+    }
+    // Buscar instanceName da config do WhatsApp
+    let instanceName = null;
+    if (ccId) {
+      try {
+        const { data: waCfg } = await _supabase
+          .from('whatsapp_config')
+          .select('provider_config')
+          .eq('provider', 'evolution_api')
+          .eq('status', 'connected')
+          .eq('centros_custo_id', ccId)
+          .maybeSingle();
+        instanceName = waCfg?.provider_config?.instanceName || null;
+      } catch (e) { /* fallback: Edge Function busca */ }
+    }
+    const cleanPhone = (chat.contact_phone || '').replace(/\D/g, '');
+    const number = cleanPhone ? (cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`) : null;
+    console.log('[WA] _convSendMessage:', { number, instanceName, ccId });
+
+    // Hard stop: não enviar se ccId ou instanceName ainda forem nulos
+    if (!ccId || !instanceName) {
+      toast('Selecione uma empresa no filtro superior para enviar mensagens nesta conversa.', 'error');
+      input.value = content;
+      return;
+    }
+
+    const result = await waSendText(currentUser.id, chat._conversationId || conversasState.selectedChatId, content, ccId, number, instanceName);
+
+    // Atualizar conversa
+    await _supabase.from('conversations').update({
+      last_message_text: content,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
-    }).eq('id', conversasState.selectedChatId);
+    }).eq('id', chat._conversationId || conversasState.selectedChatId);
 
-    const chat = conversasState.allChats.find(c => c.id === conversasState.selectedChatId);
-    if (chat) { chat.last_message = content; chat.last_message_at = new Date().toISOString(); }
+    chat.last_message = content;
+    chat.last_message_at = new Date().toISOString();
 
-    await _convLoadMessages(conversasState.selectedChatId);
+    await _convLoadMessages(chat._conversationId || conversasState.selectedChatId);
 
   } catch (err) {
     console.error('[Conversas] Erro ao enviar mensagem:', err);
-    toast('Erro ao enviar mensagem');
+    toast('Erro ao enviar mensagem: ' + (err.message || 'Tente novamente'));
   }
 }
 function convSendMessageSuggestion(text) {
@@ -10357,11 +11015,11 @@ function convSendMessageSuggestion(text) {
 function _renderConvCrmPanel(chat) {
   const panel = $('#convCrmContent');
   if (!panel) return;
-  const lead = conversasState.leads.find(l => l.id === chat.lead_id);
+  const leadData = chat._leadData || null;
   const assignee = conversasState.members.find(m => m.id === chat.assigned_to);
   const thermo = chat.temperature || 'frio';
-  const tags = chat.tags || [];
   const notes = chat.notes || [];
+  const leadId = chat.lead_id || null;
 
   panel.style.display = 'block';
   panel.innerHTML = `
@@ -10375,10 +11033,10 @@ function _renderConvCrmPanel(chat) {
         <div class="conv-profile-name">${_convHtmlEscape(chat.contact_name || 'Sem nome')}</div>
         <div class="conv-profile-phone">${chat.contact_phone ? '+' + chat.contact_phone : ''}</div>
         ${chat.contact_email ? `<div class="conv-profile-field"><span class="label">Email</span><span class="value">${_convHtmlEscape(chat.contact_email)}</span></div>` : ''}
-        ${chat.contact_location ? `<div class="conv-profile-field"><span class="label">Local</span><span class="value">${_convHtmlEscape(chat.contact_location)}</span></div>` : ''}
-        <div class="conv-profile-field"><span class="label">Status</span><span class="value">${_CONV_STATUS_LABELS[chat.status] || chat.status}</span></div>
+        ${leadData?.status ? `<div class="conv-profile-field"><span class="label">Etapa</span><span class="value">${_convHtmlEscape(leadData.status)}</span></div>` : ''}
+        <div class="conv-profile-field"><span class="label">Conversa</span><span class="value">${_CONV_STATUS_LABELS[chat.status] || chat.status}</span></div>
         <div class="conv-profile-field"><span class="label">Responsavel</span><span class="value">${assignee ? _convHtmlEscape(assignee.nome) : 'Nao atribuido'}</span></div>
-        ${lead ? `<a class="conv-btn-link" href="#" onclick="navigateTo('crm');return false;">Ver lead: ${_convHtmlEscape(lead.nome)}</a>` : ''}
+        ${leadId ? `<a class="conv-btn-link" href="#" onclick="event.preventDefault();navigateToRoute('crm','crm');">Ver lead no CRM</a>` : ''}
       </div>
     </div>
 
@@ -10389,9 +11047,9 @@ function _renderConvCrmPanel(chat) {
       </div>
       <div class="conv-crm-section-body">
         <div class="conv-thermo">
-          <button class="conv-thermo-btn frio${thermo === 'frio' ? ' active' : ''}" onclick="convSetTemperature('${chat.id}','frio')">Frio</button>
-          <button class="conv-thermo-btn morno${thermo === 'morno' ? ' active' : ''}" onclick="convSetTemperature('${chat.id}','morno')">Morno</button>
-          <button class="conv-thermo-btn quente${thermo === 'quente' ? ' active' : ''}" onclick="convSetTemperature('${chat.id}','quente')">Quente</button>
+          <button class="conv-thermo-btn frio${thermo === 'frio' ? ' active' : ''}" onclick="convSetTemperature('${chat.id}','frio',${leadId ? `'${leadId}'` : 'null'})">Frio</button>
+          <button class="conv-thermo-btn morno${thermo === 'morno' ? ' active' : ''}" onclick="convSetTemperature('${chat.id}','morno',${leadId ? `'${leadId}'` : 'null'})">Morno</button>
+          <button class="conv-thermo-btn quente${thermo === 'quente' ? ' active' : ''}" onclick="convSetTemperature('${chat.id}','quente',${leadId ? `'${leadId}'` : 'null'})">Quente</button>
         </div>
       </div>
     </div>
@@ -10403,7 +11061,7 @@ function _renderConvCrmPanel(chat) {
       </div>
       <div class="conv-crm-section-body">
         <div class="conv-crm-field">
-          <label>Status</label>
+          <label>Status Conversa</label>
           <select onchange="convSetStatus('${chat.id}', this.value)">
             <option value="open"${chat.status === 'open' ? ' selected' : ''}>Aberto</option>
             <option value="pending"${chat.status === 'pending' ? ' selected' : ''}>Pendente</option>
@@ -10412,7 +11070,7 @@ function _renderConvCrmPanel(chat) {
         </div>
         <div class="conv-crm-field">
           <label>Responsavel</label>
-          <select onchange="convSetAssignee('${chat.id}', this.value)">
+          <select onchange="convSetAssignee('${chat.id}', this.value,${leadId ? `'${leadId}'` : 'null'})">
             <option value="">Nao atribuido</option>
             ${conversasState.members.map(m => `<option value="${m.id}"${chat.assigned_to === m.id ? ' selected' : ''}>${_convHtmlEscape(m.nome)}</option>`).join('')}
           </select>
@@ -10431,7 +11089,7 @@ function _renderConvCrmPanel(chat) {
       </div>
       <div class="conv-crm-section-body">
         <textarea class="form-control" rows="3" placeholder="Adicionar observacao..." id="convNotesInput" style="font-size:12px;"></textarea>
-        <button class="btn btn-primary btn-sm" style="margin-top:8px;width:100%;" onclick="convAddNote('${chat.id}')">Salvar observacao</button>
+        <button class="btn btn-primary btn-sm" style="margin-top:8px;width:100%;" onclick="convAddNote('${chat.id}',${leadId ? `'${leadId}'` : 'null'})">Salvar observacao</button>
         <div id="convNotesList" style="margin-top:10px;">
           ${(Array.isArray(notes) ? notes : []).slice(-5).reverse().map(n => `
             <div class="conv-note-item">
@@ -10445,48 +11103,72 @@ function _renderConvCrmPanel(chat) {
 }
 
 /* ---------- CRM actions ---------- */
-async function convSetTemperature(chatId, temp) {
-  await _supabase.from('chats').update({ temperature: temp, updated_at: new Date().toISOString() }).eq('id', chatId);
+async function convSetTemperature(chatId, temp, leadId) {
   const chat = conversasState.allChats.find(c => c.id === chatId);
   if (chat) chat.temperature = temp;
+  // Atualizar leads table se lead_id existir
+  if (leadId) {
+    try {
+      await _supabase.from('leads').update({ temperatura: temp, updated_at: new Date().toISOString() }).eq('id', leadId);
+      if (chat?._leadData) chat._leadData.temperatura = temp;
+    } catch (e) { console.error('[Conversas] Erro ao atualizar temperatura no lead:', e); }
+  }
   if (conversasState.selectedChatId === chatId) _renderConvCrmPanel(chat);
   _convUpdateStats();
 }
 async function convSetStatus(chatId, status) {
-  await _supabase.from('chats').update({ status, updated_at: new Date().toISOString() }).eq('id', chatId);
+  const membroId = currentUser.id;
+  if (membroId) {
+    await _supabase.from('conversations').update({ status, updated_at: new Date().toISOString() }).eq('id', chatId).eq('membro_id', membroId);
+  }
   const chat = conversasState.allChats.find(c => c.id === chatId);
   if (chat) chat.status = status;
   if (conversasState.selectedChatId === chatId) { _renderConvChatHeader(chat); _renderConvCrmPanel(chat); }
   _convUpdateStats();
   _convApplyFilter();
 }
-async function convSetAssignee(chatId, userId) {
-  await _supabase.from('chats').update({ assigned_to: userId || null, updated_at: new Date().toISOString() }).eq('id', chatId);
+async function convSetAssignee(chatId, userId, leadId) {
   const chat = conversasState.allChats.find(c => c.id === chatId);
   if (chat) chat.assigned_to = userId || null;
+  // Atualizar leads table se lead_id existir
+  if (leadId) {
+    try {
+      await _supabase.from('leads').update({ membro_id: userId || null, updated_at: new Date().toISOString() }).eq('id', leadId);
+      if (chat?._leadData) chat._leadData.membro_id = userId || null;
+    } catch (e) { console.error('[Conversas] Erro ao atualizar responsavel no lead:', e); }
+  }
   if (conversasState.selectedChatId === chatId) _renderConvCrmPanel(chat);
 }
 async function convSetPriority(chatId, on) {
-  await _supabase.from('chats').update({ priority: on, updated_at: new Date().toISOString() }).eq('id', chatId);
   const chat = conversasState.allChats.find(c => c.id === chatId);
   if (chat) chat.priority = on;
   _convApplyFilter();
 }
-async function convAddNote(chatId) {
+async function convAddNote(chatId, leadId) {
   const input = $('#convNotesInput');
   if (!input || !input.value.trim()) return;
   const chat = conversasState.allChats.find(c => c.id === chatId);
   const notes = Array.isArray(chat?.notes) ? [...chat.notes] : [];
-  notes.push({ text: input.value.trim(), author: currentUser?.nome || 'Atendente', time: new Date().toISOString() });
-  await _supabase.from('chats').update({ notes, updated_at: new Date().toISOString() }).eq('id', chatId);
+  const newNote = { text: input.value.trim(), author: currentUser?.nome || 'Atendente', time: new Date().toISOString() };
+  notes.push(newNote);
   if (chat) chat.notes = notes;
   input.value = '';
+  // Salvar observacoes no leads table como JSON string
+  if (leadId) {
+    try {
+      await _supabase.from('leads').update({ observacoes: JSON.stringify(notes), updated_at: new Date().toISOString() }).eq('id', leadId);
+      if (chat?._leadData) chat._leadData.observacoes = JSON.stringify(notes);
+    } catch (e) { console.error('[Conversas] Erro ao salvar observacao no lead:', e); }
+  }
   _renderConvCrmPanel(chat);
   toast('Observacao salva');
 }
 async function convArchiveChat(chatId) {
   if (!confirm('Arquivar esta conversa?')) return;
-  await _supabase.from('chats').update({ status: 'closed', updated_at: new Date().toISOString() }).eq('id', chatId);
+  const membroId = currentUser.id;
+  if (membroId) {
+    await _supabase.from('conversations').update({ status: 'closed', updated_at: new Date().toISOString() }).eq('id', chatId).eq('membro_id', membroId);
+  }
   const chat = conversasState.allChats.find(c => c.id === chatId);
   if (chat) chat.status = 'closed';
   _convUpdateStats();
@@ -10498,15 +11180,15 @@ async function convArchiveChat(chatId) {
 function _convOpenNewModal() {
   const overlay = $('#convNewOverlay');
   const modal = $('#convNewModal');
-  if (overlay) overlay.style.display = 'flex';
-  if (modal) modal.style.display = 'flex';
+  if (overlay) overlay.classList.add('open');
+  if (modal) { modal.classList.add('open'); modal.scrollTop = 0; }
   initIcons();
 }
 function _convCloseNewModal() {
   const overlay = $('#convNewOverlay');
   const modal = $('#convNewModal');
-  if (overlay) overlay.style.display = 'none';
-  if (modal) modal.style.display = 'none';
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
   ['convNewPhone', 'convNewName', 'convNewLeadSearch', 'convNewMessage'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
@@ -10518,42 +11200,128 @@ function _convCloseNewModal() {
 }
 async function _convCreateChat() {
   const phone = ($('#convNewPhone')?.value || '').replace(/\D/g, '');
-  const name = $('#convNewName')?.value || '';
-  const leadId = $('#convNewLeadId')?.value || null;
-  const assignee = $('#convNewAssignee')?.value || null;
-  const message = $('#convNewMessage')?.value || '';
+  const name = ($('#convNewName')?.value || '');
+  const message = ($('#convNewMessage')?.value || '');
+  const leadId = ($('#convNewLeadId')?.value || '') || null;
 
   if (!phone) { toast('Informe o telefone'); return; }
 
+  const membroId = currentUser.id;
+  const ccId = conversasState.selectedCentroCustoId;
+  if (!membroId) { toast('Usuario nao identificado'); return; }
+
   try {
-    const insertData = {
-      contact_phone: phone,
-      contact_name: name || null,
-      lead_id: leadId || null,
-      assigned_to: assignee || getCurrentUserId(),
-      status: 'open',
-      temperature: 'frio',
-      last_message: message || null,
-      last_message_at: message ? new Date().toISOString() : null
-    };
+    // 1. Buscar contato existente (telefone + centro de custo)
+    let contactId = null;
+    let existingLeadId = null;
 
-    const { data, error } = await _supabase.from('chats').insert([insertData]).select().single();
-    if (error) throw error;
+    let contactQuery = _supabase
+      .from('contacts')
+      .select('id, lead_id')
+      .eq('phone', phone);
 
+    if (ccId) {
+      contactQuery = contactQuery.eq('centros_custo_id', ccId);
+    } else {
+      contactQuery = contactQuery.eq('membro_id', membroId);
+    }
+
+    const { data: existingContact, error: selErr } = await contactQuery.maybeSingle();
+
+    if (selErr) {
+      console.error('[Conversas] Erro ao buscar contato:', selErr);
+    }
+
+    if (existingContact) {
+      contactId = existingContact.id;
+      existingLeadId = existingContact.lead_id;
+    }
+
+    // 2. Criar contato apenas se não existe
+    if (!contactId) {
+      const { data: newContact, error: insErr } = await _supabase
+        .from('contacts')
+        .insert([{
+          membro_id: membroId,
+          centros_custo_id: ccId,
+          phone,
+          name: name || phone,
+          lead_id: leadId,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }])
+        .select('id')
+        .single();
+
+      if (insErr) {
+        console.error('[Conversas] Erro ao criar contato:', insErr);
+        // Se erro de conflito (409), buscar o contato novamente
+        if (insErr.code === '23505') {
+          const { data: retryContact } = await contactQuery.maybeSingle();
+          if (retryContact) contactId = retryContact.id;
+        }
+      } else if (newContact) {
+        contactId = newContact.id;
+      }
+    }
+
+    // 3. Atualizar dados do contato se já existia
+    if (contactId && existingContact) {
+      const updates = { updated_at: new Date().toISOString() };
+      if (name) updates.name = name;
+      if (leadId && !existingLeadId) updates.lead_id = leadId;
+      if (Object.keys(updates).length > 1) {
+        await _supabase.from('contacts').update(updates).eq('id', contactId);
+      }
+    }
+
+    if (!contactId) {
+      toast('Erro ao criar contato');
+      return;
+    }
+
+    // 4. Criar conversa
+    const { data: newConv, error: convError } = await _supabase
+      .from('conversations')
+      .insert([{
+        membro_id: membroId,
+        contact_id: contactId,
+        centros_custo_id: ccId,
+        lead_id: leadId,
+        status: 'open',
+        unread_count: 0,
+        last_message_text: message || null,
+        last_message_at: message ? new Date().toISOString() : null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }])
+      .select('id')
+      .single();
+
+    if (convError) throw convError;
+
+    // 5. Enviar primeira mensagem via WhatsApp se existir
     if (message) {
-      await _supabase.from('messages').insert([{
-        chat_id: data.id,
-        sender_type: 'agent',
-        sender_name: currentUser?.nome || 'Atendente',
-        content: message,
-        status: 'sent'
-      }]);
+      // Buscar instanceName
+      let instName = null;
+      try {
+        const { data: waCfg } = await _supabase
+          .from('whatsapp_config')
+          .select('provider_config')
+          .eq('provider', 'evolution_api')
+          .eq('status', 'connected')
+          .eq('centros_custo_id', ccId)
+          .maybeSingle();
+        instName = waCfg?.provider_config?.instanceName || null;
+      } catch (e) { /* fallback: Edge Function busca */ }
+      const num = phone ? `55${phone}` : null;
+      await waSendText(membroId, newConv.id, message, ccId, num, instName);
     }
 
     toast('Conversa criada');
     _convCloseNewModal();
     await loadConversasChats();
-    _convSelectChat(data.id);
+    _convSelectChat(newConv.id);
 
   } catch (err) {
     console.error('[Conversas] Erro ao criar conversa:', err);
@@ -10589,45 +11357,151 @@ function _convLeadSearch() {
 }
 
 /* ---------- realtime ---------- */
+let _convRefreshInterval = null;
+
 function _convSubscribeRealtime() {
   if (conversasState.realtimeChannel) _supabase.removeChannel(conversasState.realtimeChannel);
 
+  const membroId = currentUser.id;
+  const ccId = conversasState.selectedCentroCustoId;
+  if (!membroId && !ccId) return;
+
   conversasState.realtimeChannel = _supabase
     .channel('conversas-realtime')
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'messages'
+    }, payload => {
       const newMsg = payload.new;
-      if (newMsg.chat_id === conversasState.selectedChatId) {
+      const chat = conversasState.allChats.find(c => c._conversationId === newMsg.conversation_id);
+      if (!chat) return;
+
+      const selectedConvId = conversasState.allChats.find(c => c.id === conversasState.selectedChatId)?._conversationId;
+      if (newMsg.conversation_id === selectedConvId) {
         conversasState.messages.push(newMsg);
         _renderConvMessages();
       }
-      const chat = conversasState.allChats.find(c => c.id === newMsg.chat_id);
-      if (chat) {
-        chat.last_message = newMsg.content;
-        chat.last_message_at = newMsg.created_at;
-        if (newMsg.chat_id !== conversasState.selectedChatId) chat.unread_count = (chat.unread_count || 0) + 1;
-        _convApplyFilter();
-        _convUpdateStats();
+
+      chat.last_message = newMsg.content_text || '';
+      chat.last_message_at = newMsg.created_at;
+      if (newMsg.conversation_id !== selectedConvId && newMsg.sender_type === 'contact') {
+        chat.unread_count = (chat.unread_count || 0) + 1;
       }
+      _convApplyFilter();
+      _convUpdateStats();
     })
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chats' }, payload => {
+    .on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'conversations'
+    }, payload => {
       const updated = payload.new;
-      const idx = conversasState.allChats.findIndex(c => c.id === updated.id);
+      // Verificar se pertence a este centro de custo ou membro
+      if (ccId && updated.centros_custo_id !== ccId) return;
+      if (!ccId && membroId && updated.membro_id !== membroId) return;
+
+      const idx = conversasState.allChats.findIndex(c => c._conversationId === updated.id || c.id === updated.id);
       if (idx >= 0) {
-        conversasState.allChats[idx] = { ...conversasState.allChats[idx], ...updated };
+        conversasState.allChats[idx].unread_count = updated.unread_count || 0;
+        conversasState.allChats[idx].last_message = updated.last_message_text || '';
+        conversasState.allChats[idx].last_message_at = updated.last_message_at;
+        conversasState.allChats[idx].status = updated.status;
         _convApplyFilter();
-        if (updated.id === conversasState.selectedChatId) {
+        if (updated.id === conversasState.selectedChatId || updated.id === conversasState.allChats[idx]._conversationId) {
           _renderConvChatHeader(conversasState.allChats[idx]);
           _renderConvCrmPanel(conversasState.allChats[idx]);
         }
       }
     })
     .subscribe();
+
+  // Fallback: refresh a cada 15 segundos (Realtime pode falhar)
+  if (_convRefreshInterval) clearInterval(_convRefreshInterval);
+  _convRefreshInterval = setInterval(() => {
+    if (activePage === 'conversas') {
+      loadConversasChats();
+    }
+  }, 15000);
 }
 
 /* ---------- auto-resize textarea ---------- */
 function _convAutoResize(textarea) {
   textarea.style.height = 'auto';
   textarea.style.height = Math.min(textarea.scrollHeight, 100) + 'px';
+}
+
+/* ---------- centro de custo dropdown ---------- */
+async function _initConvCentroCustoDropdown() {
+  const select = $('#convCentroCustoSelect');
+  if (!select) return;
+
+  // Buscar centros de custo do membro
+  const { data: mccData } = await _supabase
+    .from('membro_centros_custo')
+    .select('centro_custo_id, centros_custo(id, nome)')
+    .eq('membro_id', currentUser.id);
+
+  const list = (mccData || [])
+    .map(r => r.centros_custo)
+    .filter(Boolean)
+    .sort((a, b) => a.nome.localeCompare(b.nome));
+
+  conversasState.centrosCustoList = list;
+
+  if (list.length === 0) {
+    select.innerHTML = '<option value="">Sem centros de custo</option>';
+    select.disabled = true;
+    return;
+  }
+
+  select.innerHTML = '<option value="">Selecione a empresa...</option>' +
+    list.map(cc => `<option value="${cc.id}">${escapeHtml(cc.nome)}</option>`).join('');
+
+  // Deep-link: forçar seleção do CC do lead
+  if (_pendingConvNavigation?.centroCustoId && list.some(cc => cc.id === _pendingConvNavigation.centroCustoId)) {
+    select.value = _pendingConvNavigation.centroCustoId;
+    conversasState.selectedCentroCustoId = _pendingConvNavigation.centroCustoId;
+  }
+  // Restaurar seleção anterior se existir
+  else if (conversasState.selectedCentroCustoId) {
+    select.value = conversasState.selectedCentroCustoId;
+  }
+
+  select.addEventListener('change', () => {
+    conversasState.selectedCentroCustoId = select.value || null;
+    conversasState.allChats = [];
+    conversasState.chats = [];
+    conversasState.selectedChatId = null;
+    conversasState.messages = [];
+    // Resetar área do chat
+    const chatEmpty = $('#convChatEmpty');
+    const chatContent = $('#convChatContent');
+    if (chatEmpty) chatEmpty.style.display = '';
+    if (chatContent) chatContent.style.display = 'none';
+    _convSubscribeRealtime();
+    loadConversasChats();
+  });
+
+  // Auto-selecionar se só tem 1
+  if (list.length === 1 && !conversasState.selectedCentroCustoId) {
+    select.value = list[0].id;
+    conversasState.selectedCentroCustoId = list[0].id;
+  }
+}
+
+/* ---------- load members for assignee dropdown ---------- */
+async function _loadConvMembers() {
+  try {
+    const { data, error } = await _supabase
+      .from('membros')
+      .select('id, nome')
+      .eq('status', 'Ativo')
+      .order('nome');
+    if (!error && data) conversasState.members = data;
+  } catch (e) {
+    console.error('[Conversas] Erro ao carregar membros:', e);
+  }
 }
 
 /* ---------- init ---------- */
@@ -10638,7 +11512,7 @@ function initConversas() {
   const newBtn = $('#btnConvNew');
   const newCloseBtn = $('#btnConvNewClose');
   const newOverlay = $('#convNewOverlay');
-  const newSubmitBtn = document.querySelector('#convNewModal .modal-actions .btn-primary');
+  const newSubmitBtn = document.querySelector('#btnConvNewConfirm');
   const leadSearch = $('#convNewLeadSearch');
   const refreshBtn = $('#btnConvRefresh');
   const unidentifiedBtn = $('#convUnidentifiedBtn');
@@ -10663,6 +11537,8 @@ function initConversas() {
   if (newCloseBtn) newCloseBtn.addEventListener('click', _convCloseNewModal);
   if (newOverlay) newOverlay.addEventListener('click', _convCloseNewModal);
   if (newSubmitBtn) newSubmitBtn.addEventListener('click', _convCreateChat);
+  const newCancelBtn = document.getElementById('btnConvNewCancel');
+  if (newCancelBtn) newCancelBtn.addEventListener('click', _convCloseNewModal);
   if (leadSearch) leadSearch.addEventListener('input', _convLeadSearch);
   if (refreshBtn) refreshBtn.addEventListener('click', loadConversasChats);
   if (unidentifiedBtn) {
@@ -10674,8 +11550,64 @@ function initConversas() {
   }
 
   _renderConvFilterChips();
-  loadConversasChats();
+  _loadConvMembers();
+  _initConvCentroCustoDropdown().then(() => loadConversasChats()).then(() => _processConvDeepLink());
   _convSubscribeRealtime();
+}
+
+/* ---------- deep-link CRM → Conversas ---------- */
+function _processConvDeepLink() {
+  if (!_pendingConvNavigation) return;
+
+  const nav = _pendingConvNavigation;
+  _pendingConvNavigation = null;
+
+  const rawLeadPhone = nav.phone;
+  const leadId = nav.leadId;
+  const leadName = nav.leadName;
+
+  // Normalizar telefone: remover não-dígitos, pegar últimos 10 dígitos (DDD + número)
+  function normPhone(p) {
+    const digits = (p || '').replace(/\D/g, '');
+    return digits.slice(-10);
+  }
+
+  const leadPhoneNorm = normPhone(rawLeadPhone);
+  console.log('[DeepLink] Lead phone (raw):', rawLeadPhone, '| normalized:', leadPhoneNorm);
+  console.log('[DeepLink] allChats count:', conversasState.allChats.length);
+
+  // Buscar conversa existente pelo telefone (comparação por últimos 10 dígitos)
+  const match = conversasState.allChats.find(c => {
+    const cPhoneNorm = normPhone(c.contact_phone);
+    console.log('[DeepLink] Comparing:', cPhoneNorm, '===', leadPhoneNorm, '→', cPhoneNorm === leadPhoneNorm);
+    return cPhoneNorm && cPhoneNorm === leadPhoneNorm;
+  });
+
+  console.log('[DeepLink] Match found:', !!match, match?.id);
+
+  if (match) {
+    // Forçar filtro 'all' para garantir que o chat apareça na lista renderizada
+    conversasState.filter = 'all';
+    conversasState.searchTerm = '';
+    const searchInput = $('#convSearchInput');
+    if (searchInput) searchInput.value = '';
+    _convApplyFilter();
+    _renderConvFilterChips();
+
+    // Aguardar um tick para o DOM renderizar a lista antes de selecionar
+    requestAnimationFrame(() => {
+      _convSelectChat(match.id);
+    });
+  } else {
+    // Abrir modal de nova conversa com dados pré-preenchidos
+    _convOpenNewModal();
+    const phoneEl = document.getElementById('convNewPhone');
+    const nameEl = document.getElementById('convNewName');
+    const leadIdEl = document.getElementById('convNewLeadId');
+    if (phoneEl) phoneEl.value = rawLeadPhone;
+    if (nameEl) nameEl.value = leadName;
+    if (leadIdEl) leadIdEl.value = leadId;
+  }
 }
 
 /* ============================================
@@ -11340,20 +12272,29 @@ async function loadContratoLeads() {
   const canViewAll = typeof canViewAllData === 'function' ? canViewAllData() : false;
   const filterId = canViewAll ? null : (typeof getCurrentUserId === 'function' ? getCurrentUserId() : null);
 
-  let q = _supabase.from('leads').select('*').order('nome', { ascending: true });
-  if (filterId) {
-    q = q.or('membro_id.eq.' + filterId + ',qualificador_id.eq.' + filterId + ',owner_id.eq.' + filterId);
+  let data = null;
+  let error = null;
+
+  if (filterId && typeof filterId === 'string' && filterId.length === 36 && filterId.includes('-')) {
+    const [r1, r2, r3] = await Promise.all([
+      _supabase.from('leads').select('*').eq('membro_id', filterId).order('nome', { ascending: true }),
+      _supabase.from('leads').select('*').eq('qualificador_id', filterId).order('nome', { ascending: true }),
+      _supabase.from('leads').select('*').eq('owner_id', filterId).order('nome', { ascending: true })
+    ]);
+    const seen = new Set();
+    data = [];
+    for (const r of [r1, r2, r3]) {
+      if (r.error && !error) error = r.error;
+      for (const lead of (r.data || [])) {
+        if (!seen.has(lead.id)) { seen.add(lead.id); data.push(lead); }
+      }
+    }
+  } else {
+    const result = await _supabase.from('leads').select('*').order('nome', { ascending: true });
+    data = result.data;
+    error = result.error;
   }
 
-  let { data, error } = await q;
-  if (error && filterId) {
-    console.warn('[Contratos] Query .or() falhou, retry simplificado:', error.message);
-    let rq = _supabase.from('leads').select('*').order('nome', { ascending: true });
-    rq = rq.or('membro_id.eq.' + filterId + ',qualificador_id.eq.' + filterId);
-    const retry = await rq;
-    data = retry.data;
-    error = retry.error;
-  }
   if (error) { console.error('[Contratos] Erro ao carregar leads:', error.message, error.code); return []; }
   return data || [];
 }
@@ -13195,3 +14136,10 @@ window.contratoDownloadPDF = contratoDownloadPDF;
 window.contratoAcoes = contratoAcoes;
 window.contratoExcluir = contratoExcluir;
 window._contratoUploadAssinado = _contratoUploadAssinado;
+
+// Expose Conversas CRM panel functions (called from onclick in generated HTML)
+window.convSetTemperature = convSetTemperature;
+window.convSetStatus = convSetStatus;
+window.convSetAssignee = convSetAssignee;
+window.convSetPriority = convSetPriority;
+window.convAddNote = convAddNote;

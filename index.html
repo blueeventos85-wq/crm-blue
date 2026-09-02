@@ -849,6 +849,9 @@
               <a href="#" class="settings-link" data-settings-tab="plano" style="display:none">
                 <i data-lucide="credit-card"></i> Plano
               </a>
+              <a href="#" class="settings-link" data-settings-tab="whatsapp">
+                <i data-lucide="message-circle"></i> WhatsApp
+              </a>
             </aside>
 
             <div class="settings-content">
@@ -953,6 +956,98 @@
                   </div>
                   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
                     <button class="btn-primary" id="brandingSaveBtn"><i data-lucide="save"></i> Salvar identidade visual</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ============ WHATSAPP CONFIG TAB ============ -->
+              <div class="settings-tab-content" id="settingsTabWhatsapp" style="display:none">
+                <div class="card">
+                  <div class="card-header">
+                    <div>
+                      <h3 class="card-title">Conexao WhatsApp</h3>
+                      <p class="card-sub">Configure a integracao com a Evolution API para enviar e receber mensagens</p>
+                    </div>
+                  </div>
+
+                  <!-- Status da conexao -->
+                  <div class="wa-status-card" id="waStatusCard">
+                    <div class="wa-status-row">
+                      <div class="wa-status-info">
+                        <div class="wa-status-dot" id="waStatusDot"></div>
+                        <div>
+                          <div class="wa-status-label" id="waStatusLabel">Verificando...</div>
+                          <div class="wa-status-sub" id="waStatusSub">Instance: --</div>
+                        </div>
+                      </div>
+                      <div class="wa-status-actions">
+                        <button class="btn btn-primary" id="waConnectBtn" style="display:none">
+                          <i data-lucide="wifi"></i> Conectar
+                        </button>
+                        <button class="btn btn-danger" id="waDisconnectBtn" style="display:none">
+                          <i data-lucide="wifi-off"></i> Desconectar
+                        </button>
+                        <button class="btn btn-ghost" id="waRefreshBtn" style="display:none">
+                          <i data-lucide="refresh-cw"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- QR Code area -->
+                  <div class="wa-qr-section" id="waQrSection" style="display:none">
+                    <div class="wa-qr-header">
+                      <h4>Escaneie o QR Code com seu WhatsApp</h4>
+                      <p>Abra o WhatsApp no celular, va em Aparelhos conectados e escaneie o codigo</p>
+                    </div>
+                    <div class="wa-qr-container" id="waQrContainer">
+                      <div class="wa-qr-loading" id="waQrLoading">
+                        <div class="wa-spinner"></div>
+                        <p>Gerando QR Code...</p>
+                      </div>
+                      <img id="waQrImage" class="wa-qr-image" style="display:none" alt="QR Code WhatsApp" />
+                    </div>
+                    <div class="wa-qr-footer">
+                      <span class="wa-qr-timer" id="waQrTimer"></span>
+                      <button class="btn btn-ghost btn-sm" id="waQrRefresh">
+                        <i data-lucide="refresh-cw"></i> Gerar novo codigo
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Config form -->
+                  <div class="wa-config-form" id="waConfigForm">
+                    <div class="form-grid">
+                      <div class="form-group">
+                        <label>Centro de Custo</label>
+                        <select id="waCentroCustoSelect">
+                          <option value="">Selecione a empresa...</option>
+                        </select>
+                        <p class="field-hint">Vincular esta instância a um Centro de Custo</p>
+                      </div>
+                      <div class="form-group">
+                        <label>Nome da Instancia</label>
+                        <input type="text" id="waInstanceName" placeholder="ex: blue-crm-blue-eventos" />
+                        <p class="field-hint">Nome unico para identificar esta conexao</p>
+                      </div>
+                      <div class="form-group">
+                        <label>Integracao</label>
+                        <select id="waIntegration">
+                          <option value="WHATSAPP-BAILEYS">Baileys (Recomendado)</option>
+                          <option value="WHATSAPP-BUSINESS">WhatsApp Business API</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Info -->
+                  <div class="wa-info-box">
+                    <i data-lucide="info"></i>
+                    <div>
+                      <strong>Como funciona:</strong> Ao conectar, uma instancia e criada na Evolution API.
+                      As mensagens recebidas serao salvas automaticamente no Supabase e aparecerao na aba Conversas.
+                      Voce pode enviar mensagens diretamente pelo CRM.
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1129,6 +1224,9 @@
             </div>
             <div class="conv-header-right">
               <span class="conv-sync-time" id="convSyncTime"></span>
+              <select id="convCentroCustoSelect" style="padding:6px 10px;border-radius:8px;border:1px solid #334155;background:#1E293B;color:#E2E8F0;font-size:12px;min-width:140px">
+                <option value="">Carregando...</option>
+              </select>
               <button class="btn-ghost btn-sm" id="btnConvRefresh" title="Atualizar conversas"><i data-lucide="refresh-cw"></i></button>
               <button class="btn btn-primary btn-sm" id="btnConvNew"><i data-lucide="plus"></i> Nova conversa</button>
             </div>
@@ -2373,6 +2471,15 @@
         <button class="btn-ghost small" data-action="history" title="Histórico">
           <i data-lucide="history"></i> Histórico
         </button>
+        <button class="btn-ghost small" data-action="movimentacao" title="Movimentação">
+          <i data-lucide="zap"></i> Movimentação
+        </button>
+        <button class="btn-ghost small" data-action="nova-annotacao" title="Nova Anotação">
+          <i data-lucide="message-square-plus"></i> Anotação
+        </button>
+        <button class="btn-ghost small" data-action="atividades" title="Atividades">
+          <i data-lucide="clock"></i> Atividades
+        </button>
         <button class="btn-ghost small" data-action="whatsapp" title="Abrir WhatsApp">
           <i data-lucide="message-circle"></i> WhatsApp
         </button>
@@ -2542,6 +2649,56 @@
               <i data-lucide="arrow-right-left"></i> Transferir
             </button>
           </div>
+        </div>
+      </div>
+
+      <!-- Aba de Movimentação -->
+      <div class="lead-tab" data-tab="movimentacao">
+        <button class="btn-ghost small history-back-btn" data-action="back-to-edit" style="margin-bottom:16px">
+          <i data-lucide="arrow-left"></i> Voltar ao detalhe
+        </button>
+        <h3 class="lead-section-title"><i data-lucide="zap"></i> Registro de Movimentação do Cliente</h3>
+        <div class="lead-timeline" id="leadMovementsTimeline">
+          <div class="lead-timeline-empty">Nenhuma movimentação registrada.</div>
+        </div>
+      </div>
+
+      <!-- Aba de Nova Anotação -->
+      <div class="lead-tab" data-tab="nova-annotacao">
+        <button class="btn-ghost small history-back-btn" data-action="back-to-edit" style="margin-bottom:16px">
+          <i data-lucide="arrow-left"></i> Voltar ao detalhe
+        </button>
+        <h3 class="lead-section-title"><i data-lucide="message-square-plus"></i> Nova Anotação</h3>
+        <div class="lead-activity-form">
+          <div class="form-group">
+            <label>Tipo de Atividade</label>
+            <select id="leadActivityType">
+              <option value="Anotação">Anotação</option>
+              <option value="Ligação">Ligação</option>
+              <option value="Visita">Visita</option>
+              <option value="WhatsApp">WhatsApp</option>
+              <option value="Pré-vendas">Pré-vendas</option>
+              <option value="Gerencial">Gerencial</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Descrição</label>
+            <textarea id="leadActivityDesc" rows="4" placeholder="Descreva a atividade realizada..."></textarea>
+          </div>
+          <button class="btn-primary" id="leadActivitySaveBtn" type="button">
+            <i data-lucide="save"></i> Salvar Atividade
+          </button>
+        </div>
+      </div>
+
+      <!-- Aba de Histórico de Atividades -->
+      <div class="lead-tab" data-tab="atividades">
+        <button class="btn-ghost small history-back-btn" data-action="back-to-edit" style="margin-bottom:16px">
+          <i data-lucide="arrow-left"></i> Voltar ao detalhe
+        </button>
+        <h3 class="lead-section-title"><i data-lucide="clock"></i> Histórico de Atividades do Corretor</h3>
+        <div class="lead-timeline" id="leadActivitiesTimeline">
+          <div class="lead-timeline-empty">Nenhuma atividade registrada.</div>
         </div>
       </div>
     </div>
@@ -3087,6 +3244,7 @@
   </section>
 
   <script type="module" src="supabaseClient.js"></script>
+  <script type="module" src="src/lib/whatsapp/whatsapp-service.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

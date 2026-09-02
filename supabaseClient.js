@@ -231,28 +231,30 @@ async function fetchLeadsSupabase(filterMemberId) {
 
   const cadenciaMap = await fetchCadenciasMap();
 
-  let q = _supabase
-    .from('leads')
-    .select('*')
-    .order('created_at', { ascending: false });
+  let data = null;
+  let error = null;
 
-  if (filterMemberId) {
+  if (filterMemberId && typeof filterMemberId === 'string' && filterMemberId.length === 36 && filterMemberId.includes('-')) {
     console.log('[Supabase] Filtrando leads por membro_id/qualificador_id/owner_id:', filterMemberId);
-    q = q.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId + ',owner_id.eq.' + filterMemberId);
-  }
-
-  let { data, error } = await q;
-
-  if (error && filterMemberId) {
-    console.warn('[Supabase] Query com .or() falhou, tentando filtro simplificado:', error.message, error.code);
-    let q2 = _supabase
-      .from('leads')
-      .select('*')
-      .order('created_at', { ascending: false });
-    q2 = q2.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId);
-    const retry = await q2;
-    data = retry.data;
-    error = retry.error;
+    // Usar 3 queries separadas em vez de .or() para evitar 400 do Postgrest
+    const [r1, r2, r3] = await Promise.all([
+      _supabase.from('leads').select('*').eq('membro_id', filterMemberId).order('created_at', { ascending: false }),
+      _supabase.from('leads').select('*').eq('qualificador_id', filterMemberId).order('created_at', { ascending: false }),
+      _supabase.from('leads').select('*').eq('owner_id', filterMemberId).order('created_at', { ascending: false })
+    ]);
+    // Merge sem duplicatas por id
+    const seen = new Set();
+    data = [];
+    for (const r of [r1, r2, r3]) {
+      if (r.error && !error) error = r.error;
+      for (const lead of (r.data || [])) {
+        if (!seen.has(lead.id)) { seen.add(lead.id); data.push(lead); }
+      }
+    }
+  } else {
+    const result = await _supabase.from('leads').select('*').order('created_at', { ascending: false });
+    data = result.data;
+    error = result.error;
   }
 
   if (error) {
@@ -616,26 +618,30 @@ async function fetchClientsSupabase(filterMemberId) {
 
   console.log('[Supabase-Clientes] filterMemberId recebido:', filterMemberId, '| tipo:', typeof filterMemberId);
 
-  let leadsQuery = _supabase.from('leads').select('*').order('created_at', { ascending: false });
+  let leadsRes;
+  const svcPromise = _supabase.from('servicos').select('*');
 
-  if (filterMemberId) {
+  if (filterMemberId && typeof filterMemberId === 'string' && filterMemberId.length === 36 && filterMemberId.includes('-')) {
     console.log('[Supabase-Clientes] Aplicando filtro membro_id/qualificador_id/owner_id:', filterMemberId);
-    leadsQuery = leadsQuery.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId + ',owner_id.eq.' + filterMemberId);
+    const [r1, r2, r3] = await Promise.all([
+      _supabase.from('leads').select('*').eq('membro_id', filterMemberId).order('created_at', { ascending: false }),
+      _supabase.from('leads').select('*').eq('qualificador_id', filterMemberId).order('created_at', { ascending: false }),
+      _supabase.from('leads').select('*').eq('owner_id', filterMemberId).order('created_at', { ascending: false })
+    ]);
+    const seen = new Set();
+    const merged = [];
+    for (const r of [r1, r2, r3]) {
+      for (const lead of (r.data || [])) {
+        if (!seen.has(lead.id)) { seen.add(lead.id); merged.push(lead); }
+      }
+    }
+    leadsRes = { data: merged, error: r1.error || r2.error || r3.error };
   } else {
     console.log('[Supabase-Clientes] SEM FILTRO — retornando TODOS os leads');
+    leadsRes = await _supabase.from('leads').select('*').order('created_at', { ascending: false });
   }
 
-  let [leadsRes, svcRes] = await Promise.all([
-    leadsQuery,
-    _supabase.from('servicos').select('*')
-  ]);
-
-  if (leadsRes.error && filterMemberId) {
-    console.warn('[Supabase-Clientes] Query .or() falhou, retry simplificado:', leadsRes.error.message);
-    let retryQuery = _supabase.from('leads').select('*').order('created_at', { ascending: false });
-    retryQuery = retryQuery.or('membro_id.eq.' + filterMemberId + ',qualificador_id.eq.' + filterMemberId);
-    leadsRes = await retryQuery;
-  }
+  const svcRes = await svcPromise;
 
   console.log('[Supabase-Clientes] Resultado:', leadsRes.data?.length, 'leads retornados');
 
