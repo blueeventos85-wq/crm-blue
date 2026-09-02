@@ -10511,7 +10511,8 @@ const conversasState = {
   searchTerm: '',
   realtimeChannel: null,
   selectedCentroCustoId: null,
-  centrosCustoList: []
+  centrosCustoList: [],
+  waStatus: 'disconnected'
 };
 
 /* Navegação pendente: CRM → Conversas (deep-link) */
@@ -10544,8 +10545,13 @@ async function loadConversasChats() {
   try {
     const membroId = currentUser.id;
     const ccId = conversasState.selectedCentroCustoId;
-    if (!membroId && !ccId) {
-      list.innerHTML = '<div class="conv-empty-state"><p>Selecione um Centro de Custo</p></div>';
+
+    // Guard: sem empresa selecionada, não buscar conversas
+    if (!ccId) {
+      conversasState.allChats = [];
+      conversasState.chats = [];
+      _renderConvChatList();
+      list.innerHTML = '<div class="conv-empty-state"><p>Selecione uma empresa para ver as conversas.</p></div>';
       return;
     }
 
@@ -10553,19 +10559,13 @@ async function loadConversasChats() {
     const waConfig = await waFetchConfig(membroId, ccId);
     _convUpdateConnectionStatus(waConfig);
 
-    // Buscar conversas (filtrar por centros_custo_id ou membro_id)
-    let convQuery = _supabase
+    // Buscar conversas: filtrar por empresa E responsável
+    const { data: convData, error: convError } = await _supabase
       .from('conversations')
       .select('id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at')
+      .eq('centros_custo_id', ccId)
+      .eq('membro_id', membroId)
       .order('last_message_at', { ascending: false, nullsFirst: false });
-
-    if (ccId) {
-      convQuery = convQuery.eq('centros_custo_id', ccId);
-    } else if (membroId) {
-      convQuery = convQuery.eq('membro_id', membroId);
-    }
-
-    const { data: convData, error: convError } = await convQuery;
 
     if (convError) {
       console.error('[Conversas] Erro ao buscar conversas:', convError);
@@ -10574,29 +10574,35 @@ async function loadConversasChats() {
     }
 
     // Buscar contatos separadamente
-    const contactIds = [...new Set((convData || []).map(c => c.contact_id).filter(Boolean))];
+    const contactIds = [...new Set((convData || []).map(c => c.contact_id).filter(id => id && typeof id === 'string' && id.length === 36))];
     let contactsMap = {};
 
     if (contactIds.length > 0) {
-      const { data: contactsData } = await _supabase
+      const { data: contactsData, error: contactsErr } = await _supabase
         .from('contacts')
         .select('id, phone, name, profile_pic_url')
         .in('id', contactIds);
-
+      if (contactsErr) console.error('[Conversas] Erro ao buscar contatos:', contactsErr.message, contactsErr.code);
       (contactsData || []).forEach(c => { contactsMap[c.id] = c; });
     }
 
     // Buscar leads vinculados às conversas
-    const leadIds = [...new Set((convData || []).map(c => c.lead_id).filter(_isValidUUID))];
+    const rawLeadIds = (convData || []).map(c => c.lead_id);
+    const leadIds = [...new Set(rawLeadIds.filter(_isValidUUID))];
+    console.log('[Conversas] lead_ids brutos:', rawLeadIds.length, '| válidos:', leadIds.length);
     let leadsMap = {};
 
     if (leadIds.length > 0) {
-      const { data: leadsData } = await _supabase
+      // Buscar sem filtro .in() para evitar 400 do Postgrest
+      const { data: allLeads, error: leadsErr } = await _supabase
         .from('leads')
-        .select('id, nome, telefone, email, temperatura, status, membro_id, owner_id, observacoes, centro_custo_id')
-        .in('id', leadIds);
-
-      (leadsData || []).forEach(l => { leadsMap[l.id] = l; });
+        .select('id, nome, telefone, email, temperatura, status, membro_id, owner_id, observacoes, centro_custo_id');
+      if (leadsErr) {
+        console.error('[Conversas] Erro ao buscar leads:', leadsErr.message, leadsErr.code);
+      } else {
+        const leadIdSet = new Set(leadIds);
+        (allLeads || []).forEach(l => { if (leadIdSet.has(l.id)) leadsMap[l.id] = l; });
+      }
     }
 
     // Mapear para formato compativel com a UI
@@ -10740,6 +10746,8 @@ function _convUpdateConnectionStatus(waConfig) {
   const status = waConfig?.status || 'disconnected';
   const instanceName = waConfig?.provider_config?.instanceName || '--';
 
+  conversasState.waStatus = status;
+
   console.log('[Conversas] WhatsApp status:', status, '| Instance:', instanceName);
 
   const dotClass = status === 'connected' ? 'conv-connection-dot--connected' :
@@ -10751,6 +10759,26 @@ function _convUpdateConnectionStatus(waConfig) {
     <span class="conv-connection-dot ${dotClass}"></span>
     <span>${label}</span>
   `;
+
+  _convUpdateComposerState();
+}
+
+function _convUpdateComposerState() {
+  const input = $('#convMessageInput');
+  const sendBtn = $('#convSendBtn');
+  const attachBtn = $('#btnConvAttach');
+  const emojiBtn = $('#btnConvEmoji');
+  const composer = $('#convComposer');
+  const isDisconnected = conversasState.waStatus !== 'connected';
+
+  if (input) {
+    input.disabled = isDisconnected;
+    input.placeholder = isDisconnected ? 'WhatsApp desconectado...' : 'Digite sua mensagem...';
+  }
+  if (sendBtn) sendBtn.disabled = isDisconnected;
+  if (attachBtn) attachBtn.disabled = isDisconnected;
+  if (emojiBtn) emojiBtn.disabled = isDisconnected;
+  if (composer) composer.classList.toggle('conv-composer--disabled', isDisconnected);
 }
 
 /* ---------- filter chips ---------- */
@@ -10792,11 +10820,12 @@ async function _convSelectChat(chatId) {
   // Buscar dados do lead se não foram carregados ainda
   if (_isValidUUID(chat.lead_id) && !chat._leadData) {
     try {
-      const { data: leadData } = await _supabase
+      const { data: leadData, error: leadErr } = await _supabase
         .from('leads')
         .select('id, nome, telefone, email, temperatura, status, membro_id, owner_id, observacoes, centro_custo_id')
         .eq('id', chat.lead_id)
         .maybeSingle();
+      if (leadErr) console.error('[Conversas] Erro ao buscar lead:', leadErr.message, leadErr.code, 'lead_id:', chat.lead_id);
       if (leadData) {
         chat._leadData = leadData;
         chat.temperature = leadData.temperatura || 'frio';
@@ -10824,6 +10853,8 @@ async function _convSelectChat(chatId) {
     _convUpdateStats();
     _renderConvChatList();
   }
+
+  _convUpdateComposerState();
 }
 
 function _renderConvChatHeader(chat) {
@@ -10890,6 +10921,13 @@ async function _convLoadMessages(chatId) {
 function _renderConvMessages() {
   const container = $('#convMessages');
   if (!container) return;
+
+  if (conversasState.waStatus !== 'connected') {
+    container.innerHTML = '<div class="conv-empty-state" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;opacity:0.7;"><i data-lucide="wifi-off" style="width:48px;height:48px;margin-bottom:12px;"></i><p style="font-size:15px;font-weight:500;">WhatsApp Desconectado</p><p style="font-size:13px;margin-top:4px;">Conecte o aparelho para visualizar as conversas.</p></div>';
+    initIcons();
+    return;
+  }
+
   const msgs = conversasState.messages;
 
   if (!msgs.length) {
@@ -10938,6 +10976,10 @@ function _renderConvMessages() {
 
 /* ---------- send message ---------- */
 async function _convSendMessage() {
+  if (conversasState.waStatus !== 'connected') {
+    toast('WhatsApp desconectado. Conecte o aparelho para enviar mensagens.', 'error');
+    return;
+  }
   const input = $('#convMessageInput');
   if (!input) return;
   const content = input.value.trim();
@@ -11036,7 +11078,7 @@ function _renderConvCrmPanel(chat) {
         ${leadData?.status ? `<div class="conv-profile-field"><span class="label">Etapa</span><span class="value">${_convHtmlEscape(leadData.status)}</span></div>` : ''}
         <div class="conv-profile-field"><span class="label">Conversa</span><span class="value">${_CONV_STATUS_LABELS[chat.status] || chat.status}</span></div>
         <div class="conv-profile-field"><span class="label">Responsavel</span><span class="value">${assignee ? _convHtmlEscape(assignee.nome) : 'Nao atribuido'}</span></div>
-        ${leadId ? `<a class="conv-btn-link" href="#" onclick="event.preventDefault();navigateToRoute('crm','crm');">Ver lead no CRM</a>` : ''}
+        ${leadId ? `<a class="conv-btn-link" href="#" onclick="event.preventDefault();window._convVerLeadNoCRM('${leadId}');">Ver lead no CRM</a>` : ''}
       </div>
     </div>
 
@@ -11364,7 +11406,7 @@ function _convSubscribeRealtime() {
 
   const membroId = currentUser.id;
   const ccId = conversasState.selectedCentroCustoId;
-  if (!membroId && !ccId) return;
+  if (!ccId) return;
 
   conversasState.realtimeChannel = _supabase
     .channel('conversas-realtime')
@@ -11397,9 +11439,9 @@ function _convSubscribeRealtime() {
       table: 'conversations'
     }, payload => {
       const updated = payload.new;
-      // Verificar se pertence a este centro de custo ou membro
-      if (ccId && updated.centros_custo_id !== ccId) return;
-      if (!ccId && membroId && updated.membro_id !== membroId) return;
+      // Ignorar updates que não são desta empresa E deste responsável
+      if (updated.centros_custo_id !== ccId) return;
+      if (updated.membro_id !== membroId) return;
 
       const idx = conversasState.allChats.findIndex(c => c._conversationId === updated.id || c.id === updated.id);
       if (idx >= 0) {
@@ -14143,3 +14185,8 @@ window.convSetStatus = convSetStatus;
 window.convSetAssignee = convSetAssignee;
 window.convSetPriority = convSetPriority;
 window.convAddNote = convAddNote;
+window._convVerLeadNoCRM = function(leadId) {
+  if (!leadId) return;
+  setActivePage('crm');
+  setTimeout(() => { if (typeof openLeadModal === 'function') openLeadModal(leadId); }, 200);
+};

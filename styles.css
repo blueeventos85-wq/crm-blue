@@ -7669,6 +7669,8 @@ textarea:focus-visible,
 .conv-composer-send:hover{background:var(--primary-blue-dark)}
 .conv-composer-send i{width:16px;height:16px}
 .conv-composer-send:disabled{opacity:0.5;cursor:not-allowed}
+.conv-composer--disabled{opacity:0.5;pointer-events:none}
+.conv-composer--disabled textarea{cursor:not-allowed}
 
 /* ---- Painel direito: CRM ---- */
 .conv-crm-panel{background:#0F172A;border-left:1px solid #1E293B;display:flex;flex-direction:column;overflow-y:auto}
