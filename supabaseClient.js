@@ -364,6 +364,11 @@ async function insertLeadSupabase(data) {
 
   console.log('[Supabase] Inserindo lead:', { nome, telefone, data_evento });
 
+  if (!owner_id) {
+    console.error('[Supabase] insertLeadSupabase: owner_id ausente — lead seria criado sem responsável');
+    throw new Error('owner_id é obrigatório para criar lead');
+  }
+
   const payload = {
     nome,
     telefone,
@@ -375,7 +380,7 @@ async function insertLeadSupabase(data) {
     temperatura,
     honorarios: parseBrazilianCurrency(honorarios),
     observacoes,
-    membro_id: owner_id || null,
+    membro_id: owner_id,
     centro_custo_id: centro_custo_id || null,
     cpf: cpf || null,
     cnpj: cnpj || null,

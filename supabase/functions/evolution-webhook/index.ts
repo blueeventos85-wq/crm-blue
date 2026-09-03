@@ -85,31 +85,44 @@ serve(async (req) => {
       const membroId = config.membro_id
       const centrosCustoId = config.centros_custo_id || null
 
-      // Buscar ou criar contato
-      let contactId = await findOrCreateContact(supabase, membroId, centrosCustoId, phone, pushName)
+      if (!centrosCustoId && !membroId) {
+        console.log('[webhook] Config sem centros_custo_id e membro_id:', config.id)
+        return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'no_tenant' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
 
-      // Buscar ou criar conversa
-      let conversationId = await findOrCreateConversation(supabase, membroId, centrosCustoId, contactId, contentText)
+      // 1. Buscar ou criar lead (prioridade: telefone + centros_custo_id)
+      const leadId = await findOrCreateLead(supabase, membroId, centrosCustoId, phone, pushName)
 
-      // Inserir mensagem
+      // 2. Buscar ou criar contato (prioridade: centros_custo_id)
+      const contactId = await findOrCreateContact(supabase, membroId, centrosCustoId, phone, pushName, leadId)
+
+      // 3. Buscar ou criar conversa (prioridade: centros_custo_id)
+      const conversationId = await findOrCreateConversation(supabase, membroId, centrosCustoId, contactId, contentText, leadId)
+
+      // 4. Inserir mensagem
       const senderType = fromMe ? 'member' : 'contact'
       const messageTimestamp = msgTimestamp
         ? new Date(typeof msgTimestamp === 'number' ? msgTimestamp * 1000 : msgTimestamp).toISOString()
         : new Date().toISOString()
 
+      const msgPayload: Record<string, any> = {
+        conversation_id: conversationId,
+        membro_id: membroId,
+        sender_type: senderType,
+        content_type: contentType,
+        content_text: contentText,
+        media_url: mediaUrl,
+        message_id: msgId,
+        status: 'delivered',
+        created_at: messageTimestamp
+      }
+
       const { error: msgError } = await supabase
         .from('messages')
-        .insert([{
-          conversation_id: conversationId,
-          membro_id: membroId,
-          sender_type: senderType,
-          content_type: contentType,
-          content_text: contentText,
-          media_url: mediaUrl,
-          message_id: msgId,
-          status: 'delivered',
-          created_at: messageTimestamp
-        }])
+        .insert([msgPayload])
 
       if (msgError) {
         console.error('[webhook] Erro ao inserir mensagem:', msgError)
@@ -119,8 +132,8 @@ serve(async (req) => {
         })
       }
 
-      console.log('[webhook] Mensagem salva:', { conversationId, phone, fromMe, contentType })
-      return new Response(JSON.stringify({ ok: true, conversationId }), {
+      console.log('[webhook] Mensagem salva:', { conversationId, phone, fromMe, contentType, leadId })
+      return new Response(JSON.stringify({ ok: true, conversationId, leadId }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
@@ -292,29 +305,90 @@ function extractMessageContent(message: Record<string, any>): {
   return { contentType: 'text', contentText: '', mediaUrl: '' }
 }
 
-async function findOrCreateContact(
+// ── findOrCreateLead: busca por telefone + centros_custo_id ──
+async function findOrCreateLead(
   supabase: any,
   membroId: string | null,
   centrosCustoId: string | null,
   phone: string,
   pushName: string
+): Promise<string | null> {
+  if (!centrosCustoId) {
+    console.log('[webhook] findOrCreateLead: sem centros_custo_id, pulando criação de lead')
+    return null
+  }
+
+  // Buscar lead existente por telefone + centro_custo_id
+  const { data: existing } = await supabase
+    .from('leads')
+    .select('id')
+    .eq('telefone', phone)
+    .eq('centro_custo_id', centrosCustoId)
+    .maybeSingle()
+
+  if (existing) {
+    // Atualizar nome se mudou
+    if (pushName) {
+      await supabase
+        .from('leads')
+        .update({ nome: pushName })
+        .eq('id', existing.id)
+        .neq('nome', pushName)
+    }
+    return existing.id
+  }
+
+  // Criar novo lead
+  const insertPayload: Record<string, any> = {
+    telefone: phone,
+    nome: pushName || phone,
+    centro_custo_id: centrosCustoId,
+    created_at: new Date().toISOString()
+  }
+  if (membroId) insertPayload.membro_id = membroId
+
+  const { data: newLead, error: leadError } = await supabase
+    .from('leads')
+    .insert([insertPayload])
+    .select('id')
+    .maybeSingle()
+
+  if (leadError) {
+    console.error('[webhook] Erro ao criar lead:', leadError)
+    return null
+  }
+
+  console.log('[webhook] Lead criado:', { leadId: newLead?.id, phone, centrosCustoId })
+  return newLead?.id || null
+}
+
+// ── findOrCreateContact: prioridade centros_custo_id, vincula lead ──
+async function findOrCreateContact(
+  supabase: any,
+  membroId: string | null,
+  centrosCustoId: string | null,
+  phone: string,
+  pushName: string,
+  leadId: string | null
 ): Promise<string> {
-  // Buscar contato existente (por centros_custo_id ou membro_id)
+  // Buscar contato existente — SEMPRE priorizar centros_custo_id
   let query = supabase.from('contacts').select('id').eq('phone', phone)
   if (centrosCustoId) {
     query = query.eq('centros_custo_id', centrosCustoId)
   } else if (membroId) {
+    // Fallback legado: só quando não há centros_custo_id
     query = query.eq('membro_id', membroId)
   }
-  const { data: existing } = await query.single()
+  const { data: existing } = await query.maybeSingle()
 
   if (existing) {
-    if (pushName) {
-      await supabase
-        .from('contacts')
-        .update({ name: pushName, updated_at: new Date().toISOString() })
-        .eq('id', existing.id)
-        .neq('name', pushName)
+    // Atualizar nome e vincular lead se necessário
+    const updates: Record<string, any> = {}
+    if (pushName) updates.name = pushName
+    if (leadId && !existing.lead_id) updates.lead_id = leadId
+    if (Object.keys(updates).length > 0) {
+      updates.updated_at = new Date().toISOString()
+      await supabase.from('contacts').update(updates).eq('id', existing.id)
     }
     return existing.id
   }
@@ -328,24 +402,32 @@ async function findOrCreateContact(
   }
   if (centrosCustoId) insertPayload.centros_custo_id = centrosCustoId
   if (membroId) insertPayload.membro_id = membroId
+  if (leadId) insertPayload.lead_id = leadId
 
-  const { data: newContact } = await supabase
+  const { data: newContact, error: contactError } = await supabase
     .from('contacts')
     .insert([insertPayload])
     .select('id')
-    .single()
+    .maybeSingle()
+
+  if (contactError) {
+    console.error('[webhook] Erro ao criar contato:', contactError)
+    throw new Error('Failed to create contact: ' + contactError.message)
+  }
 
   return newContact.id
 }
 
+// ── findOrCreateConversation: prioridade centros_custo_id, vincula lead ──
 async function findOrCreateConversation(
   supabase: any,
   membroId: string | null,
   centrosCustoId: string | null,
   contactId: string,
-  lastMessageText: string
+  lastMessageText: string,
+  leadId: string | null
 ): Promise<string> {
-  // Buscar conversa aberta existente
+  // Buscar conversa aberta existente — SEMPRE priorizar centros_custo_id
   let query = supabase
     .from('conversations')
     .select('id')
@@ -354,11 +436,19 @@ async function findOrCreateConversation(
   if (centrosCustoId) {
     query = query.eq('centros_custo_id', centrosCustoId)
   } else if (membroId) {
+    // Fallback legado: só quando não há centros_custo_id
     query = query.eq('membro_id', membroId)
   }
-  const { data: existing } = await query.single()
+  const { data: existing } = await query.maybeSingle()
 
   if (existing) {
+    // Vincular lead se necessário
+    if (leadId && !existing.lead_id) {
+      await supabase
+        .from('conversations')
+        .update({ lead_id: leadId, updated_at: new Date().toISOString() })
+        .eq('id', existing.id)
+    }
     return existing.id
   }
 
@@ -374,12 +464,18 @@ async function findOrCreateConversation(
   }
   if (centrosCustoId) insertPayload.centros_custo_id = centrosCustoId
   if (membroId) insertPayload.membro_id = membroId
+  if (leadId) insertPayload.lead_id = leadId
 
-  const { data: newConv } = await supabase
+  const { data: newConv, error: convError } = await supabase
     .from('conversations')
     .insert([insertPayload])
     .select('id')
-    .single()
+    .maybeSingle()
+
+  if (convError) {
+    console.error('[webhook] Erro ao criar conversa:', convError)
+    throw new Error('Failed to create conversation: ' + convError.message)
+  }
 
   return newConv.id
 }

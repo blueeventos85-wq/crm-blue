@@ -5158,7 +5158,12 @@ async function transferLead() {
     toast(`Lead transferido para ${newMemberName} com sucesso!`);
 
     // Notificar o novo responsável (salva notificação)
-    addNotification(`Novo lead atribuído a você: ${lead.empresa} (de ${currentUser.nome})`);
+    addNotification({
+      type: 'lead',
+      title: `Lead atribuído: ${lead.empresa || lead.nome || ''}`,
+      subtitle: `De ${currentUser.nome}`,
+      data: { leadId: lead.id }
+    });
 
     // Recarregar leads do Supabase para manter filtro consistente
     const isAdmin = isCurrentUserAdmin();
@@ -6142,6 +6147,16 @@ async function saveLead() {
   // Chip groups — serviços dinâmicos
   fields.tiposServico = getActiveServiceChips();
 
+  // Limpar CPF/CNPJ: tratar máscara vazia ou só zeros como vazio
+  if (fields.cpf) {
+    const cpfDigits = fields.cpf.replace(/\D/g, '');
+    if (cpfDigits.length === 0 || /^0+$/.test(cpfDigits)) fields.cpf = '';
+  }
+  if (fields.cnpj) {
+    const cnpjDigits = fields.cnpj.replace(/\D/g, '');
+    if (cnpjDigits.length === 0 || /^0+$/.test(cnpjDigits)) fields.cnpj = '';
+  }
+
   // Validação (alinhada aos campos do formulário)
   const errors = {};
   if (!fields.empresa) errors.empresa = 'Obrigatório';
@@ -6280,7 +6295,7 @@ async function saveLead() {
         observacoes: fields.observacoes || '',
         tipo_servico_id: newLead._tipoServicoIds.length > 0 ? newLead._tipoServicoIds : null,
         cadencia_id: newLead._cadenciaId || null,
-        owner_id: currentUser.id || null,
+        owner_id: currentUser.id,
         centro_custo_id: fields.empresaId || null,
         cpf: fields.cpf || '',
         cnpj: fields.cnpj || '',
@@ -6429,45 +6444,398 @@ function toast(text, type = 'success') {
 }
 
 /* ============================================
-   NOTIFICAÇÕES · Bell badge + localStorage
+   NOTIFICAÇÕES · Bell badge + dropdown + Realtime
    ============================================ */
+
+/* ── Audio unlock (autoplay policy) ── */
+let _audioCtx = null;
+(function _unlockAudioOnFirstClick() {
+  document.addEventListener('click', function unlock() {
+    try {
+      _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (_audioCtx.state === 'suspended') _audioCtx.resume();
+    } catch (e) { /* ignore */ }
+    document.removeEventListener('click', unlock);
+  }, { once: true });
+})();
+
+function _tocarSom() {
+  if (!_audioCtx) return;
+  try {
+    const osc1 = _audioCtx.createOscillator();
+    const gain1 = _audioCtx.createGain();
+    osc1.connect(gain1);
+    gain1.connect(_audioCtx.destination);
+    osc1.frequency.value = 880;
+    gain1.gain.value = 0.3;
+    osc1.start();
+    osc1.stop(_audioCtx.currentTime + 0.25);
+    setTimeout(() => {
+      const osc2 = _audioCtx.createOscillator();
+      const gain2 = _audioCtx.createGain();
+      osc2.connect(gain2);
+      gain2.connect(_audioCtx.destination);
+      osc2.frequency.value = 1100;
+      gain2.gain.value = 0.3;
+      osc2.start();
+      osc2.stop(_audioCtx.currentTime + 0.25);
+    }, 150);
+  } catch (e) { /* ignore */ }
+}
+
+/* ── Anti-duplicação Realtime ── */
+const _notifProcessedMessages = new Set();
+function _notifWasProcessed(id) {
+  if (_notifProcessedMessages.has(id)) return true;
+  _notifProcessedMessages.add(id);
+  setTimeout(() => _notifProcessedMessages.delete(id), 30000);
+  return false;
+}
+
+/* ── Notificações storage ── */
 function _getNotifications() {
   try { return JSON.parse(localStorage.getItem('blue_notifications') || '[]'); } catch { return []; }
 }
 function _saveNotifications(list) {
   localStorage.setItem('blue_notifications', JSON.stringify(list));
 }
-function addNotification(msg) {
-  const list = _getNotifications();
-  list.unshift({ msg, time: Date.now(), read: false });
-  _saveNotifications(list);
-  _updateNotifDot();
-}
 function _updateNotifDot() {
   const dot = $('#notifDot');
   const list = _getNotifications();
   const unread = list.filter(n => !n.read).length;
-  if (dot) dot.hidden = unread === 0;
+  if (dot) {
+    dot.hidden = unread === 0;
+    dot.textContent = unread > 99 ? '99+' : (unread > 0 ? String(unread) : '');
+  }
 }
-function clearNotifications() {
-  const list = _getNotifications().map(n => ({ ...n, read: true }));
+
+/* ── Adicionar notificação ── */
+function addNotification(opts) {
+  const notif = {
+    id: 'n_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+    type: opts.type || 'lead',
+    title: opts.title || '',
+    subtitle: opts.subtitle || '',
+    time: Date.now(),
+    read: false,
+    data: opts.data || {}
+  };
+  const list = _getNotifications();
+  list.unshift(notif);
+  if (list.length > 50) list.length = 50;
   _saveNotifications(list);
   _updateNotifDot();
+  _renderNotifList();
+  _tocarSom();
 }
-function initNotifications() {
-  _updateNotifDot();
+
+/* ── Renderizar lista do dropdown ── */
+function _renderNotifList() {
+  const listEl = $('#notifList');
+  const emptyEl = $('#notifEmpty');
+  if (!listEl) return;
+  const list = _getNotifications();
+  const unread = list.filter(n => !n.read);
+  if (unread.length === 0) {
+    listEl.innerHTML = '';
+    if (emptyEl) emptyEl.style.display = '';
+    return;
+  }
+  if (emptyEl) emptyEl.style.display = 'none';
+  listEl.innerHTML = unread.slice(0, 30).map(n => {
+    const iconCls = n.type === 'message' ? 'message' : 'lead';
+    const iconName = n.type === 'message' ? 'message-circle' : 'user-plus';
+    const elapsed = _notifTimeAgo(n.time);
+    return `
+      <div class="notif-item unread" data-notif-id="${n.id}" data-type="${n.type}">
+        <div class="notif-item-icon ${iconCls}"><i data-lucide="${iconName}"></i></div>
+        <div class="notif-item-body">
+          <strong>${escapeHtml(n.title)}</strong>
+          <span>${escapeHtml(n.subtitle)}</span>
+          <small>${elapsed}</small>
+        </div>
+      </div>`;
+  }).join('');
+  initIcons();
+}
+function _notifTimeAgo(ts) {
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 60) return 'agora';
+  if (diff < 3600) return `há ${Math.floor(diff / 60)}min`;
+  if (diff < 86400) return `há ${Math.floor(diff / 3600)}h`;
+  return `há ${Math.floor(diff / 86400)}d`;
+}
+
+/* ── Click handlers do dropdown ── */
+function _initNotifDropdown() {
   const bellBtn = $('#notifBellBtn');
-  if (bellBtn) {
-    bellBtn.addEventListener('click', () => {
-      clearNotifications();
-      const list = _getNotifications();
-      if (list.length > 0) {
-        toast('Notificações limpas');
-      } else {
-        toast('Nenhuma notificação');
+  const dropdown = $('#notifDropdown');
+  const clearBtn = $('#notifClearAll');
+
+  if (bellBtn && dropdown) {
+    bellBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdown.classList.toggle('open');
+      if (dropdown.classList.contains('open')) {
+        _renderNotifList();
       }
     });
   }
+
+  document.addEventListener('click', (e) => {
+    if (dropdown && !dropdown.contains(e.target) && e.target !== bellBtn && !bellBtn?.contains(e.target)) {
+      dropdown.classList.remove('open');
+    }
+  });
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      const list = _getNotifications().map(n => ({ ...n, read: true }));
+      _saveNotifications(list);
+      _updateNotifDot();
+      _renderNotifList();
+    });
+  }
+
+  const listEl = $('#notifList');
+  if (listEl) {
+    listEl.addEventListener('click', (e) => {
+      const item = e.target.closest('.notif-item');
+      if (!item) return;
+      const notifId = item.dataset.notifId;
+      const type = item.dataset.type;
+      const list = _getNotifications();
+      const notif = list.find(n => n.id === notifId);
+      if (notif) {
+        notif.read = true;
+        _saveNotifications(list);
+        _updateNotifDot();
+      }
+      dropdown?.classList.remove('open');
+      if (type === 'lead' && notif?.data?.leadId) {
+        setActivePage('crm');
+        setTimeout(() => { if (typeof openLeadModal === 'function') openLeadModal(notif.data.leadId); }, 200);
+      } else if (type === 'message' && notif?.data?.conversationId) {
+        _pendingConvNavigation = {
+          phone: notif.data.phone || '',
+          leadId: notif.data.leadId || null,
+          leadName: notif.data.leadName || '',
+          centroCustoId: notif.data.centroCustoId || null,
+          conversationId: notif.data.conversationId || null
+        };
+        setActivePage('conversas');
+      }
+    });
+  }
+
+  _updateNotifDot();
+  _renderNotifList();
+}
+
+/* ── Toast popup de notificação ── */
+function _showNotifToast(title, subtitle, type, data) {
+  const existing = document.querySelector('.notif-toast');
+  if (existing) existing.remove();
+  const toast = document.createElement('div');
+  toast.className = 'notif-toast';
+  const iconName = type === 'message' ? 'message-circle' : 'user-plus';
+  toast.innerHTML = `<div class="notif-toast-icon"><i data-lucide="${iconName}"></i></div><div class="notif-toast-body"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(subtitle)}</span></div>`;
+  document.body.appendChild(toast);
+  initIcons();
+  requestAnimationFrame(() => toast.classList.add('show'));
+  setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 400); }, 5000);
+  toast.addEventListener('click', () => {
+    toast.remove();
+    if (type === 'message' && data?.conversationId) {
+      _pendingConvNavigation = {
+        phone: data.phone || '',
+        leadId: data.leadId || null,
+        leadName: data.leadName || '',
+        centroCustoId: data.centroCustoId || null,
+        conversationId: data.conversationId || null
+      };
+      setActivePage('conversas');
+    } else if (type === 'lead' && data?.leadId) {
+      setActivePage('crm');
+      setTimeout(() => { if (typeof openLeadModal === 'function') openLeadModal(data.leadId); }, 200);
+    }
+  });
+}
+
+/* ── Canal Realtime de notificações ── */
+let _notifRealtimeChannel = null;
+function _subscribeNotificacoesRealtime() {
+  if (_notifRealtimeChannel) _supabase.removeChannel(_notifRealtimeChannel);
+
+  console.log('[REALTIME] Inscrito no canal global-notifications...');
+  _notifRealtimeChannel = _supabase
+    .channel('global-notifications')
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'leads'
+    }, async payload => {
+      const lead = payload.new;
+      const leadName = lead.nome || lead.empresa || 'Novo lead';
+      let ccName = 'CRM';
+      if (lead.centro_custo_id) {
+        const { data: cc } = await _supabase.from('centros_custo').select('nome').eq('id', lead.centro_custo_id).maybeSingle();
+        if (cc?.nome) ccName = cc.nome;
+      }
+      const leadData = { leadId: lead.id, centroCustoId: lead.centro_custo_id || null };
+      addNotification({
+        type: 'lead',
+        title: `Novo lead: ${leadName}`,
+        subtitle: ccName,
+        data: leadData
+      });
+      _showNotifToast(`Novo lead: ${leadName}`, ccName, 'lead', leadData);
+    })
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'messages'
+    }, async payload => {
+      console.log('[REALTIME] Nova mensagem recebida:', payload);
+      const msg = payload.new;
+      if (msg.sender_type !== 'contact') {
+        console.log('[REALTIME] Ignorado: sender_type =', msg.sender_type);
+        return;
+      }
+      if (_notifWasProcessed(msg.id)) {
+        console.log('[REALTIME] Ignorado: duplicado id =', msg.id);
+        return;
+      }
+
+      let leadName = 'Contato';
+      let phone = '';
+      let centroCustoId = null;
+      let conversationId = msg.conversation_id;
+
+      const { data: conv, error: convErr } = await _supabase
+        .from('conversations')
+        .select('lead_id, contact_id, centros_custo_id')
+        .eq('id', msg.conversation_id)
+        .maybeSingle();
+
+      if (convErr) console.error('[REALTIME] Erro ao buscar conversa:', convErr);
+
+      if (conv) {
+        centroCustoId = conv.centros_custo_id || null;
+        if (conv.lead_id) {
+          const { data: lead } = await _supabase
+            .from('leads')
+            .select('nome, telefone')
+            .eq('id', conv.lead_id)
+            .maybeSingle();
+          if (lead) { leadName = lead.nome || leadName; phone = lead.telefone || ''; }
+        } else if (conv.contact_id) {
+          const { data: contact } = await _supabase
+            .from('contacts')
+            .select('name, phone')
+            .eq('id', conv.contact_id)
+            .maybeSingle();
+          if (contact) { leadName = contact.name || contact.phone || leadName; phone = contact.phone || ''; }
+        }
+      }
+
+      let ccName = '';
+      if (centroCustoId) {
+        const { data: cc } = await _supabase
+          .from('centros_custo').select('nome').eq('id', centroCustoId).maybeSingle();
+        if (cc?.nome) ccName = cc.nome;
+      }
+
+      const text = (msg.content_text || '').slice(0, 60);
+      const subtitle = (ccName ? ccName + ' · ' : '') + (text || 'Mensagem recebida');
+      const msgData = { conversationId, phone, leadName, centroCustoId, leadId: conv?.lead_id || null };
+
+      console.log('[REALTIME] Disparando notificação:', { leadName, subtitle, msgData });
+      addNotification({
+        type: 'message',
+        title: leadName,
+        subtitle,
+        data: msgData
+      });
+      _showNotifToast(leadName, subtitle, 'message', msgData);
+      console.log('[REALTIME] Notificação disparada com sucesso');
+    })
+    .subscribe((status, err) => {
+      console.log('[REALTIME STATUS] Global notifications:', status, err || '');
+      if (status === 'SUBSCRIBED') {
+        console.log('[REALTIME] ✅ Canal global-notifications conectado — escutando leads e messages');
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn('[REALTIME] ❌ Falha no canal global-notifications:', status, err);
+        setTimeout(() => _subscribeNotificacoesRealtime(), 5000);
+      }
+    });
+}
+
+/* ── Buscar não-lidas existentes no boot ── */
+async function _loadUnreadCount() {
+  try {
+    if (!_supabase || !currentUser?.id) return;
+    const { data, error } = await _supabase
+      .from('conversations')
+      .select('id, unread_count, lead_id, contact_id, centros_custo_id')
+      .eq('membro_id', currentUser.id)
+      .eq('status', 'open')
+      .gt('unread_count', 0);
+    if (error) { console.error('[Notif] Erro ao buscar não-lidas:', error.message); return; }
+    const totalUnread = (data || []).reduce((sum, c) => sum + (c.unread_count || 0), 0);
+    if (totalUnread > 0) {
+      const list = _getNotifications();
+      const existingIds = new Set(list.map(n => n.data?.conversationId));
+      for (const conv of (data || [])) {
+        if (existingIds.has(conv.id)) continue;
+        let leadName = 'Contato';
+        let ccName = '';
+        if (conv.lead_id) {
+          const { data: lead } = await _supabase
+            .from('leads').select('nome').eq('id', conv.lead_id).maybeSingle();
+          if (lead?.nome) leadName = lead.nome;
+        } else if (conv.contact_id) {
+          const { data: contact } = await _supabase
+            .from('contacts').select('name').eq('id', conv.contact_id).maybeSingle();
+          if (contact?.name) leadName = contact.name;
+        }
+        if (conv.centros_custo_id) {
+          const { data: cc } = await _supabase
+            .from('centros_custo').select('nome').eq('id', conv.centros_custo_id).maybeSingle();
+          if (cc?.nome) ccName = cc.nome;
+        }
+        const unread = conv.unread_count || 0;
+        list.unshift({
+          id: 'n_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+          type: 'message',
+          title: leadName,
+          subtitle: (ccName ? ccName + ' · ' : '') + unread + ' mensagem' + (unread > 1 ? 's' : '') + ' não lida' + (unread > 1 ? 's' : ''),
+          time: Date.now(),
+          read: false,
+          data: { conversationId: conv.id, leadId: conv.lead_id || null, centroCustoId: conv.centros_custo_id || null }
+        });
+      }
+      if (list.length > 50) list.length = 50;
+      _saveNotifications(list);
+    }
+    _updateNotifDot();
+    _renderNotifList();
+  } catch (e) {
+    console.error('[Notif] Erro ao carregar não-lidas:', e);
+  }
+}
+
+/* ── Init notificações (chamado no boot) ── */
+let _notifPollInterval = null;
+function initNotifications() {
+  _initNotifDropdown();
+  _subscribeNotificacoesRealtime();
+  _loadUnreadCount();
+  // Fallback: polling a cada 30s para detectar mensagens não-lidas (Realtime pode falhar)
+  if (_notifPollInterval) clearInterval(_notifPollInterval);
+  _notifPollInterval = setInterval(() => {
+    if (currentUser?.id) _loadUnreadCount();
+  }, 30000);
 }
 
 function renderAll() {
@@ -10559,13 +10927,39 @@ async function loadConversasChats() {
     const waConfig = await waFetchConfig(membroId, ccId);
     _convUpdateConnectionStatus(waConfig);
 
-    // Buscar conversas: filtrar por empresa E responsável
-    const { data: convData, error: convError } = await _supabase
-      .from('conversations')
-      .select('id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at')
-      .eq('centros_custo_id', ccId)
-      .eq('membro_id', membroId)
-      .order('last_message_at', { ascending: false, nullsFirst: false });
+    // Buscar conversas: admin vê todas do CC, corretor vê as dele + sem dono
+    let convData, convError;
+    const isAdmin = isCurrentUserAdmin();
+    if (isAdmin) {
+      const result = await _supabase
+        .from('conversations')
+        .select('id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at')
+        .eq('centros_custo_id', ccId)
+        .order('last_message_at', { ascending: false, nullsFirst: false });
+      convData = result.data;
+      convError = result.error;
+    } else {
+      // Corretor: próprias conversas + conversas sem dono (unassigned)
+      const [ownResult, unassignedResult] = await Promise.all([
+        _supabase
+          .from('conversations')
+          .select('id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at')
+          .eq('centros_custo_id', ccId)
+          .eq('membro_id', membroId)
+          .order('last_message_at', { ascending: false, nullsFirst: false }),
+        _supabase
+          .from('conversations')
+          .select('id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at')
+          .eq('centros_custo_id', ccId)
+          .is('membro_id', null)
+          .order('last_message_at', { ascending: false, nullsFirst: false })
+      ]);
+      convData = [...(ownResult.data || []), ...(unassignedResult.data || [])];
+      convError = ownResult.error || unassignedResult.error;
+      // Deduplicar por conversation id
+      const seen = new Set();
+      convData = convData.filter(c => { if (seen.has(c.id)) return false; seen.add(c.id); return true; });
+    }
 
     if (convError) {
       console.error('[Conversas] Erro ao buscar conversas:', convError);
@@ -10596,7 +10990,7 @@ async function loadConversasChats() {
       // Buscar sem filtro .in() para evitar 400 do Postgrest
       const { data: allLeads, error: leadsErr } = await _supabase
         .from('leads')
-        .select('id, nome, telefone, email, temperatura, status, membro_id, owner_id, observacoes, centro_custo_id');
+        .select('id, nome, telefone, email, temperatura, membro_id, owner_id, observacoes, centro_custo_id');
       if (leadsErr) {
         console.error('[Conversas] Erro ao buscar leads:', leadsErr.message, leadsErr.code);
       } else {
@@ -10822,7 +11216,7 @@ async function _convSelectChat(chatId) {
     try {
       const { data: leadData, error: leadErr } = await _supabase
         .from('leads')
-        .select('id, nome, telefone, email, temperatura, status, membro_id, owner_id, observacoes, centro_custo_id')
+        .select('id, nome, telefone, email, temperatura, membro_id, owner_id, observacoes, centro_custo_id')
         .eq('id', chat.lead_id)
         .maybeSingle();
       if (leadErr) console.error('[Conversas] Erro ao buscar lead:', leadErr.message, leadErr.code, 'lead_id:', chat.lead_id);
@@ -10907,7 +11301,6 @@ async function _convLoadMessages(chatId) {
       .from('messages')
       .select('id, conversation_id, membro_id, sender_type, content_type, content_text, media_url, status, created_at')
       .eq('conversation_id', chatId)
-      .eq('membro_id', currentUser.id)
       .order('created_at', { ascending: true });
     if (error) throw error;
     conversasState.messages = data || [];
@@ -11075,7 +11468,6 @@ function _renderConvCrmPanel(chat) {
         <div class="conv-profile-name">${_convHtmlEscape(chat.contact_name || 'Sem nome')}</div>
         <div class="conv-profile-phone">${chat.contact_phone ? '+' + chat.contact_phone : ''}</div>
         ${chat.contact_email ? `<div class="conv-profile-field"><span class="label">Email</span><span class="value">${_convHtmlEscape(chat.contact_email)}</span></div>` : ''}
-        ${leadData?.status ? `<div class="conv-profile-field"><span class="label">Etapa</span><span class="value">${_convHtmlEscape(leadData.status)}</span></div>` : ''}
         <div class="conv-profile-field"><span class="label">Conversa</span><span class="value">${_CONV_STATUS_LABELS[chat.status] || chat.status}</span></div>
         <div class="conv-profile-field"><span class="label">Responsavel</span><span class="value">${assignee ? _convHtmlEscape(assignee.nome) : 'Nao atribuido'}</span></div>
         ${leadId ? `<a class="conv-btn-link" href="#" onclick="event.preventDefault();window._convVerLeadNoCRM('${leadId}');">Ver lead no CRM</a>` : ''}
@@ -11149,9 +11541,10 @@ async function convSetTemperature(chatId, temp, leadId) {
   const chat = conversasState.allChats.find(c => c.id === chatId);
   if (chat) chat.temperature = temp;
   // Atualizar leads table se lead_id existir
-  if (leadId) {
+  if (leadId && _isValidUUID(leadId)) {
     try {
-      await _supabase.from('leads').update({ temperatura: temp, updated_at: new Date().toISOString() }).eq('id', leadId);
+      const { error } = await _supabase.from('leads').update({ temperatura: temp }).eq('id', leadId);
+      if (error) console.error('[Conversas] Erro ao salvar temperatura:', error.message, error.code);
       if (chat?._leadData) chat._leadData.temperatura = temp;
     } catch (e) { console.error('[Conversas] Erro ao atualizar temperatura no lead:', e); }
   }
@@ -11172,10 +11565,10 @@ async function convSetStatus(chatId, status) {
 async function convSetAssignee(chatId, userId, leadId) {
   const chat = conversasState.allChats.find(c => c.id === chatId);
   if (chat) chat.assigned_to = userId || null;
-  // Atualizar leads table se lead_id existir
-  if (leadId) {
+  if (leadId && _isValidUUID(leadId)) {
     try {
-      await _supabase.from('leads').update({ membro_id: userId || null, updated_at: new Date().toISOString() }).eq('id', leadId);
+      const { error } = await _supabase.from('leads').update({ membro_id: userId || null }).eq('id', leadId);
+      if (error) console.error('[Conversas] Erro ao salvar responsavel:', error.message, error.code);
       if (chat?._leadData) chat._leadData.membro_id = userId || null;
     } catch (e) { console.error('[Conversas] Erro ao atualizar responsavel no lead:', e); }
   }
@@ -11195,10 +11588,10 @@ async function convAddNote(chatId, leadId) {
   notes.push(newNote);
   if (chat) chat.notes = notes;
   input.value = '';
-  // Salvar observacoes no leads table como JSON string
-  if (leadId) {
+  if (leadId && _isValidUUID(leadId)) {
     try {
-      await _supabase.from('leads').update({ observacoes: JSON.stringify(notes), updated_at: new Date().toISOString() }).eq('id', leadId);
+      const { error } = await _supabase.from('leads').update({ observacoes: JSON.stringify(notes) }).eq('id', leadId);
+      if (error) console.error('[Conversas] Erro ao salvar observacao:', error.message, error.code);
       if (chat?._leadData) chat._leadData.observacoes = JSON.stringify(notes);
     } catch (e) { console.error('[Conversas] Erro ao salvar observacao no lead:', e); }
   }
@@ -11439,9 +11832,11 @@ function _convSubscribeRealtime() {
       table: 'conversations'
     }, payload => {
       const updated = payload.new;
-      // Ignorar updates que não são desta empresa E deste responsável
+      // Ignorar updates que não são desta empresa
       if (updated.centros_custo_id !== ccId) return;
-      if (updated.membro_id !== membroId) return;
+      // Admin vê tudo do CC; corretor vê as dele + sem dono
+      const isAdminRT = isCurrentUserAdmin();
+      if (!isAdminRT && updated.membro_id !== membroId && updated.membro_id !== null) return;
 
       const idx = conversasState.allChats.findIndex(c => c._conversationId === updated.id || c.id === updated.id);
       if (idx >= 0) {
@@ -11607,11 +12002,27 @@ function _processConvDeepLink() {
   const rawLeadPhone = nav.phone;
   const leadId = nav.leadId;
   const leadName = nav.leadName;
+  const directConvId = nav.conversationId;
 
   // Normalizar telefone: remover não-dígitos, pegar últimos 10 dígitos (DDD + número)
   function normPhone(p) {
     const digits = (p || '').replace(/\D/g, '');
     return digits.slice(-10);
+  }
+
+  // Se temos conversationId direto, selecionar imediatamente
+  if (directConvId) {
+    const directMatch = conversasState.allChats.find(c => c._conversationId === directConvId || c.id === directConvId);
+    if (directMatch) {
+      conversasState.filter = 'all';
+      conversasState.searchTerm = '';
+      const searchInput = $('#convSearchInput');
+      if (searchInput) searchInput.value = '';
+      _convApplyFilter();
+      _renderConvFilterChips();
+      requestAnimationFrame(() => { _convSelectChat(directMatch.id); });
+      return;
+    }
   }
 
   const leadPhoneNorm = normPhone(rawLeadPhone);
