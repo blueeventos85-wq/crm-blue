@@ -3507,13 +3507,25 @@ async function transferSingleClient(clientId, memberId) {
   const memberName = member?.nome || 'Membro';
 
   try {
+    const client = clientsData.find(c => String(c.id) === String(clientId));
+    const oldMemberId = client?._membroId;
+    const oldMember = _membersCache?.find(m => m.id === oldMemberId);
+    const oldMemberName = oldMember?.nome || 'Desconhecido';
+
     const { error } = await _supabase.from('leads')
       .update({ membro_id: memberId })
       .eq('id', String(clientId));
 
     if (error) throw error;
 
-    const client = clientsData.find(c => String(c.id) === String(clientId));
+    await insertMovement({
+      lead_id: clientId,
+      user_id: currentUser.id || null,
+      movement_type: 'transferencia',
+      from_value: oldMemberName,
+      to_value: memberName
+    });
+
     if (client) {
       client._membroId = memberId;
     }
@@ -3675,6 +3687,24 @@ async function saveMassTransfer() {
         .update(updates)
         .in('id', ids);
       if (error) throw error;
+    }
+
+    if (memberId) {
+      const newMember = _membersCache?.find(m => m.id === memberId);
+      const newMemberName = newMember?.nome || 'Membro';
+      for (const id of ids) {
+        const client = clientsData.find(c => String(c.id) === String(id));
+        const oldMemberId = client?._membroId;
+        const oldMember = _membersCache?.find(m => m.id === oldMemberId);
+        const oldMemberName = oldMember?.nome || 'Desconhecido';
+        await insertMovement({
+          lead_id: id,
+          user_id: currentUser.id || null,
+          movement_type: 'transferencia',
+          from_value: oldMemberName,
+          to_value: newMemberName
+        });
+      }
     }
 
     if (qualId) {
@@ -4447,7 +4477,7 @@ function initInteractions() {
 
   // Dark mode toggle
   const themeBtn = document.getElementById('themeToggle');
-  if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
+  if (themeBtn) themeBtn.addEventListener('click', (e) => toggleTheme(e));
 }
 
 /* ============================================
@@ -4669,22 +4699,22 @@ function initTimeTracker() {
    CRM · DADOS
    ============================================ */
 const cadences = [
-  { id: 'novo-lead', label: 'NOVO LEAD', short: 'Novo Lead' },
-  { id: 'dados-ia', label: 'DADOS IA', short: 'Dados IA' },
-  { id: 'coletados-frio', label: 'COLETADOS FRIOS', short: 'Coletados Frios' },
-  { id: 'qualificado', label: 'QUALIFICADO IA', short: 'Qualificado IA' },
-  { id: 'em-atendimento', label: 'AGUARDANDO RESPOSTA', short: 'Aguardando Resposta' },
-  { id: 'geladeira', label: 'EM ATENDIMENTO', short: 'Em Atendimento' },
-  { id: 'stand-by', label: 'FOLLOW-UP 1', short: 'Follow-up 1' },
-  { id: 'diagnostico-gratis', label: 'FOLLOW-UP 2', short: 'Follow-up 2' },
-  { id: 'reuniao-agendada', label: 'FOLLOW-UP 3', short: 'Follow-up 3' },
-  { id: 'reuniao-realizada', label: 'FOLLOW-UP 4', short: 'Follow-up 4' },
-  { id: 'contrato-enviado', label: 'CONTRATO ENVIADO', short: 'Contrato Enviado' },
-  { id: 'contrato-fechado', label: 'PARCEIROS', short: 'Parceiros' },
-  { id: 'cobranca-enviada', label: 'STANDY-BY', short: 'Standy-by' },
-  { id: 'pagamento-recebido', label: 'GELADEIRA', short: 'Geladeira' },
-  { id: 'servico-executado', label: 'ACOMPANHAMENTO', short: 'Acompanhamento' },
-  { id: 'pos-vendas', label: 'GERAÇÃO DE CONTRATO', short: 'Geração de Contrato' }
+  { id: 'novo-lead',          label: 'NOVO LEAD',           short: 'Novo Lead',          color: '#165BFF' },
+  { id: 'dados-ia',           label: 'DADOS IA',            short: 'Dados IA',           color: '#94A3B8' },
+  { id: 'coletados-frio',     label: 'COLETADOS FRIOS',     short: 'Coletados Frios',    color: '#6E8FFF' },
+  { id: 'qualificado',        label: 'QUALIFICADO IA',      short: 'Qualificado IA',     color: '#4D80FF' },
+  { id: 'em-atendimento',     label: 'AGUARDANDO RESPOSTA', short: 'Aguardando Resposta', color: '#2563EB' },
+  { id: 'geladeira',          label: 'EM ATENDIMENTO',      short: 'Em Atendimento',     color: '#CBD5E1' },
+  { id: 'stand-by',           label: 'FOLLOW-UP 1',         short: 'Follow-up 1',        color: '#94A3B8' },
+  { id: 'diagnostico-gratis', label: 'FOLLOW-UP 2',         short: 'Follow-up 2',        color: '#2563EB' },
+  { id: 'reuniao-agendada',   label: 'FOLLOW-UP 3',         short: 'Follow-up 3',        color: '#1D4ED8' },
+  { id: 'reuniao-realizada',  label: 'FOLLOW-UP 4',         short: 'Follow-up 4',        color: '#1E40AF' },
+  { id: 'contrato-enviado',   label: 'CONTRATO ENVIADO',    short: 'Contrato Enviado',   color: '#06B6D4' },
+  { id: 'contrato-fechado',   label: 'PARCEIROS',           short: 'Parceiros',          color: '#A855F7' },
+  { id: 'cobranca-enviada',   label: 'STANDY-BY',           short: 'Standy-by',          color: '#F59E0B' },
+  { id: 'pagamento-recebido', label: 'GELADEIRA',           short: 'Geladeira',          color: '#1E40AF' },
+  { id: 'servico-executado',  label: 'ACOMPANHAMENTO',      short: 'Acompanhamento',     color: '#10B981' },
+  { id: 'pos-vendas',         label: 'GERAÇÃO DE CONTRATO', short: 'Geração de Contrato', color: '#10B981' }
 ];
 
 // Mapeamento fixo: slug da coluna Kanban → UUID real da tabela cadencias no Supabase
@@ -4986,6 +5016,11 @@ function isCurrentUserAdmin() {
   return !!permIsAdmin || !!currentPerfilIsAdmin;
 }
 
+function canManageContratos() {
+  const perfil = currentUser?.perfil || '';
+  return isCurrentUserAdmin() || perfil === 'Atendente';
+}
+
 function isUserProfile(perfil) {
   if (!_userPermCache) return false;
   return _userPermCache.perfil === perfil;
@@ -5135,11 +5170,22 @@ async function transferLead() {
   }
 
   try {
+    const oldMember = _membersCache?.find(m => m.id === lead._membroId);
+    const oldMemberName = oldMember?.nome || 'Desconhecido';
+
     const { error } = await _supabase.from('leads')
       .update({ membro_id: newOwnerId })
       .eq('id', String(currentLeadId));
 
     if (error) throw error;
+
+    await insertMovement({
+      lead_id: lead.id,
+      user_id: currentUser.id || null,
+      movement_type: 'transferencia',
+      from_value: oldMemberName,
+      to_value: newMemberName
+    });
 
     lead._membroId = newOwnerId;
     lead.responsavel = newMemberName;
@@ -5192,6 +5238,7 @@ function renderKanban() {
   board.innerHTML = getVisibleCadences(currentCrmEmpresaFilter).map(c => {
     const list = allLeads.filter(l => l.status === c.id);
     const total = list.length;
+    const totalFat = list.reduce((a, l) => a + (Number(l.honorarios) || 0), 0);
     const isHighlighted = activeCadenceFilter === c.id;
     const expanded = kanbanExpanded[c.id] || VISIBLE_CARDS_PER_COLUMN;
     const showCount = Math.min(total, expanded);
@@ -5204,6 +5251,7 @@ function renderKanban() {
         <div class="kanban-col-head">
           <span class="kanban-col-title" title="${c.label}">${c.short}</span>
           <span class="kanban-col-count" aria-label="${total} leads">${total}</span>
+          ${totalFat > 0 ? `<span class="kanban-col-fat" title="Faturamento total">${formatBRL(totalFat)}</span>` : ''}
         </div>
         <div class="kanban-col-list" data-drop-zone="${c.id}">
           ${cards || '<div class="kanban-empty">Nenhum lead nesta etapa</div>'}
@@ -5227,6 +5275,7 @@ function renderKanban() {
   initIcons();
   bindLeadCards();
   bindDropZones();
+  _initBoardAutoScroll();
   bindLoadMore();
   updateKanbanMeta(allLeads);
 }
@@ -5328,6 +5377,7 @@ function leadCardHTML(l) {
       <div class="lead-card-meta">
         <div class="row"><span class="lbl">Serviço</span><span class="val">${svcBadges || '—'}${more}</span></div>
         <div class="row"><span class="lbl">Data do Evento</span><span class="val">${evDate}</span></div>
+        <div class="row"><span class="lbl">Faturamento</span><span class="val">${formatBRL(l.honorarios)}</span></div>
         <div class="lead-card-member-badge"><i data-lucide="user"></i> ${respName}</div>
       </div>
     </article>
@@ -5383,6 +5433,7 @@ function bindLeadCards() {
 function bindDropZones() {
   $$('.kanban-col-list').forEach(zone => {
     zone.addEventListener('dragover', onDragOver);
+    zone.addEventListener('dragenter', onDragEnter);
     zone.addEventListener('dragleave', onDragLeave);
     zone.addEventListener('drop', onDrop);
   });
@@ -5416,32 +5467,120 @@ function handleLeadAction(action, id) {
    CRM · DRAG & DROP
    ============================================ */
 let draggedId = null;
+const _dragCounters = new Map();
+
+const _autoScroll = { active: false, raf: null, zone: 120, maxSpeed: 14 };
+let _dragOverEvent = null;
+
+function _initBoardAutoScroll() {
+  const board = $('#kanbanBoard');
+  if (!board || board._autoScrollBound) return;
+  board._autoScrollBound = true;
+
+  board.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    _dragOverEvent = e;
+  });
+}
+
+function _startAutoScroll() {
+  if (_autoScroll.active) return;
+  _autoScroll.active = true;
+  const board = $('#kanbanBoard');
+  if (!board) return;
+
+  function tick() {
+    if (!_autoScroll.active) return;
+    const evt = _dragOverEvent;
+    if (evt) {
+      const rect = board.getBoundingClientRect();
+      const x = evt.clientX;
+      const zone = _autoScroll.zone;
+      const max = _autoScroll.maxSpeed;
+      let delta = 0;
+
+      if (x < rect.left + zone) {
+        delta = -max * Math.pow(1 - (x - rect.left) / zone, 2);
+      } else if (x > rect.right - zone) {
+        delta = max * Math.pow(1 - (rect.right - x) / zone, 2);
+      }
+
+      if (delta !== 0) {
+        board.scrollLeft += delta;
+      }
+    }
+    _autoScroll.raf = requestAnimationFrame(tick);
+  }
+  _autoScroll.raf = requestAnimationFrame(tick);
+}
+
+function _stopAutoScroll() {
+  _autoScroll.active = false;
+  if (_autoScroll.raf) {
+    cancelAnimationFrame(_autoScroll.raf);
+    _autoScroll.raf = null;
+  }
+}
 
 function onDragStart(e) {
   draggedId = this.dataset.leadId;
   this.classList.add('dragging');
+  const board = $('#kanbanBoard');
+  if (board) board.classList.add('is-dragging');
   e.dataTransfer.effectAllowed = 'move';
-  try { e.dataTransfer.setData('text/plain', draggedId); } catch { }
+  e.dataTransfer.setData('text/plain', draggedId);
+  const col = this.closest('.kanban-col');
+  if (col) _dragCounters.set(col, 0);
 }
 
 function onDragEnd() {
+  _stopAutoScroll();
+  _dragOverEvent = null;
   this.classList.remove('dragging');
-  $$('.kanban-col').forEach(c => c.classList.remove('drag-over'));
+  const board = $('#kanbanBoard');
+  if (board) board.classList.remove('is-dragging');
+  $$('.kanban-col').forEach(c => {
+    c.classList.remove('drag-over');
+    _dragCounters.delete(c);
+  });
 }
 
 function onDragOver(e) {
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
-  this.parentElement.classList.add('drag-over');
+  _dragOverEvent = e;
+  _startAutoScroll();
+  const col = this.parentElement;
+  col.classList.add('drag-over');
+}
+
+function onDragEnter(e) {
+  e.preventDefault();
+  const col = this.parentElement;
+  const count = (_dragCounters.get(col) || 0) + 1;
+  _dragCounters.set(col, count);
+  col.classList.add('drag-over');
 }
 
 function onDragLeave() {
-  this.parentElement.classList.remove('drag-over');
+  const col = this.parentElement;
+  const count = (_dragCounters.get(col) || 1) - 1;
+  _dragCounters.set(col, count);
+  if (count <= 0) {
+    _dragCounters.delete(col);
+    col.classList.remove('drag-over');
+  }
 }
 
 async function onDrop(e) {
   e.preventDefault();
-  this.parentElement.classList.remove('drag-over');
+  _stopAutoScroll();
+  _dragOverEvent = null;
+  const board = $('#kanbanBoard');
+  if (board) board.classList.remove('is-dragging');
+  const col = this.parentElement;
+  col.classList.remove('drag-over');
+  _dragCounters.delete(col);
   const id = e.dataTransfer.getData('text/plain') || draggedId;
   const newStatus = this.dataset.dropZone;
   const lead = leads.find(l => String(l.id) === String(id));
@@ -5637,42 +5776,61 @@ function renderJourneyBar(activeId) {
   const bar = $('#leadJourneyBar');
   if (!bar) return;
   bar.innerHTML = '';
-  const activeIdx = cadences.findIndex(c => c.id === activeId);
-  cadences.forEach((c, i) => {
+  const visibleCadences = isCurrentUserAdmin() ? cadences : cadences.filter(c => c.id !== 'dados-ia');
+  const activeIdx = visibleCadences.findIndex(c => c.id === activeId);
+  visibleCadences.forEach((c, i) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'journey-step';
+
     const chevron = document.createElement('div');
     chevron.className = 'journey-chevron';
+    const isActive = i === activeIdx;
+    const isDone = activeIdx !== -1 && i < activeIdx;
+    const baseColor = c.color || '#165BFF';
+    chevron.style.clipPath = 'polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%, 14px 50%)';
+
     if (activeIdx === -1) {
       chevron.classList.add('pending');
-    } else if (i < activeIdx) {
-      chevron.classList.add('done');
-    } else if (i === activeIdx) {
-      chevron.classList.add('active');
+      chevron.style.background = '#2a2d35';
+    } else if (isDone) {
+      chevron.style.background = baseColor;
+      chevron.style.opacity = '0.35';
+    } else if (isActive) {
+      chevron.style.background = baseColor;
+      chevron.style.boxShadow = `0 0 8px ${baseColor}66`;
     } else {
       chevron.classList.add('pending');
+      chevron.style.background = '#2a2d35';
     }
 
     const tooltip = document.createElement('div');
     tooltip.className = 'journey-tooltip';
     tooltip.textContent = c.label;
-    bar.appendChild(tooltip);
 
-    chevron.addEventListener('mouseenter', () => {
-      const rect = chevron.getBoundingClientRect();
-      tooltip.style.left = (rect.left + rect.width / 2) + 'px';
-      tooltip.style.top = (rect.bottom + 8) + 'px';
+    wrapper.addEventListener('mouseenter', () => {
       tooltip.classList.add('visible');
     });
-    chevron.addEventListener('mouseleave', () => {
+    wrapper.addEventListener('mouseleave', () => {
       tooltip.classList.remove('visible');
     });
 
     chevron.addEventListener('click', () => handleChangeCadence(c.id));
 
-    bar.appendChild(chevron);
+    wrapper.appendChild(chevron);
+    wrapper.appendChild(tooltip);
+    bar.appendChild(wrapper);
   });
 }
 
-function handleChangeCadence(cadenceId) {
+async function insertMovement(payload) {
+  let { error: insErr } = await _supabase.from('lead_movements').insert([payload]);
+  if (insErr && insErr.code === '42703') {
+    delete payload.user_id;
+    await _supabase.from('lead_movements').insert([payload]);
+  }
+}
+
+async function handleChangeCadence(cadenceId) {
   if (!currentLeadId) return;
   const lead = leads.find(l => String(l.id) === String(currentLeadId));
   if (!lead) return;
@@ -5692,9 +5850,23 @@ function handleChangeCadence(cadenceId) {
 
   if (newCadenciaUuid) {
     lead._cadenciaId = newCadenciaUuid;
-    updateLeadSupabase(lead.id, { cadencia_id: newCadenciaUuid })
+    updateLeadSupabase(lead.id, { id: lead.id, cadencia_id: newCadenciaUuid })
       .then(() => console.log('[Journey] cadencia_id salvo:', newCadenciaUuid))
       .catch(err => console.error('[Journey] Erro ao salvar cadencia_id:', err));
+  }
+
+  if (lead.id && oldStatus && cadenceId && oldStatus !== cadenceId) {
+    try {
+      await insertMovement({
+        lead_id: lead.id,
+        user_id: currentUser.id || null,
+        movement_type: 'cadencia',
+        from_value: oldStatus,
+        to_value: cadenceId
+      });
+    } catch (e) {
+      console.error('[Lead] Erro ao registrar movimentação:', e);
+    }
   }
 
   const card = $(`.lead-card[data-lead-id="${lead.id}"]`);
@@ -6014,42 +6186,137 @@ async function loadLeadMovements(leadId) {
   const container = $('#leadMovementsTimeline');
   if (!container || !leadId) return;
 
+  container.innerHTML = `
+    <div class="lead-timeline-loading">
+      <div class="lead-timeline-spinner"></div>
+      <span>Carregando movimentações...</span>
+    </div>`;
+
   try {
-    const { data, error } = await _supabase
+    let data = null;
+    let error = null;
+
+    const result1 = await _supabase
       .from('lead_movements')
-      .select('id, lead_id, movement_type, from_value, to_value, created_at')
+      .select('id, lead_id, movement_type, from_value, to_value, user_id, created_at')
       .eq('lead_id', leadId)
       .order('created_at', { ascending: false });
+
+    if (result1.error && result1.error.code === '42703') {
+      const result2 = await _supabase
+        .from('lead_movements')
+        .select('id, lead_id, movement_type, from_value, to_value, created_at')
+        .eq('lead_id', leadId)
+        .order('created_at', { ascending: false });
+      data = result2.data;
+      error = result2.error;
+    } else {
+      data = result1.data;
+      error = result1.error;
+    }
 
     if (error) throw error;
 
     if (!data || data.length === 0) {
-      container.innerHTML = '<div class="lead-timeline-empty">Nenhuma movimentação registrada.</div>';
+      container.innerHTML = `
+        <div class="lead-timeline-empty">
+          <div class="lead-timeline-empty-icon">
+            <i data-lucide="inbox"></i>
+          </div>
+          <p>Nenhuma movimentação registrada.</p>
+          <span>As alterações de cadência e temperatura aparecerão aqui.</span>
+        </div>`;
+      initIcons();
       return;
     }
 
+    const userIds = [...new Set(data.map(m => m.user_id).filter(Boolean))];
+    let usersMap = {};
+    if (userIds.length > 0) {
+      const { data: members } = await _supabase
+        .from('membros')
+        .select('id, nome, foto_url')
+        .in('id', userIds);
+      if (members) {
+        members.forEach(u => { usersMap[u.id] = u; });
+      }
+    }
+
+    const fromLabel = (id) => {
+      if (!id) return '—';
+      const c = cadences.find(x => x.id === id);
+      return c ? c.label : id;
+    };
+
+    const formatMovementType = (type) => {
+      if (type === 'cadencia') return 'Cadência';
+      if (type === 'temperatura') return 'Temperatura';
+      if (type === 'transferencia') return 'Transferência';
+      return type;
+    };
+
+    const dotClass = (type) => {
+      if (type === 'cadencia') return 'dot-cadencia';
+      if (type === 'temperatura') return 'dot-temperatura';
+      if (type === 'transferencia') return 'dot-transferencia';
+      return 'dot-cadencia';
+    };
+
+    const badgeClass = (type) => {
+      if (type === 'cadencia') return 'badge-cadencia';
+      if (type === 'temperatura') return 'badge-temperatura';
+      if (type === 'transferencia') return 'badge-transferencia';
+      return 'badge-cadencia';
+    };
+
     container.innerHTML = data.map(m => {
-      const date = new Date(m.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-      const dotClass = m.movement_type === 'cadencia' ? 'dot-cadencia' : 'dot-temperatura';
-      const badgeClass = m.movement_type === 'cadencia' ? 'badge-cadencia' : 'badge-temperatura';
-      const title = `${m.movement_type === 'cadencia' ? 'Cadência' : 'Temperatura'} alterada`;
+      const date = new Date(m.created_at);
+      const dateStr = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const timeStr = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+      const user = usersMap[m.user_id] || null;
+      const userName = user?.nome || 'Sistema';
+      const userAvatar = user?.foto_url
+        ? `<img src="${escapeHtml(user.foto_url)}" alt="" class="lead-timeline-avatar-img">`
+        : `<span class="lead-timeline-avatar-initials">${escapeHtml(userName.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase())}</span>`;
+
+      let description = '';
+      if (m.movement_type === 'transferencia' && m.from_value && m.to_value) {
+        description = `${escapeHtml(userName)} transferiu o lead de <strong>${escapeHtml(m.from_value)}</strong> para <strong>${escapeHtml(m.to_value)}</strong>`;
+      } else if (m.from_value && m.to_value) {
+        const fromName = m.movement_type === 'cadencia' ? fromLabel(m.from_value) : m.from_value;
+        const toName = m.movement_type === 'cadencia' ? fromLabel(m.to_value) : m.to_value;
+        description = `${escapeHtml(userName)} moveu o lead de <strong>${escapeHtml(fromName)}</strong> para <strong>${escapeHtml(toName)}</strong>`;
+      }
 
       return `
         <div class="lead-timeline-item">
-          <div class="lead-timeline-dot ${dotClass}"></div>
+          <div class="lead-timeline-dot ${dotClass(m.movement_type)}"></div>
           <div class="lead-timeline-body">
             <div class="lead-timeline-header">
-              <span class="lead-timeline-title">${escapeHtml(title)}</span>
-              <span class="lead-timeline-date">${date}</span>
+              <div class="lead-timeline-user">
+                <div class="lead-timeline-avatar">${userAvatar}</div>
+                <span class="lead-timeline-username">${escapeHtml(userName)}</span>
+              </div>
+              <span class="lead-timeline-badge ${badgeClass(m.movement_type)}">${formatMovementType(m.movement_type)}</span>
             </div>
-            ${m.from_value && m.to_value ? `<div class="lead-timeline-desc">De <strong>${escapeHtml(m.from_value)}</strong> para <strong>${escapeHtml(m.to_value)}</strong></div>` : ''}
-            <span class="lead-timeline-badge ${badgeClass}">${m.movement_type === 'cadencia' ? 'Cadência' : 'Temperatura'}</span>
+            ${description ? `<div class="lead-timeline-desc">${description}</div>` : ''}
+            <div class="lead-timeline-date">${dateStr} às ${timeStr}</div>
           </div>
         </div>`;
     }).join('');
+    initIcons();
   } catch (err) {
     console.error('[Lead] Erro ao carregar movimentações:', err);
-    container.innerHTML = '<div class="lead-timeline-empty">Erro ao carregar movimentações.</div>';
+    container.innerHTML = `
+      <div class="lead-timeline-empty">
+        <div class="lead-timeline-empty-icon error">
+          <i data-lucide="alert-circle"></i>
+        </div>
+        <p>Erro ao carregar movimentações.</p>
+        <span>Tente novamente mais tarde.</span>
+      </div>`;
+    initIcons();
   }
 }
 
@@ -6361,14 +6628,14 @@ async function saveLead() {
         newLead.id = result[0].id;
         currentLeadId = result[0].id;
       }
-      toast('Lead criado e salvo no Supabase: ' + newLead.empresa);
+      toast('Lead criado: ' + newLead.empresa);
       if (typeof registrarAuditoria === 'function') {
         registrarAuditoria({ acao: 'Inclusões', caminho_url: '/crm', modulo: 'CRM' });
       }
     } catch (err) {
       console.error('[Insert] Erro completo:', err);
       const errMsg = err.message || String(err);
-      toast('Erro ao salvar no Supabase: ' + errMsg, 'error');
+      toast('Erro ao salvar: ' + errMsg, 'error');
     }
   } else {
     // Proteção: não apagar telefone sem permissão
@@ -6392,23 +6659,23 @@ async function saveLead() {
       try {
         // Temperatura alterada
         if (fields.thermal && lead._prevThermal && fields.thermal !== lead._prevThermal) {
-          await _supabase.from('lead_movements').insert([{
+          await insertMovement({
             lead_id: lead.id,
+            user_id: currentUser.id || null,
             movement_type: 'temperatura',
             from_value: lead._prevThermal,
-            to_value: fields.thermal,
-            description: `Temperatura alterada de "${lead._prevThermal}" para "${fields.thermal}"`
-          }]);
+            to_value: fields.thermal
+          });
         }
         // Cadência (status) alterada
         if (fields.status && lead._prevStatus && fields.status !== lead._prevStatus) {
-          await _supabase.from('lead_movements').insert([{
+          await insertMovement({
             lead_id: lead.id,
+            user_id: currentUser.id || null,
             movement_type: 'cadencia',
             from_value: lead._prevStatus,
-            to_value: fields.status,
-            description: `Cadência alterada de "${lead._prevStatus}" para "${fields.status}"`
-          }]);
+            to_value: fields.status
+          });
         }
       } catch (e) {
         console.error('[Lead] Erro ao registrar movimentação:', e);
@@ -6452,14 +6719,14 @@ async function saveLead() {
       console.log('[Edit] cadencia_id type:', typeof payload.cadencia_id, payload.cadencia_id);
 
       await updateLeadSupabase(lead.id, payload);
-      toast('Lead atualizado no Supabase: ' + lead.empresa);
+      toast('Lead atualizado: ' + lead.empresa);
       if (typeof registrarAuditoria === 'function') {
         registrarAuditoria({ acao: 'Atualizações', caminho_url: '/crm', modulo: 'CRM' });
       }
     } catch (err) {
       console.error('[Edit] Erro completo:', err);
       const errMsg = err.message || String(err);
-      toast('Erro ao salvar no Supabase: ' + errMsg, 'error');
+      toast('Erro ao salvar: ' + errMsg, 'error');
     }
   }
 
@@ -6488,15 +6755,40 @@ function validarTelefone(v) {
    CRM · TOAST
    ============================================ */
 let toastTimer = null;
+let toastExitTimer = null;
+
 function toast(text, type = 'success') {
-  const el = $('#toast');
-  const txt = $('#toastText');
-  if (!el || !txt) return;
-  txt.textContent = text;
-  el.hidden = false;
-  el.dataset.type = type;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.hidden = true, 2500);
+    const el = document.querySelector('#toast');
+    const txt = document.querySelector('#toastText');
+
+    if (!el || !txt) return;
+
+    clearTimeout(toastTimer);
+    clearTimeout(toastExitTimer);
+
+    el.style.transition = 'none';
+    el.style.opacity = '1';
+    el.style.transform = 'scale(1) translateY(0)';
+    el.style.filter = 'none';
+    el.style.display = 'flex';
+    el.hidden = false;
+
+    txt.textContent = text;
+    el.dataset.type = type;
+
+    void el.offsetWidth;
+
+    toastTimer = setTimeout(() => {
+        el.style.transition = 'all 700ms ease-in-out';
+        el.style.opacity = '0';
+        el.style.transform = 'scale(0.9) translateY(16px)';
+        el.style.filter = 'blur(4px)';
+
+        toastExitTimer = setTimeout(() => {
+            el.style.display = 'none';
+            el.hidden = true;
+        }, 700);
+    }, 3000);
 }
 
 /* ============================================
@@ -6946,9 +7238,7 @@ function initCRM() {
   // Salvar
   $('#leadSaveBtn').addEventListener('click', saveLead);
 
-  // Histórico / WhatsApp
-  $$('#leadModal [data-action="history"]').forEach(b =>
-    b.addEventListener('click', () => switchLeadTab('history')));
+  // Back to edit
   $$('#leadModal [data-action="back-to-edit"]').forEach(b =>
     b.addEventListener('click', () => switchLeadTab('edit')));
   $$('#leadModal [data-action="whatsapp"]').forEach(b =>
@@ -7305,20 +7595,21 @@ function computeReminders(leads) {
 }
 
 function computeHonorarios(leads) {
-  const total = leads.reduce((s, l) => s + (l.honorarios || 0), 0);
+  const honLeads = leads.filter(l => (l.status || '') === 'pos-vendas');
+  const total = honLeads.reduce((s, l) => s + (l.honorarios || 0), 0);
   const byCadence = cadences
     .map(c => {
-      const ls = leads.filter(l => l.status === c.id);
+      const ls = honLeads.filter(l => l.status === c.id);
       return { id: c.id, label: c.label, value: ls.reduce((s, l) => s + (l.honorarios || 0), 0), count: ls.length };
     })
     .filter(x => x.value > 0)
     .sort((a, b) => b.value - a.value);
   const byTemp = ['quente', 'morno', 'frio']
     .map(t => {
-      const ls = leads.filter(l => l.thermal === t);
+      const ls = honLeads.filter(l => l.thermal === t);
       return { id: t, label: t[0].toUpperCase() + t.slice(1), value: ls.reduce((s, l) => s + (l.honorarios || 0), 0), count: ls.length };
     });
-  return { total, byCadence, byTemp, count: leads.length, avg: leads.length ? total / leads.length : 0 };
+  return { total, byCadence, byTemp, count: honLeads.length, avg: honLeads.length ? total / honLeads.length : 0 };
 }
 
 // ----- Render helpers
@@ -8557,7 +8848,7 @@ function saveLeadFromCalendar() {
         temperatura: lead.thermal,
         honorarios: lead.honorarios
       });
-      toast('Lead atualizado no Supabase');
+      toast('Lead atualizado');
     } catch (err) {
       console.error('[Calendário] Erro ao atualizar lead:', err);
       toast('Salvo localmente. Erro ao sincronizar: ' + (err.message || err), 'error');
@@ -8756,7 +9047,7 @@ function saveCalEvent() {
           Object.assign(meetings[idx], payload);
           try {
             await updateEventoSupabase(calEventEditId, payload);
-            toast('Evento atualizado no Supabase');
+            toast('Evento atualizado');
             if (typeof registrarAuditoria === 'function') {
               registrarAuditoria({ acao: 'Atualizações', caminho_url: '/calendario', modulo: 'Calendário' });
             }
@@ -8773,7 +9064,7 @@ function saveCalEvent() {
           payload.id = Math.max(...meetings.map(m => m.id), 0) + 1;
         }
         meetings.push(payload);
-        toast('Evento salvo no Supabase');
+        toast('Evento salvo');
         if (typeof registrarAuditoria === 'function') {
           registrarAuditoria({ acao: 'Inclusões', caminho_url: '/calendario', modulo: 'Calendário' });
         }
@@ -8784,7 +9075,7 @@ function saveCalEvent() {
         payload.id = Math.max(...meetings.map(m => m.id), 0) + 1;
         meetings.push(payload);
       }
-      toast('Erro ao salvar no Supabase: ' + (err.message || err), 'error');
+      toast('Erro ao salvar: ' + (err.message || err), 'error');
     }
 
     rebuildCalendarEvents();
@@ -8823,7 +9114,7 @@ function deleteCalEvent() {
   async function doDelete() {
     try {
       await deleteEventoSupabase(deletedId);
-      toast('Evento excluído do Supabase');
+      toast('Evento excluído');
     } catch (err) {
       console.error('[Calendário] Erro ao excluir do Supabase:', err);
       toast('Excluído localmente. Erro ao sincronizar: ' + (err.message || err), 'error');
@@ -9783,7 +10074,7 @@ function closeRotinaDetail() {
           observacoes: item.desc,
           cor: item.pastel
         }).then(() => {
-          toast('Alterações salvas no Supabase');
+          toast('Alterações salvas');
         }).catch(err => {
           console.error('[Rotina] Erro ao atualizar no Supabase:', err);
           toast('Salvo localmente. Erro ao sincronizar: ' + (err.message || err), 'error');
@@ -9984,7 +10275,7 @@ function saveAndCloseRotinaCreate() {
         insertSuccess = true;
       } catch (err) {
         console.error('[Rotina] Erro ao inserir no Supabase:', err);
-        toast('Erro ao salvar no Supabase: ' + (err.message || err), 'error');
+toast('Erro ao salvar: ' + (err.message || err), 'error');
         return;
       }
 
@@ -10120,10 +10411,44 @@ function updateThemeIcon(isDark) {
   btn.setAttribute('aria-label', isDark ? 'Desativar tema escuro' : 'Ativar tema escuro');
 }
 
-function toggleTheme() {
-  const isDark = document.documentElement.classList.toggle('theme-dark');
-  localStorage.setItem('theme', isDark ? 'dark' : 'light');
-  updateThemeIcon(isDark);
+function toggleTheme(event) {
+  const isDark = document.documentElement.classList.contains('theme-dark');
+
+  if (!document.startViewTransition) {
+    document.documentElement.classList.toggle('theme-dark');
+    localStorage.setItem('theme', isDark ? 'light' : 'dark');
+    updateThemeIcon(!isDark);
+    return;
+  }
+
+  const x = event?.clientX ?? window.innerWidth / 2;
+  const y = event?.clientY ?? window.innerHeight / 2;
+  const endRadius = Math.hypot(
+    Math.max(x, window.innerWidth - x),
+    Math.max(y, window.innerHeight - y)
+  );
+
+  const transition = document.startViewTransition(() => {
+    document.documentElement.classList.toggle('theme-dark');
+    localStorage.setItem('theme', isDark ? 'light' : 'dark');
+    updateThemeIcon(!isDark);
+  });
+
+  transition.ready.then(() => {
+    const clipPath = [
+      `circle(0px at ${x}px ${y}px)`,
+      `circle(${endRadius}px at ${x}px ${y}px)`
+    ];
+
+    document.documentElement.animate(
+      { clipPath },
+      {
+        duration: 500,
+        easing: 'ease-in-out',
+        pseudoElement: '::view-transition-new(root)',
+      }
+    );
+  });
 }
 
 /* ============================================
@@ -12871,7 +13196,7 @@ function renderContratosTable(list) {
       ? `<button class="btn-ghost btn-sm" onclick="contratoDownloadPDF('${c.id}')" title="Baixar PDF" aria-label="Baixar PDF"><i data-lucide="download"></i></button>`
       : `<button class="btn-ghost btn-sm" onclick="contratoGeneratePDF('${c.id}')" title="Gerar PDF" aria-label="Gerar PDF"><i data-lucide="file-text"></i></button>`;
 
-    const canDelete = isCurrentUserAdmin();
+    const canDelete = canManageContratos();
     const deleteAllowed = ['rascunho', 'cancelado'].includes(c.status);
     const deleteDisabled = canDelete && !deleteAllowed;
     const deleteTitle = deleteDisabled
@@ -14233,7 +14558,7 @@ let _contratoDeleteTargetId = null;
 let _contratoDeleteTargetStatus = null;
 
 function contratoExcluir(id, numero, contratante, status) {
-  if (!isCurrentUserAdmin()) return;
+  if (!canManageContratos()) return;
   if (!['rascunho', 'cancelado'].includes(status)) {
     toast('Não é possível excluir contratos com este status.', 'error');
     return;

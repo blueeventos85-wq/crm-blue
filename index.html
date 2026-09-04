@@ -1232,7 +1232,7 @@
             </div>
             <div class="conv-header-right">
               <span class="conv-sync-time" id="convSyncTime"></span>
-              <select id="convCentroCustoSelect" style="padding:6px 10px;border-radius:8px;border:1px solid #334155;background:#1E293B;color:#E2E8F0;font-size:12px;min-width:140px">
+              <select id="convCentroCustoSelect" class="conv-centro-custo-select">
                 <option value="">Carregando...</option>
               </select>
               <button class="btn-ghost btn-sm" id="btnConvRefresh" title="Atualizar conversas"><i data-lucide="refresh-cw"></i></button>
@@ -2471,26 +2471,6 @@
         <span class="sync-badge" id="leadSyncBadge" hidden data-tooltip="Este lead espelha o registro em Clientes da Base">
           <i data-lucide="refresh-cw"></i> Sincronizado com Clientes da Base
         </span>
-        <div class="modal-head-actions">
-          <button class="btn-ghost small" data-action="history" title="Histórico">
-            <i data-lucide="history"></i> Histórico
-          </button>
-          <button class="btn-ghost small" data-action="movimentacao" title="Movimentação">
-            <i data-lucide="zap"></i> Movimentação
-          </button>
-          <button class="btn-ghost small" data-action="nova-annotacao" title="Nova Anotação">
-            <i data-lucide="message-square-plus"></i> Anotação
-          </button>
-          <button class="btn-ghost small" data-action="atividades" title="Atividades">
-            <i data-lucide="clock"></i> Atividades
-          </button>
-          <button class="btn-ghost small" data-action="whatsapp" title="Abrir WhatsApp">
-            <i data-lucide="message-circle"></i> WhatsApp
-          </button>
-          <button class="btn-ghost small" data-action="transfer" title="Transferir para Membro" id="leadTransferHeaderBtn" style="display:none">
-            <i data-lucide="arrow-right-left"></i> Transferir para Membro
-          </button>
-        </div>
         <button class="icon-btn small modal-head-close" data-action="close-modal" title="Fechar">
           <i data-lucide="x"></i>
         </button>
@@ -2621,16 +2601,6 @@
         </div>
       </div>
 
-      <!-- Aba de histórico -->
-      <div class="lead-tab" data-tab="history">
-        <button class="btn-ghost small history-back-btn" data-action="back-to-edit" style="margin-bottom:16px">
-          <i data-lucide="arrow-left"></i> Voltar ao detalhe
-        </button>
-        <ul class="modal-history" id="leadHistoryList">
-          <!-- preenchido via JS -->
-        </ul>
-      </div>
-
       <!-- Aba de transferência (apenas admin) -->
       <div class="lead-tab" data-tab="transfer" id="leadTransferTab" style="display:none">
         <button class="btn-ghost small history-back-btn" data-action="back-to-edit" style="margin-bottom:16px">
@@ -2709,16 +2679,35 @@
     </div>
 
     <div class="modal-foot">
-      <div class="modal-foot-meta">
-        <span id="leadModalMetaCreate">Criado em 15/04/2026 às 10:32</span>
-        <span class="dot-sep">·</span>
-        <span>Último atendimento: <strong id="leadModalMetaLast">28/05/2026</strong></span>
-      </div>
-      <div class="modal-foot-actions">
-        <button class="btn-ghost" data-action="close-modal">Cancelar</button>
-        <button class="btn-primary" id="leadSaveBtn">
-          <i data-lucide="save"></i> Salvar
+      <div class="modal-foot-actions-row">
+        <button class="btn-ghost small" data-action="movimentacao" title="Movimentação">
+          <i data-lucide="zap"></i> Movimentação
         </button>
+        <button class="btn-ghost small" data-action="nova-annotacao" title="Nova Anotação">
+          <i data-lucide="message-square-plus"></i> Anotação
+        </button>
+        <button class="btn-ghost small" data-action="atividades" title="Atividades">
+          <i data-lucide="clock"></i> Atividades
+        </button>
+        <button class="btn-ghost small" data-action="whatsapp" title="Abrir WhatsApp">
+          <i data-lucide="message-circle"></i> WhatsApp
+        </button>
+        <button class="btn-ghost small" data-action="transfer" title="Transferir para Membro" id="leadTransferHeaderBtn" style="display:none">
+          <i data-lucide="arrow-right-left"></i> Transferir para Membro
+        </button>
+      </div>
+      <div class="modal-foot-right">
+        <div class="modal-foot-meta">
+          <span id="leadModalMetaCreate">Criado em 15/04/2026 às 10:32</span>
+          <span class="dot-sep">·</span>
+          <span>Último atendimento: <strong id="leadModalMetaLast">28/05/2026</strong></span>
+        </div>
+        <div class="modal-foot-buttons">
+          <button class="btn-ghost" data-action="close-modal">Cancelar</button>
+          <button class="btn-primary" id="leadSaveBtn">
+            <i data-lucide="save"></i> Salvar
+          </button>
+        </div>
       </div>
     </div>
   </div>
