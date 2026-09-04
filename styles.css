@@ -3195,7 +3195,8 @@ svg.lucide.lg { width: 22px; height: 22px; }
 .modal-head {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
+  width: 100%;
   gap: 16px;
   padding: 20px 24px;
   border-bottom: 1px solid var(--gray-200);
@@ -3204,31 +3205,41 @@ svg.lucide.lg { width: 22px; height: 22px; }
 
 .modal-head-left {
   display: flex;
-  gap: 12px;
   align-items: center;
-  flex: 1;
+  gap: 16px;
+  flex-shrink: 0;
   min-width: 0;
 }
 
+.modal-head-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.modal-head-info h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .modal-avatar {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
   background: var(--grad-blue);
   color: white;
   display: grid;
   place-items: center;
   font-weight: 700;
-  font-size: 18px;
+  font-size: 16px;
   flex-shrink: 0;
   box-shadow: var(--shadow-blue);
-}
-
-.modal-head h2 {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 4px;
 }
 
 .modal-meta {
@@ -3239,7 +3250,8 @@ svg.lucide.lg { width: 22px; height: 22px; }
   gap: 6px;
   flex-wrap: wrap;
 }
-.dot-sep { color: var(--gray-300); }
+.modal-meta .dot-sep,
+.modal-foot-meta .dot-sep { color: var(--gray-300); }
 
 .badge-readonly {
   display: inline-flex;
@@ -3262,8 +3274,20 @@ svg.lucide.lg { width: 22px; height: 22px; }
 .modal-head-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 16px;
   flex-shrink: 0;
+}
+
+.modal-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.modal-head-close {
+  margin-left: 0;
 }
 
 .thermal-tag {
@@ -3288,15 +3312,15 @@ svg.lucide.lg { width: 22px; height: 22px; }
 
 /* Journey bar – chevron style */
 .lead-journey {
+  position: relative;
   display: flex;
   align-items: center;
-  flex-wrap: nowrap;
+  width: 100%;
   padding: 14px 24px;
   background: var(--surface-bg);
   border-bottom: 1px solid var(--gray-200);
-  overflow-x: auto;
   gap: 0;
-  scrollbar-width: none;
+  overflow: visible;
 }
 
 .lead-journey::-webkit-scrollbar { display: none; }
@@ -3306,22 +3330,60 @@ svg.lucide.lg { width: 22px; height: 22px; }
   display: flex;
   align-items: center;
   justify-content: center;
+  flex: 1;
   height: 34px;
-  padding: 0 14px;
-  font-size: 10px;
+  padding: 0 10px;
+  font-size: 0;
   font-weight: 700;
   letter-spacing: 0.3px;
   text-transform: uppercase;
   white-space: nowrap;
-  flex-shrink: 0;
-  transition: background 0.2s, color 0.2s;
-  cursor: default;
+  transition: background 0.2s, color 0.2s, filter 0.15s;
+  cursor: pointer;
   clip-path: polygon(0% 0%, calc(100% - 12px) 0%, 100% 50%, calc(100% - 12px) 100%, 0% 100%, 12px 50%);
+}
+
+.journey-chevron:hover {
+  filter: brightness(1.2);
 }
 
 .journey-chevron:first-child {
   clip-path: polygon(0% 0%, calc(100% - 12px) 0%, 100% 50%, calc(100% - 12px) 100%, 0% 100%);
-  padding-left: 16px;
+}
+
+.journey-chevron:last-child {
+  clip-path: polygon(0% 0%, 100% 0%, 100% 50%, 100% 100%, 0% 100%, 12px 50%);
+}
+
+.journey-tooltip {
+  display: none;
+  position: fixed;
+  padding: 5px 12px;
+  background: #0f172a;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  white-space: nowrap;
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 9999;
+  transform: translateX(-50%);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.journey-tooltip::after {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-bottom-color: #0f172a;
+}
+
+.journey-tooltip.visible {
+  display: flex;
 }
 
 .journey-chevron.done {
@@ -3544,7 +3606,9 @@ svg.lucide.lg { width: 22px; height: 22px; }
 @media (max-width: 1100px) {
   .form-grid-2 { grid-template-columns: 1fr; }
   .modal-head { flex-direction: column; align-items: stretch; }
-  .modal-head-right { justify-content: flex-end; }
+  .modal-head-right { justify-content: flex-start; flex-wrap: wrap; }
+  .modal-head-actions { width: 100%; }
+  .modal-head-close { margin-left: auto; }
 }
 @media (max-width: 720px) {
   .kanban-col { flex: 0 0 240px; }

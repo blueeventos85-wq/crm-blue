@@ -2462,39 +2462,36 @@
     <div class="modal-head">
       <div class="modal-head-left">
         <div class="modal-avatar" id="leadModalAvatar">TS</div>
-        <div>
+        <div class="modal-head-info">
           <h2 id="leadModalTitle">Tech Solutions LTDA</h2>
-          <p class="modal-meta">
-            <span id="leadModalCreated">Criado em 15/04/2026 às 10:32</span>
-            <span class="dot-sep">·</span>
-            <span>Último atendimento: <strong id="leadModalLastTouch">28/05/2026</strong></span>
-          </p>
+          <span class="thermal-tag" id="leadModalThermal">Quente</span>
         </div>
       </div>
       <div class="modal-head-right">
-        <span class="thermal-tag" id="leadModalThermal">Quente</span>
-      <span class="sync-badge" id="leadSyncBadge" hidden data-tooltip="Este lead espelha o registro em Clientes da Base">
-        <i data-lucide="refresh-cw"></i> Sincronizado com Clientes da Base
-      </span>
-        <button class="btn-ghost small" data-action="history" title="Histórico">
-          <i data-lucide="history"></i> Histórico
-        </button>
-        <button class="btn-ghost small" data-action="movimentacao" title="Movimentação">
-          <i data-lucide="zap"></i> Movimentação
-        </button>
-        <button class="btn-ghost small" data-action="nova-annotacao" title="Nova Anotação">
-          <i data-lucide="message-square-plus"></i> Anotação
-        </button>
-        <button class="btn-ghost small" data-action="atividades" title="Atividades">
-          <i data-lucide="clock"></i> Atividades
-        </button>
-        <button class="btn-ghost small" data-action="whatsapp" title="Abrir WhatsApp">
-          <i data-lucide="message-circle"></i> WhatsApp
-        </button>
-        <button class="btn-ghost small" data-action="transfer" title="Transferir para Membro" id="leadTransferHeaderBtn" style="display:none">
-          <i data-lucide="arrow-right-left"></i> Transferir para Membro
-        </button>
-        <button class="icon-btn small" data-action="close-modal" title="Fechar">
+        <span class="sync-badge" id="leadSyncBadge" hidden data-tooltip="Este lead espelha o registro em Clientes da Base">
+          <i data-lucide="refresh-cw"></i> Sincronizado com Clientes da Base
+        </span>
+        <div class="modal-head-actions">
+          <button class="btn-ghost small" data-action="history" title="Histórico">
+            <i data-lucide="history"></i> Histórico
+          </button>
+          <button class="btn-ghost small" data-action="movimentacao" title="Movimentação">
+            <i data-lucide="zap"></i> Movimentação
+          </button>
+          <button class="btn-ghost small" data-action="nova-annotacao" title="Nova Anotação">
+            <i data-lucide="message-square-plus"></i> Anotação
+          </button>
+          <button class="btn-ghost small" data-action="atividades" title="Atividades">
+            <i data-lucide="clock"></i> Atividades
+          </button>
+          <button class="btn-ghost small" data-action="whatsapp" title="Abrir WhatsApp">
+            <i data-lucide="message-circle"></i> WhatsApp
+          </button>
+          <button class="btn-ghost small" data-action="transfer" title="Transferir para Membro" id="leadTransferHeaderBtn" style="display:none">
+            <i data-lucide="arrow-right-left"></i> Transferir para Membro
+          </button>
+        </div>
+        <button class="icon-btn small modal-head-close" data-action="close-modal" title="Fechar">
           <i data-lucide="x"></i>
         </button>
       </div>

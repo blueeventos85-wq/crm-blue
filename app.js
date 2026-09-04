@@ -3785,10 +3785,8 @@ function openClientInLeadModal(card) {
   const initials = client.initials;
   $('#leadModalAvatar').textContent = initials;
   $('#leadModalTitle').textContent = client.name;
-  $('#leadModalCreated').textContent = client.cnpj || 'Cliente da base';
   $('#leadModalMetaCreate').textContent = client.cnpj || 'Cliente da base';
   $('#leadModalMetaLast').textContent = '—';
-  $('#leadModalLastTouch').textContent = '—';
 
   const thermal = client.thermal || 'frio';
   const tag = $('#leadModalThermal');
@@ -5548,10 +5546,8 @@ function openNewLeadModal() {
   // Cabeçalho
   $('#leadModalAvatar').textContent = 'NL';
   $('#leadModalTitle').textContent = 'Novo lead';
-  $('#leadModalCreated').textContent = '—';
   $('#leadModalMetaCreate').textContent = '—';
   $('#leadModalMetaLast').textContent = '—';
-  $('#leadModalLastTouch').textContent = '—';
 
   const tag = $('#leadModalThermal');
   tag.textContent = 'Frio';
@@ -5645,8 +5641,6 @@ function renderJourneyBar(activeId) {
   cadences.forEach((c, i) => {
     const chevron = document.createElement('div');
     chevron.className = 'journey-chevron';
-    chevron.title = c.label;
-    chevron.textContent = c.short;
     if (activeIdx === -1) {
       chevron.classList.add('pending');
     } else if (i < activeIdx) {
@@ -5656,8 +5650,72 @@ function renderJourneyBar(activeId) {
     } else {
       chevron.classList.add('pending');
     }
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'journey-tooltip';
+    tooltip.textContent = c.label;
+    bar.appendChild(tooltip);
+
+    chevron.addEventListener('mouseenter', () => {
+      const rect = chevron.getBoundingClientRect();
+      tooltip.style.left = (rect.left + rect.width / 2) + 'px';
+      tooltip.style.top = (rect.bottom + 8) + 'px';
+      tooltip.classList.add('visible');
+    });
+    chevron.addEventListener('mouseleave', () => {
+      tooltip.classList.remove('visible');
+    });
+
+    chevron.addEventListener('click', () => handleChangeCadence(c.id));
+
     bar.appendChild(chevron);
   });
+}
+
+function handleChangeCadence(cadenceId) {
+  if (!currentLeadId) return;
+  const lead = leads.find(l => String(l.id) === String(currentLeadId));
+  if (!lead) return;
+  if (lead.status === cadenceId) return;
+
+  const oldStatus = lead.status;
+  lead.status = cadenceId;
+  lead.lastTouch = new Date().toLocaleDateString('pt-BR');
+  invalidateDashCache();
+
+  const _cadMap = window._cadenciaColToUuid || {};
+  let newCadenciaUuid = _cadMap[cadenceId] || null;
+
+  if (!newCadenciaUuid && typeof mapaCadencias !== 'undefined') {
+    newCadenciaUuid = mapaCadencias[cadenceId] || null;
+  }
+
+  if (newCadenciaUuid) {
+    lead._cadenciaId = newCadenciaUuid;
+    updateLeadSupabase(lead.id, { cadencia_id: newCadenciaUuid })
+      .then(() => console.log('[Journey] cadencia_id salvo:', newCadenciaUuid))
+      .catch(err => console.error('[Journey] Erro ao salvar cadencia_id:', err));
+  }
+
+  const card = $(`.lead-card[data-lead-id="${lead.id}"]`);
+  if (card) card.classList.add('just-moved');
+  setTimeout(() => card && card.classList.remove('just-moved'), 1200);
+
+  if (!lead.history) lead.history = [];
+  lead.history.unshift({
+    type: 'status',
+    icon: 'arrow-right-circle',
+    title: `Cadência: ${labelOf(oldStatus)} → ${labelOf(cadenceId)}`,
+    meta: new Date().toLocaleString('pt-BR'),
+    desc: ''
+  });
+
+  toast(`Lead movido para ${labelOf(cadenceId)}`);
+  if (typeof registrarAuditoria === 'function') {
+    registrarAuditoria({ acao: 'Atualizações', caminho_url: '/crm', modulo: 'CRM' });
+  }
+  renderJourneyBar(cadenceId);
+  renderAll();
 }
 
 function openLeadModal(id) {
@@ -5676,10 +5734,8 @@ function openLeadModal(id) {
   const initials = lead.empresa.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
   $('#leadModalAvatar').textContent = initials;
   $('#leadModalTitle').textContent = lead.empresa;
-  $('#leadModalCreated').textContent = `Criado em ${lead.createdAt}`;
   $('#leadModalMetaCreate').textContent = `Criado em ${lead.createdAt}`;
   $('#leadModalMetaLast').textContent = lead.lastTouch || '—';
-  $('#leadModalLastTouch').textContent = lead.lastTouch || '—';
 
   const thermal = lead.thermal || 'frio';
   const tag = $('#leadModalThermal');
