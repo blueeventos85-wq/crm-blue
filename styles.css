@@ -1,4 +1,4 @@
-﻿/* ============================================
+/* ============================================
    BLUE CONTABILIDADE · CRM
    Design System & Styles
    ============================================ */
@@ -2736,6 +2736,7 @@ svg.lucide.lg { width: 22px; height: 22px; }
 
 .kanban-board {
   display: flex;
+  flex-wrap: nowrap;
   gap: 12px;
   overflow-x: auto;
   padding-bottom: 12px;
@@ -2816,8 +2817,8 @@ svg.lucide.lg { width: 22px; height: 22px; }
 .kanban-board::-webkit-scrollbar { height: 8px; }
 
 .kanban-col {
-  flex: 0 0 260px;
-  min-width: 260px;
+  flex: 0 0 320px;
+  min-width: 320px;
   background: var(--surface-bg);
   border-radius: var(--radius);
   padding: 12px;
@@ -3641,7 +3642,7 @@ svg.lucide.lg { width: 22px; height: 22px; }
   color: white;
   padding: 12px 18px;
   border-radius: 12px;
-  display: flex;
+  display: none;
   align-items: center;
   gap: 10px;
   font-size: 13px;
@@ -3671,7 +3672,7 @@ svg.lucide.lg { width: 22px; height: 22px; }
   .modal-head-close { margin-left: auto; }
 }
 @media (max-width: 720px) {
-  .kanban-col { flex: 0 0 240px; }
+  .kanban-col { flex: 0 0 280px; }
   .crm-header-actions { width: 100%; }
   .crm-header-actions .search-box.small { min-width: 0; flex: 1; }
 }
@@ -7087,7 +7088,227 @@ textarea:focus-visible,
 }
 
 /* ============================================
-   ADMIN · Busca de membros
+   CADENCIA MANAGEMENT LIST (Admin > Cadências)
+   ============================================ */
+.cadencia-list-wrap {
+  background: var(--card-bg);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.cadencia-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.cadencia-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--gray-100);
+  cursor: grab;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+  position: relative;
+}
+
+.cadencia-item:last-child {
+  border-bottom: none;
+}
+
+.cadencia-item:hover {
+  background: var(--gray-50);
+}
+
+.cadencia-item.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+  box-shadow: var(--shadow-lg);
+  background: var(--card-bg);
+  z-index: 100;
+}
+
+.cadencia-item.drag-over {
+  border-top: 2px solid var(--primary-blue);
+  background: rgba(22, 91, 255, 0.04);
+}
+
+.cadencia-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--gray-400);
+  cursor: grab;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.cadencia-drag-handle:hover {
+  background: var(--gray-100);
+  color: var(--primary-blue);
+}
+
+.cadencia-item.dragging .cadencia-drag-handle {
+  cursor: grabbing;
+  color: var(--primary-blue);
+}
+
+.cadencia-color-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid var(--card-bg);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.08);
+}
+
+.cadencia-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  min-width: 0;
+}
+
+.cadencia-ordem {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray-400);
+  min-width: 32px;
+  text-align: center;
+  background: var(--gray-100);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+}
+
+.cadencia-actions {
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.cadencia-item:hover .cadencia-actions {
+  opacity: 1;
+}
+
+.cadencia-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--gray-400);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cadencia-action-btn:hover {
+  background: var(--gray-100);
+  color: var(--text-primary);
+}
+
+.cadencia-action-btn.delete:hover {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.cadencia-action-btn i {
+  width: 16px;
+  height: 16px;
+}
+
+.cadencia-empty {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--muted-text);
+}
+
+.cadencia-empty i {
+  width: 48px;
+  height: 48px;
+  color: var(--gray-300);
+  margin-bottom: 12px;
+}
+
+/* Color picker in cadencia modal */
+#cadenciaColorPicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#cadenciaColorPicker .color-swatch {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+#cadenciaColorPicker .color-swatch:hover {
+  transform: scale(1.15);
+}
+
+#cadenciaColorPicker .color-swatch[aria-checked="true"] {
+  border-color: var(--text-primary);
+  box-shadow: 0 0 0 2px var(--card-bg), 0 0 0 4px var(--text-primary);
+}
+
+#cadenciaColorPicker .color-swatch[aria-checked="true"]::after {
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: white;
+  font-size: 16px;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+/* ============================================
+   CRM KANBAN - Dynamic columns from DB
+   ============================================ */
+.kanban-col[data-cadence] {
+  --cadence-color: var(--primary-blue);
+}
+
+.kanban-col[data-cadence] .kanban-col-head {
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.kanban-col[data-cadence] .kanban-col-title {
+  color: var(--muted-text);
+}
+
+.kanban-col[data-cadence] .kanban-col-count {
+  background: var(--cadence-color, var(--primary-blue));
+  color: white;
+}
+
+/* ============================================
+   CADENCE GRID - Dynamic cards from DB
+   ============================================ */
+.cadence-card[data-cadence] {
+  --cadence-color: var(--primary-blue);
+}
+
+.cadence-card[data-cadence]::before {
+  background: var(--cadence-color, var(--primary-blue));
+}
+
+/* ============================================
+   DEV GRID ADMIN
    ============================================ */
 .admin-search-wrap {
   display: flex; align-items: center; gap: 8px;

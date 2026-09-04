@@ -322,6 +322,12 @@ async function onAuthReady() {
 
   renderSidebar();
   renderHomeModules();
+
+  // Refresh empresa filter after permissions are loaded (if centros de custo already loaded)
+  if (centrosCustoData && centrosCustoData.length > 0) {
+    populateEmpresaFilter();
+    initCrmEmpresaFilter();
+  }
 }
 
 /* ============================================
@@ -362,7 +368,10 @@ function initAdminView() {
       if (target === 'permissoes') loadPermissionsFromSupabase();
       if (target === 'empresas') loadEmpresasAdmin();
       if (target === 'servicos') loadServicosAdmin();
-      if (target === 'cadencias') loadCadenciaVisibilityAdmin();
+      if (target === 'cadencias') {
+        loadCadenciasAdmin();
+        loadCadenciaVisibilityAdmin();
+      }
       initIcons();
     });
   });
@@ -481,6 +490,7 @@ function initAdminView() {
     }
   }
 
+  initCadenciaManagement();
   loadMembersFromSupabase();
 }
 
@@ -1203,8 +1213,8 @@ function renderEmpresasTable(empresas, vinculoMap, servicoMap, membros, cadencia
       ? membrosDaEmpresa.map(m => m.nome).join(', ')
       : '—';
     const cadenciaNomes = (cadenciaMap[emp.id] || []).map(cid => {
-      const found = cadences.find(c => c.id === cid);
-      return found ? found.label : cid;
+      const found = getCadenciaById(cid);
+      return found ? found.nome : cid;
     }).filter(Boolean);
     const cadenciaStr = cadenciaNomes.length > 0 ? cadenciaNomes.join(', ') : '—';
     const created = emp.created_at ? new Date(emp.created_at).toLocaleDateString('pt-BR') : '—';
@@ -1293,11 +1303,11 @@ async function openEmpresaModal(emp, vinculoMap, membros, cadenciaMap, membroCcM
     const linkedCadencias = emp ? (cadenciaMap[emp.id] || []) : [];
     _empresaOriginalCadenciaIds = [...linkedCadencias];
     cadenciasCheckContainer.innerHTML = '';
-    cadences.forEach(c => {
+    getDbCadencias().forEach(c => {
       const checked = linkedCadencias.includes(c.id);
       const label = document.createElement('label');
       label.className = 'perm-check';
-      label.innerHTML = `<input type="checkbox" class="empresa-cadencia-cb" value="${c.id}" ${checked ? 'checked' : ''} /> ${escapeHtml(c.label)}`;
+      label.innerHTML = `<input type="checkbox" class="empresa-cadencia-cb" value="${c.id}" ${checked ? 'checked' : ''} /> ${escapeHtml(c.nome)}`;
       cadenciasCheckContainer.appendChild(label);
     });
   }
@@ -1640,11 +1650,11 @@ async function loadCadenciaVisibilityAdmin() {
 
   const visData = await fetchCadenciaVisibility();
 
-  // Build cadence list using mapaCadencias for UUID lookup
-  const allCadences = cadences.map(c => ({
-    slug: c.id,
-    uuid: mapaCadencias[c.id] || null,
-    label: c.label || c.short || c.id,
+  // Build cadence list from database cadencias
+  const dbCadencias = getDbCadencias();
+  const allCadences = dbCadencias.map(c => ({
+    uuid: c.id,
+    label: c.nome,
     visMap: {}
   }));
 
@@ -1673,7 +1683,8 @@ function renderCadenciaVisibilityTable(allCadences) {
     }
     const tr = document.createElement('tr');
     const checksHtml = CADENCIA_VIS_PERFIS.map(perfil => {
-      const checked = perfil === 'Administrador' || cad.visMap[perfil] === true;
+      // Default to visible (checked) unless explicitly set to false
+      const checked = perfil === 'Administrador' || cad.visMap[perfil] !== false;
       const disabled = perfil === 'Administrador';
       return `<td style="text-align:center">
         <input type="checkbox" class="cad-vis-check" data-cadencia-uuid="${cad.uuid || ''}" data-perfil="${perfil}" ${checked ? 'checked' : ''} ${disabled ? 'disabled title="Administrador sempre vê todas"' : ''} ${!cad.uuid ? 'disabled title="Cadência não encontrada no banco"' : ''} />
@@ -1702,6 +1713,507 @@ function renderCadenciaVisibilityTable(allCadences) {
       }
     });
   });
+}
+
+/* ============================================
+   ADMIN · CADÊNCIAS MANAGEMENT (CRUD + Drag-Drop)
+   ============================================ */
+let _cadenciasCache = [];
+let _cadenciaEditingId = null;
+let _cadenciaDeleteId = null;
+let _cadenciaBound = false;
+
+async function loadCadenciasAdmin() {
+  console.log('[Admin] loadCadenciasAdmin called');
+  if (!_supabase) return;
+  
+  const list = document.getElementById('cadenciaList');
+  if (!list) return;
+  
+  list.innerHTML = '<div class="cadencia-empty"><i data-lucide="loader"></i><p>Carregando...</p></div>';
+  initIcons();
+
+  try {
+    const { data, error } = await _supabase
+      .from('cadencias')
+      .select('id, nome, cor, ordem, created_at')
+      .order('ordem', { ascending: true });
+    
+    if (error) {
+      console.error('[Admin] Erro ao buscar cadências:', error.message, error.code);
+      list.innerHTML = `<div class="cadencia-empty"><i data-lucide="alert-triangle"></i><p>Erro ao carregar: ${escapeHtml(error.message)}</p></div>`;
+      return;
+    }
+
+    _cadenciasCache = data || [];
+    renderCadenciasList(_cadenciasCache);
+    initCadenciaDragDrop();
+    initIcons();
+  } catch (err) {
+    console.error('[Admin] Erro ao carregar cadências:', err);
+    list.innerHTML = '<div class="cadencia-empty"><i data-lucide="alert-triangle"></i><p>Erro ao carregar cadências</p></div>';
+  }
+}
+
+function renderCadenciasList(cadencias) {
+  const list = document.getElementById('cadenciaList');
+  if (!list) return;
+
+  if (cadencias.length === 0) {
+    list.innerHTML = '<div class="cadencia-empty"><i data-lucide="columns-3"></i><p>Nenhuma cadência cadastrada</p></div>';
+    return;
+  }
+
+  list.innerHTML = cadencias.map((c, index) => `
+    <div class="cadencia-item" data-cadencia-id="${escapeHtml(c.id)}" draggable="true" data-ordem="${c.ordem}">
+      <button class="cadencia-drag-handle" title="Arraste para reordenar" aria-label="Arraste para reordenar">
+        <i data-lucide="grip-vertical"></i>
+      </button>
+      <span class="cadencia-color-dot" style="background:${escapeHtml(c.cor || '#3B82F6')}"></span>
+      <span class="cadencia-name">${escapeHtml(c.nome)}</span>
+      <span class="cadencia-ordem">${c.ordem}</span>
+      <div class="cadencia-actions">
+        <button class="cadencia-action-btn edit" data-action="edit-cadencia" data-cadencia-id="${escapeHtml(c.id)}" title="Editar">
+          <i data-lucide="pencil"></i>
+        </button>
+        <button class="cadencia-action-btn delete" data-action="delete-cadencia" data-cadencia-id="${escapeHtml(c.id)}" title="Excluir">
+          <i data-lucide="trash-2"></i>
+        </button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function initCadenciaDragDrop() {
+  const list = document.getElementById('cadenciaList');
+  if (!list) return;
+
+  let draggedItem = null;
+
+  list.querySelectorAll('.cadencia-item').forEach(item => {
+    item.addEventListener('dragstart', handleCadenciaDragStart);
+    item.addEventListener('dragend', handleCadenciaDragEnd);
+    item.addEventListener('dragover', handleCadenciaDragOver);
+    item.addEventListener('dragleave', handleCadenciaDragLeave);
+    item.addEventListener('drop', handleCadenciaDrop);
+  });
+
+  function handleCadenciaDragStart(e) {
+    draggedItem = this;
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', this.dataset.cadenciaId);
+  }
+
+  function handleCadenciaDragEnd(e) {
+    this.classList.remove('dragging');
+    list.querySelectorAll('.cadencia-item').forEach(item => {
+      item.classList.remove('drag-over');
+    });
+    draggedItem = null;
+  }
+
+  function handleCadenciaDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (this !== draggedItem) {
+      this.classList.add('drag-over');
+    }
+  }
+
+  function handleCadenciaDragLeave(e) {
+    if (!this.contains(e.relatedTarget)) {
+      this.classList.remove('drag-over');
+    }
+  }
+
+  async function handleCadenciaDrop(e) {
+    e.preventDefault();
+    this.classList.remove('drag-over');
+    
+    if (!draggedItem || this === draggedItem) return;
+
+    const draggedId = draggedItem.dataset.cadenciaId;
+    const targetId = this.dataset.cadenciaId;
+    
+    const draggedIndex = _cadenciasCache.findIndex(c => c.id === draggedId);
+    const targetIndex = _cadenciasCache.findIndex(c => c.id === targetId);
+    
+    if (draggedIndex === -1 || targetIndex === -1) return;
+
+    // Reorder in cache
+    const [removed] = _cadenciasCache.splice(draggedIndex, 1);
+    _cadenciasCache.splice(targetIndex, 0, removed);
+
+    // Update ordem values
+    _cadenciasCache.forEach((c, i) => {
+      c.ordem = i + 1;
+    });
+
+    // Re-render list
+    renderCadenciasList(_cadenciasCache);
+    initCadenciaDragDrop();
+    initIcons();
+
+    // Persist to Supabase
+    await persistCadenciasOrdem();
+  }
+}
+
+async function persistCadenciasOrdem() {
+  if (!_supabase) return;
+  
+  try {
+    // Batch update all cadencias with new ordem
+    const updates = _cadenciasCache.map(c => 
+      _supabase.from('cadencias').update({ ordem: c.ordem }).eq('id', c.id)
+    );
+    
+    const results = await Promise.all(updates);
+    
+    for (const result of results) {
+      if (result.error) {
+        console.error('[Admin] Erro ao atualizar ordem:', result.error.message);
+        toast('Erro ao salvar ordem', 'error');
+        return;
+      }
+    }
+    
+    console.log('[Admin] Ordem das cadências atualizada com sucesso');
+    toast('Ordem salva com sucesso!');
+    
+    // Refresh CRM kanban if on CRM page
+    if (activePage === 'crm' && typeof renderAll === 'function') {
+      await rebuildCadenciaMaps();
+      await renderAll();
+    }
+  } catch (err) {
+    console.error('[Admin] Erro ao persistir ordem:', err);
+    toast('Erro ao salvar ordem', 'error');
+  }
+}
+
+function initCadenciaManagement() {
+  if (_cadenciaBound) return;
+  _cadenciaBound = true;
+
+  const container = document.getElementById('page-administrador');
+  if (!container) return;
+
+  container.addEventListener('click', async (e) => {
+    // New cadencia button
+    if (e.target.closest('#cadenciaNewBtn')) {
+      _cadenciaEditingId = null;
+      resetCadenciaForm();
+      setCadenciaFormMode('create');
+      openCadenciaModal();
+      return;
+    }
+
+    // Edit button
+    if (e.target.closest('[data-action="edit-cadencia"]')) {
+      const btn = e.target.closest('[data-action="edit-cadencia"]');
+      const cadenciaId = btn.dataset.cadenciaId;
+      await openCadenciaModalForEdit(cadenciaId);
+      return;
+    }
+
+    // Delete button
+    if (e.target.closest('[data-action="delete-cadencia"]')) {
+      const btn = e.target.closest('[data-action="delete-cadencia"]');
+      const cadenciaId = btn.dataset.cadenciaId;
+      const cadencia = _cadenciasCache.find(c => c.id === cadenciaId);
+      if (cadencia) {
+        _cadenciaDeleteId = cadenciaId;
+        const text = document.getElementById('cadenciaDeleteText');
+        if (text) text.textContent = `Tem certeza que deseja remover a cadência "${cadencia.nome}"? Essa ação não poderá ser desfeita.`;
+        openCadenciaDeleteModal();
+      }
+      return;
+    }
+
+    // Close modals
+    if (e.target.closest('[data-action="close-cadencia-modal"]') || e.target.closest('#cadenciaModalOverlay')) {
+      closeCadenciaModal();
+      return;
+    }
+    if (e.target.closest('[data-action="close-cadencia-delete"]') || e.target.closest('#cadenciaDeleteOverlay')) {
+      closeCadenciaDeleteModal();
+      return;
+    }
+
+    // Save cadencia
+    if (e.target.closest('#cadenciaSaveBtn')) {
+      await handleCadenciaSave();
+      return;
+    }
+
+    // Confirm delete
+    if (e.target.closest('#cadenciaDeleteConfirmBtn')) {
+      await handleCadenciaDelete();
+      return;
+    }
+  });
+
+  // Color picker
+  const colorPicker = document.getElementById('cadenciaColorPicker');
+  if (colorPicker) {
+    colorPicker.addEventListener('click', (e) => {
+      const swatch = e.target.closest('.color-swatch');
+      if (!swatch) return;
+      
+      colorPicker.querySelectorAll('.color-swatch').forEach(s => {
+        s.setAttribute('aria-checked', 'false');
+      });
+      swatch.setAttribute('aria-checked', 'true');
+      document.getElementById('cadenciaCorInput').value = swatch.dataset.color;
+    });
+  }
+}
+
+function resetCadenciaForm() {
+  document.getElementById('cadenciaId').value = '';
+  document.getElementById('cadenciaNomeInput').value = '';
+  document.getElementById('cadenciaCorInput').value = '#3B82F6';
+  
+  const colorPicker = document.getElementById('cadenciaColorPicker');
+  if (colorPicker) {
+    colorPicker.querySelectorAll('.color-swatch').forEach((s, i) => {
+      s.setAttribute('aria-checked', i === 0 ? 'true' : 'false');
+    });
+  }
+
+  // Reset visibility checkboxes - default all checked except Administrador (always visible)
+  renderCadenciaVisibilityChecks();
+}
+
+/**
+ * Renderiza os checkboxes de visibilidade por perfil no modal de cadência
+ * @param {Object} existingVis - Mapa de visibilidade existente { perfil: boolean }
+ */
+function renderCadenciaVisibilityChecks(existingVis = {}) {
+  const container = document.getElementById('cadenciaVisibilidadeChecks');
+  if (!container) return;
+
+  const perfis = CADENCIA_VIS_PERFIS || ['Administrador', 'Membro', 'Pré Vendas', 'Atendente'];
+  
+  container.innerHTML = perfis.map(perfil => {
+    // Administrador sempre vê tudo (checkbox desabilitado e marcado)
+    const isAdmin = perfil === 'Administrador';
+    const checked = isAdmin || existingVis[perfil] !== false; // default true para não-admin
+    const disabled = isAdmin;
+    
+    return `
+      <label class="perm-check" style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface-bg);border-radius:var(--radius);border:1px solid var(--gray-200);cursor:${disabled ? 'not-allowed' : 'pointer'}">
+        <input type="checkbox" class="cad-vis-check" data-perfil="${perfil}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''} />
+        <span style="${disabled ? 'color:var(--muted-text)' : ''}">${perfil}</span>
+      </label>
+    `;
+  }).join('');
+}
+
+function setCadenciaFormMode(mode) {
+  const title = document.getElementById('cadenciaModalTitle');
+  const subtitle = document.getElementById('cadenciaModalSubtitle');
+  const saveText = document.getElementById('cadenciaSaveBtnText');
+  
+  if (mode === 'edit') {
+    if (title) title.textContent = 'Editar Cadência';
+    if (subtitle) subtitle.textContent = 'Altere os dados da etapa do funil';
+    if (saveText) saveText.textContent = 'Salvar Alterações';
+  } else {
+    if (title) title.textContent = 'Nova Cadência';
+    if (subtitle) subtitle.textContent = 'Cadastre uma nova etapa do funil';
+    if (saveText) saveText.textContent = 'Salvar Cadência';
+  }
+}
+
+async function openCadenciaModalForEdit(cadenciaId) {
+  const cadencia = _cadenciasCache.find(c => c.id === cadenciaId);
+  if (!cadencia) return;
+
+  _cadenciaEditingId = cadenciaId;
+  document.getElementById('cadenciaId').value = cadenciaId;
+  document.getElementById('cadenciaNomeInput').value = cadencia.nome;
+  document.getElementById('cadenciaCorInput').value = cadencia.cor || '#3B82F6';
+
+  const colorPicker = document.getElementById('cadenciaColorPicker');
+  if (colorPicker) {
+    colorPicker.querySelectorAll('.color-swatch').forEach(s => {
+      s.setAttribute('aria-checked', s.dataset.color === cadencia.cor ? 'true' : 'false');
+    });
+  }
+
+  // Load existing visibility settings for this cadencia
+  const visData = _cadenciaVisibilityData.filter(v => v.cadencia_id === cadenciaId);
+  const visMap = {};
+  visData.forEach(v => { visMap[v.perfil] = v.visible; });
+  renderCadenciaVisibilityChecks(visMap);
+
+  setCadenciaFormMode('edit');
+  openCadenciaModal();
+}
+
+function openCadenciaModal() {
+  const overlay = document.getElementById('cadenciaModalOverlay');
+  const modal = document.getElementById('cadenciaModal');
+  if (overlay) overlay.classList.add('open');
+  if (modal) { modal.classList.add('open'); modal.scrollTop = 0; }
+  initIcons();
+}
+
+function closeCadenciaModal() {
+  const overlay = document.getElementById('cadenciaModalOverlay');
+  const modal = document.getElementById('cadenciaModal');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+  _cadenciaEditingId = null;
+}
+
+function openCadenciaDeleteModal() {
+  const overlay = document.getElementById('cadenciaDeleteOverlay');
+  const modal = document.getElementById('cadenciaDeleteModal');
+  if (overlay) overlay.classList.add('open');
+  if (modal) modal.classList.add('open');
+  initIcons();
+}
+
+function closeCadenciaDeleteModal() {
+  const overlay = document.getElementById('cadenciaDeleteOverlay');
+  const modal = document.getElementById('cadenciaDeleteModal');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+  _cadenciaDeleteId = null;
+}
+
+async function handleCadenciaSave() {
+  const nome = document.getElementById('cadenciaNomeInput')?.value?.trim();
+  const cor = document.getElementById('cadenciaCorInput')?.value;
+
+  if (!nome) {
+    toast('Preencha o nome da cadência', 'error');
+    return;
+  }
+
+  // Collect visibility settings from checkboxes
+  const visChecks = document.querySelectorAll('#cadenciaVisibilidadeChecks .cad-vis-check');
+  const visibilitySettings = [];
+  visChecks.forEach(cb => {
+    const perfil = cb.dataset.perfil;
+    const visible = cb.checked;
+    visibilitySettings.push({ perfil, visible });
+  });
+
+  const saveBtn = document.getElementById('cadenciaSaveBtn');
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '<span class="auth-spinner"></span>';
+
+  try {
+    let cadenciaId = _cadenciaEditingId;
+    let isNew = false;
+
+    if (cadenciaId) {
+      // EDIT
+      console.log('[Admin] Editando cadência:', cadenciaId);
+      const { error } = await _supabase
+        .from('cadencias')
+        .update({ nome, cor })
+        .eq('id', cadenciaId);
+      
+      if (error) throw error;
+      toast('Cadência atualizada com sucesso!');
+    } else {
+      // CREATE - get next ordem
+      const maxOrdem = _cadenciasCache.length > 0 
+        ? Math.max(..._cadenciasCache.map(c => c.ordem || 0)) 
+        : 0;
+      const newOrdem = maxOrdem + 1;
+
+      console.log('[Admin] Criando nova cadência:', { nome, cor, ordem: newOrdem });
+      const { data, error } = await _supabase
+        .from('cadencias')
+        .insert([{ nome, cor, ordem: newOrdem }])
+        .select();
+      
+      if (error) throw error;
+      toast('Cadência criada com sucesso!');
+      
+      // Add to cache
+      if (data && data[0]) {
+        _cadenciasCache.push(data[0]);
+        cadenciaId = data[0].id;
+        isNew = true;
+      }
+    }
+
+    // Save visibility settings
+    if (cadenciaId) {
+      for (const { perfil, visible } of visibilitySettings) {
+        if (perfil === 'Administrador') continue; // Admin always visible
+        try {
+          await upsertCadenciaVisibility(cadenciaId, perfil, visible);
+        } catch (visErr) {
+          console.error('[Admin] Erro ao salvar visibilidade:', visErr);
+        }
+      }
+      // Refresh visibility cache
+      _cadenciaVisibilityData = await fetchCadenciaVisibility();
+    }
+
+    closeCadenciaModal();
+    await loadCadenciasAdmin();
+
+    // Refresh CRM kanban if on CRM page
+    if (activePage === 'crm' && typeof renderAll === 'function') {
+      await rebuildCadenciaMaps();
+      await renderAll();
+    }
+
+  } catch (err) {
+    console.error('[Admin] Erro ao salvar cadência:', err);
+    toast(err.message || 'Erro ao salvar cadência', 'error');
+  } finally {
+    saveBtn.disabled = false;
+    const txt = _cadenciaEditingId ? 'Salvar Alterações' : 'Salvar Cadência';
+    saveBtn.innerHTML = `<i data-lucide="save"></i> <span id="cadenciaSaveBtnText">${txt}</span>`;
+    initIcons();
+  }
+}
+
+async function handleCadenciaDelete() {
+  if (!_cadenciaDeleteId) return;
+  console.log('[Admin] Excluindo cadência:', _cadenciaDeleteId);
+
+  const delBtn = document.getElementById('cadenciaDeleteConfirmBtn');
+  delBtn.disabled = true;
+  delBtn.innerHTML = '<span class="auth-spinner"></span>';
+
+  try {
+    const { error } = await _supabase
+      .from('cadencias')
+      .delete()
+      .eq('id', _cadenciaDeleteId);
+    
+    if (error) throw error;
+
+    toast('Cadência removida com sucesso!');
+    closeCadenciaDeleteModal();
+    await loadCadenciasAdmin();
+
+    // Refresh CRM kanban if on CRM page
+    if (activePage === 'crm' && typeof renderAll === 'function') {
+      await rebuildCadenciaMaps();
+      await renderAll();
+    }
+
+  } catch (err) {
+    console.error('[Admin] Erro ao excluir cadência:', err);
+    toast(err.message || 'Erro ao excluir cadência', 'error');
+  } finally {
+    delBtn.disabled = false;
+    delBtn.innerHTML = '<i data-lucide="trash-2"></i> Remover';
+    initIcons();
+  }
 }
 
 /* ============================================
@@ -2594,7 +3106,7 @@ function renderHomeModules(filter = '') {
         </div>
         <div class="home-hero-search">
           <i data-lucide="search" aria-hidden="true"></i>
-          <input type="text" id="homeSearchInput" placeholder="Buscar módulos..." aria-label="Buscar módulos" />
+          <input type="text" id="search-query" name="search-query" placeholder="Buscar módulos..." aria-label="Buscar módulos" autocomplete="new-password" />
           <kbd>/</kbd>
         </div>
       </header>
@@ -2701,7 +3213,7 @@ let homeSearchDebounce = null;
 let homeSearchBound = false;
 function bindHomeSearch() {
   if (homeSearchBound) return;
-  const input = document.getElementById('homeSearchInput');
+  const input = document.getElementById('search-query');
   if (!input) return;
   homeSearchBound = true;
   input.addEventListener('input', (e) => {
@@ -2720,7 +3232,7 @@ function bindHomeSearch() {
 // Atalho "/" para focar busca (bind uma vez só)
 document.addEventListener('keydown', function homeSearchShortcut(e) {
   if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) {
-    const input = document.getElementById('homeSearchInput');
+    const input = document.getElementById('search-query');
     if (input) { e.preventDefault(); input.focus(); }
   }
 });
@@ -3873,7 +4385,8 @@ function openClientInLeadModal(card) {
     chip.classList.toggle('active', svcNames.includes(chipVal));
   });
 
-  const cadenceIdx = cadences.findIndex(c => c.id === 'contrato-fechado');
+  const dbCadenciasForJourney = getDbCadencias().sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+  const cadenceIdx = dbCadenciasForJourney.findIndex(c => c.nome === 'CONTRATO FECHADO' || c.nome === 'Contrato Fechado' || c.nome === 'contrato-fechado');
   $$('.journey-step').forEach((step, i) => {
     step.classList.remove('done', 'active');
     if (i < cadenceIdx) step.classList.add('done');
@@ -4747,21 +5260,25 @@ const mapaCadencias = {
 window.mapaCadencias = mapaCadencias;
 
 function getVisibleCadences(centroCustoId) {
-  // Admin sees everything
-  let visible = isCurrentUserAdmin() ? cadences : cadences.slice();
-
-  // Filter by visibility settings for non-admins
+  // Use database cadencias ordered by ordem
+  let dbCadencias = getDbCadencias();
+  
+  // If DB cadencias not loaded yet, fall back to hardcoded array
+  if (dbCadencias.length === 0) {
+    dbCadencias = cadences.map(c => ({ id: c.id, nome: c.label, cor: c.color, ordem: 0 }));
+  }
+  
+  // Apply visibility filtering for non-admins (works for both DB and fallback data)
+  // Allow by default: only block cadences with explicit visible=false for this perfil
+  let visible = dbCadencias.map(dbCadenciaToCrmFormat);
+  
   if (!isCurrentUserAdmin() && _cadenciaVisibilityData.length > 0) {
     const perfil = currentUser.perfil || 'Atendente';
-    const allowedUuids = _cadenciaVisibilityData
-      .filter(v => v.perfil === perfil && v.visible)
+    const blockedUuids = _cadenciaVisibilityData
+      .filter(v => v.perfil === perfil && v.visible === false)
       .map(v => v.cadencia_id);
-    if (allowedUuids.length > 0) {
-      // Convert cadence slugs to UUIDs using mapaCadencias, then check against allowed UUIDs
-      visible = visible.filter(c => {
-        const uuid = mapaCadencias[c.id];
-        return uuid && allowedUuids.includes(uuid);
-      });
+    if (blockedUuids.length > 0) {
+      visible = visible.filter(c => !blockedUuids.includes(c.id));
     }
   }
 
@@ -4774,6 +5291,10 @@ function getVisibleCadences(centroCustoId) {
       visible = visible.filter(c => linkedIds.includes(c.id));
     }
   }
+  
+  // Sort by ordem
+  visible.sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+  
   return visible;
 }
 
@@ -4803,6 +5324,73 @@ async function loadVinculosCadencias() {
   if (error) { console.error('[Vinculos] Erro ao carregar vínculos de cadências:', error); return; }
   vinculosCadencias = data || [];
 }
+
+let _dbCadenciasCache = [];
+
+async function loadDbCadencias() {
+  if (!_supabase) return [];
+  try {
+    const { data, error } = await _supabase
+      .from('cadencias')
+      .select('id, nome, cor, ordem, created_at')
+      .order('ordem', { ascending: true });
+    if (error) {
+      console.error('[CRM] Erro ao buscar cadências do DB:', error.message);
+      return [];
+    }
+    _dbCadenciasCache = data || [];
+    console.log('[CRM] Cadências carregadas do DB:', _dbCadenciasCache.length);
+    return _dbCadenciasCache;
+  } catch (err) {
+    console.error('[CRM] Erro ao carregar cadências:', err);
+    return [];
+  }
+}
+
+function getDbCadencias() {
+  return _dbCadenciasCache;
+}
+
+// Build reverse map: UUID -> slug (kanban column ID)
+function buildUuidToSlugMap() {
+  const map = {};
+  if (typeof mapaCadencias !== 'undefined' && mapaCadencias) {
+    Object.entries(mapaCadencias).forEach(([slug, uuid]) => {
+      map[uuid] = slug;
+    });
+  }
+  return map;
+}
+
+const _uuidToSlugMap = buildUuidToSlugMap();
+
+function dbCadenciaToCrmFormat(dbCadencia) {
+  const slug = _uuidToSlugMap[dbCadencia.id] || dbCadencia.id;
+  return {
+    id: dbCadencia.id,
+    slug: slug,
+    label: dbCadencia.nome,
+    short: dbCadencia.nome.length > 12 ? dbCadencia.nome.substring(0, 12) + '…' : dbCadencia.nome,
+    color: dbCadencia.cor || '#3B82F6',
+    ordem: dbCadencia.ordem
+  };
+}
+
+// Helper to get cadence info by UUID from database cache
+function getCadenciaById(uuid) {
+  return _dbCadenciasCache.find(c => c.id === uuid);
+}
+
+function getCadenciaLabelById(uuid) {
+  const c = getCadenciaById(uuid);
+  return c ? c.nome : uuid;
+}
+
+function getCadenciaColorById(uuid) {
+  const c = getCadenciaById(uuid);
+  return c ? c.cor : '#3B82F6';
+}
+
 let _servicosLoaded = false;
 
 async function loadServiceChips(empresaId) {
@@ -4977,7 +5565,13 @@ let kanbanExpanded = {};
 function getVisibleLeads() {
   const q = leadSearchQuery.toLowerCase().trim();
   return leads.filter(l => {
-    if (activeCadenceFilter && l.status !== activeCadenceFilter) return false;
+    if (activeCadenceFilter && l.status !== activeCadenceFilter) {
+      // Also check if the active filter is a slug that matches this lead's status
+      const filterCadence = getVisibleCadences(currentCrmEmpresaFilter).find(c => c.id === activeCadenceFilter || c.slug === activeCadenceFilter);
+      if (!filterCadence || (l.status !== filterCadence.id && l.status !== filterCadence.slug)) {
+        return false;
+      }
+    }
     if (q && !l.empresa.toLowerCase().includes(q) && !l.telefone.includes(q) && !l.cnpj.includes(q)) return false;
     return true;
   });
@@ -4986,9 +5580,10 @@ function getVisibleLeads() {
 function cadencesSummary() {
   const allLeads = getSearchFilteredLeads();
   return getVisibleCadences(currentCrmEmpresaFilter).map(c => {
-    const list = allLeads.filter(l => l.status === c.id);
+    // Match by UUID (c.id) OR slug (c.slug) for backward compatibility
+    const list = allLeads.filter(l => l.status === c.id || l.status === c.slug);
     const value = list.reduce((s, l) => s + (l.honorarios || 0), 0);
-    return { id: c.id, label: c.short, count: list.length, value };
+    return { id: c.id, label: c.short, count: list.length, value, color: c.color };
   });
 }
 
@@ -4998,7 +5593,7 @@ function renderCadenceGrid() {
 
   const data = cadencesSummary();
   grid.innerHTML = data.map(c => `
-    <div class="cadence-card ${activeCadenceFilter === c.id ? 'active' : ''}" data-cadence="${c.id}" data-action="filter-cadence">
+    <div class="cadence-card ${activeCadenceFilter === c.id ? 'active' : ''}" data-cadence="${c.id}" data-action="filter-cadence" style="--cadence-color: ${c.color || '#3B82F6'};">
       <div class="cadence-card-head">
         <span class="cadence-card-name" title="${c.label}">${c.label}</span>
         <span class="cadence-card-badge">${c.count}</span>
@@ -5236,24 +5831,27 @@ function renderKanban() {
   const allLeads = getSearchFilteredLeads();
 
   board.innerHTML = getVisibleCadences(currentCrmEmpresaFilter).map(c => {
-    const list = allLeads.filter(l => l.status === c.id);
+    // Match leads by UUID (c.id) OR by slug (c.slug) for backward compatibility
+    const list = allLeads.filter(l => l.status === c.id || l.status === c.slug);
     const total = list.length;
     const totalFat = list.reduce((a, l) => a + (Number(l.honorarios) || 0), 0);
-    const isHighlighted = activeCadenceFilter === c.id;
-    const expanded = kanbanExpanded[c.id] || VISIBLE_CARDS_PER_COLUMN;
+    const isHighlighted = activeCadenceFilter === c.id || activeCadenceFilter === c.slug;
+    const expanded = kanbanExpanded[c.id] || kanbanExpanded[c.slug] || VISIBLE_CARDS_PER_COLUMN;
     const showCount = Math.min(total, expanded);
     const visibleList = list.slice(0, showCount);
     const hasMore = total > showCount;
     const remaining = total - showCount;
     const cards = visibleList.map(l => leadCardHTML(l)).join('');
+    const colColor = c.color || '#3B82F6';
+    // Use UUID as data-cadence for consistency, but drop-zone accepts both
     return `
-      <div class="kanban-col${isHighlighted ? ' kanban-col-highlight' : ''}" data-cadence="${c.id}">
+      <div class="kanban-col${isHighlighted ? ' kanban-col-highlight' : ''}" data-cadence="${c.id}" data-cadence-slug="${c.slug}" style="--cadence-color: ${colColor};">
         <div class="kanban-col-head">
           <span class="kanban-col-title" title="${c.label}">${c.short}</span>
           <span class="kanban-col-count" aria-label="${total} leads">${total}</span>
           ${totalFat > 0 ? `<span class="kanban-col-fat" title="Faturamento total">${formatBRL(totalFat)}</span>` : ''}
         </div>
-        <div class="kanban-col-list" data-drop-zone="${c.id}">
+        <div class="kanban-col-list" data-drop-zone="${c.id}" data-drop-zone-slug="${c.slug}">
           ${cards || '<div class="kanban-empty">Nenhum lead nesta etapa</div>'}
           ${hasMore ? `
             <button type="button"
@@ -5291,8 +5889,17 @@ function expandCadence(cadenceId) {
   renderKanban();
 
   // Acessibilidade: anuncia para leitores de tela quantos cards estão visíveis agora
-  const visibleCount = Math.min(next, getSearchFilteredLeads().filter(l => l.status === cadenceId).length);
+  // Match by UUID or slug for backward compatibility
+  const cadence = getDbCadencias().find(c => c.id === cadenceId);
+  const matchSlug = cadence ? _uuidToSlugMap[cadenceId] : null;
+  const visibleCount = Math.min(next, getSearchFilteredLeads().filter(l => l.status === cadenceId || (matchSlug && l.status === matchSlug)).length);
   announce(`${visibleCount} leads visíveis nesta etapa`);
+}
+
+// Also support expanding by slug (backward compatibility)
+function expandCadenceBySlug(slug) {
+  const cadence = getDbCadencias().find(c => _uuidToSlugMap[c.id] === slug || c.id === slug);
+  if (cadence) expandCadence(cadence.id);
 }
 
 function bindLoadMore() {
@@ -5582,7 +6189,7 @@ async function onDrop(e) {
   col.classList.remove('drag-over');
   _dragCounters.delete(col);
   const id = e.dataTransfer.getData('text/plain') || draggedId;
-  const newStatus = this.dataset.dropZone;
+  const newStatus = this.dataset.dropZone; // This is now the UUID from database
   const lead = leads.find(l => String(l.id) === String(id));
   if (!lead || !newStatus || lead.status === newStatus) return;
 
@@ -5591,27 +6198,9 @@ async function onDrop(e) {
   lead.lastTouch = new Date().toLocaleDateString('pt-BR');
   invalidateDashCache();
 
-  const _cadMap = window._cadenciaColToUuid || {};
-  let newCadenciaUuid = _cadMap[newStatus] || null;
-
-  if (!newCadenciaUuid && Object.keys(_cadMap).length === 0) {
-    console.warn('[onDrop] Mapa cadência vazio, reconstruindo...');
-    try {
-      await rebuildCadenciaMaps();
-      newCadenciaUuid = (window._cadenciaColToUuid || {})[newStatus] || null;
-    } catch (err) { console.error('[onDrop] Erro ao reconstruir mapa cadência:', err); }
-  }
-
-  if (!newCadenciaUuid && typeof mapaCadencias !== 'undefined') {
-    newCadenciaUuid = mapaCadencias[newStatus] || null;
-    if (newCadenciaUuid) {
-      console.log('[onDrop] UUID obtido via mapaCadencias (fallback):', newStatus, '->', newCadenciaUuid);
-    }
-  }
-
-  if (!newCadenciaUuid) {
-    console.warn('[onDrop] Não encontrou UUID para coluna:', newStatus, '| _cadenciaColToUuid:', window._cadenciaColToUuid, '| mapaCadencias:', typeof mapaCadencias !== 'undefined' ? mapaCadencias : 'N/A');
-  }
+  // newStatus is now the UUID from the database cadencias
+  // We can use it directly as cadencia_id
+  const newCadenciaUuid = newStatus;
 
   if (newCadenciaUuid) {
     lead._cadenciaId = newCadenciaUuid;
@@ -5643,8 +6232,8 @@ async function onDrop(e) {
 }
 
 function labelOf(id) {
-  const c = cadences.find(x => x.id === id);
-  return c ? c.label : id;
+  const c = getCadenciaById(id);
+  return c ? c.nome : id;
 }
 
 /* ============================================
@@ -5776,7 +6365,8 @@ function renderJourneyBar(activeId) {
   const bar = $('#leadJourneyBar');
   if (!bar) return;
   bar.innerHTML = '';
-  const visibleCadences = isCurrentUserAdmin() ? cadences : cadences.filter(c => c.id !== 'dados-ia');
+  const dbCadencias = getDbCadencias().sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+  const visibleCadences = isCurrentUserAdmin() ? dbCadencias : dbCadencias.filter(c => c.nome !== 'DADOS IA');
   const activeIdx = visibleCadences.findIndex(c => c.id === activeId);
   visibleCadences.forEach((c, i) => {
     const wrapper = document.createElement('div');
@@ -5805,7 +6395,7 @@ function renderJourneyBar(activeId) {
 
     const tooltip = document.createElement('div');
     tooltip.className = 'journey-tooltip';
-    tooltip.textContent = c.label;
+    tooltip.textContent = c.nome;
 
     wrapper.addEventListener('mouseenter', () => {
       tooltip.classList.add('visible');
@@ -5850,9 +6440,13 @@ async function handleChangeCadence(cadenceId) {
 
   if (newCadenciaUuid) {
     lead._cadenciaId = newCadenciaUuid;
-    updateLeadSupabase(lead.id, { id: lead.id, cadencia_id: newCadenciaUuid })
-      .then(() => console.log('[Journey] cadencia_id salvo:', newCadenciaUuid))
-      .catch(err => console.error('[Journey] Erro ao salvar cadencia_id:', err));
+  // Update owner to current user to keep lead visible for the attendant
+  lead.owner_id = currentUser.id || null;
+  const updates = { cadencia_id: newCadenciaUuid };
+  if (lead.owner_id) updates.owner_id = lead.owner_id;
+  updateLeadSupabase(lead.id, updates)
+    .then(() => console.log('[Journey] cadencia_id e owner_id salvo:', newCadenciaUuid, lead.owner_id))
+    .catch(err => console.error('[Journey] Erro ao salvar cadencia_id/owner_id:', err));
   }
 
   if (lead.id && oldStatus && cadenceId && oldStatus !== cadenceId) {
@@ -6244,8 +6838,8 @@ async function loadLeadMovements(leadId) {
 
     const fromLabel = (id) => {
       if (!id) return '—';
-      const c = cadences.find(x => x.id === id);
-      return c ? c.label : id;
+      const c = getCadenciaById(id);
+      return c ? c.nome : id;
     };
 
     const formatMovementType = (type) => {
@@ -7566,7 +8160,7 @@ function computeTemperatures(leads) {
 
 function computeCadenceFunnel(leads) {
   const map = {};
-  cadences.forEach(c => { map[c.id] = { id: c.id, label: c.label, count: 0, value: 0, leads: [] }; });
+  getDbCadencias().forEach(c => { map[c.id] = { id: c.id, label: c.nome, count: 0, value: 0, leads: [] }; });
   leads.forEach(l => {
     if (!map[l.status]) {
       // se status é desconhecido, ignora (não cai em categoria fantasma)
@@ -7623,8 +8217,8 @@ function emptyStateHtml(msg) {
   return `<div class="empty-state"><i data-lucide="inbox"></i><p>${escapeHtml(msg)}</p></div>`;
 }
 function statusTag(status) {
-  const c = cadences.find(x => x.id === status);
-  return `<span class="dash-status-tag t-${status}">${escapeHtml(c ? c.short : status)}</span>`;
+  const c = getCadenciaById(status);
+  return `<span class="dash-status-tag t-${status}">${escapeHtml(c ? c.nome : status)}</span>`;
 }
 function thermalTag(t) {
   return `<span class="thermal-tag ${t}">${t}</span>`;
@@ -8187,25 +8781,25 @@ function exportData(format) {
   let filename = `dashboard-${tabId}`;
 
   if (tabId === 'total') {
-    rows = p.current.map(l => ({ Empresa: l.empresa, Cadência: cadences.find(c => c.id === l.status)?.label || l.status, Temperatura: l.thermal, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios || 0, Entrada: (l.createdAt || '').split(' ')[0], 'Último contato': l.lastTouch || '' }));
+    rows = p.current.map(l => ({ Empresa: l.empresa, Cadência: getCadenciaLabelById(l.status), Temperatura: l.thermal, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios || 0, Entrada: (l.createdAt || '').split(' ')[0], 'Último contato': l.lastTouch || '' }));
   } else if (tabId === 'finalizados') {
-    rows = p.current.filter(l => getStatusCategory(l.status) === 'finalizado').map(l => ({ Empresa: l.empresa, 'Cadência final': cadences.find(c => c.id === l.status)?.label || l.status, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios || 0, 'Concluído em': (l.createdAt || '').split(' ')[0] }));
+    rows = p.current.filter(l => getStatusCategory(l.status) === 'finalizado').map(l => ({ Empresa: l.empresa, 'Cadência final': getCadenciaLabelById(l.status), Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios || 0, 'Concluído em': (l.createdAt || '').split(' ')[0] }));
   } else if (tabId === 'andamento') {
-    rows = p.current.filter(l => getStatusCategory(l.status) === 'andamento').map(l => ({ Empresa: l.empresa, 'Cadência atual': cadences.find(c => c.id === l.status)?.label || l.status, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios || 0, 'Último contato': l.lastTouch || '' }));
+    rows = p.current.filter(l => getStatusCategory(l.status) === 'andamento').map(l => ({ Empresa: l.empresa, 'Cadência atual': getCadenciaLabelById(l.status), Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios || 0, 'Último contato': l.lastTouch || '' }));
   } else if (tabId === 'pendentes') {
-    rows = p.current.filter(l => getStatusCategory(l.status) === 'pendente').map(l => ({ Empresa: l.empresa, Cadência: cadences.find(c => c.id === l.status)?.label || l.status, Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios || 0, 'Último contato': l.lastTouch || '' }));
+    rows = p.current.filter(l => getStatusCategory(l.status) === 'pendente').map(l => ({ Empresa: l.empresa, Cadência: getCadenciaLabelById(l.status), Origem: normalizeOrigin(l.origem), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios || 0, 'Último contato': l.lastTouch || '' }));
   } else if (tabId === 'reunioes') {
     rows = p.reminders.map(m => ({ Dia: m.iso, Horário: m.time || '', Cliente: m.cliente || '', Empresa: m.empresa, Responsável: m.responsavel || '', Tipo: meetingTypeLabel(m.type) }));
   } else if (tabId === 'funil') {
-    rows = p.funnel.flatMap(f => f.leads.map(l => ({ Cadência: f.label, Nome: l.responsavel || '', Empresa: l.empresa, 'Data de entrada': (l.createdAt || '').split(' ')[0], 'Status atual': cadences.find(c => c.id === l.status)?.label || l.status, 'Valor de Faturamento': l.honorarios || 0 })));
+    rows = p.funnel.flatMap(f => f.leads.map(l => ({ Cadência: f.label, Nome: l.responsavel || '', Empresa: l.empresa, 'Data de entrada': (l.createdAt || '').split(' ')[0], 'Status atual': getCadenciaLabelById(l.status), 'Valor de Faturamento': l.honorarios || 0 })));
   } else if (tabId === 'origens') {
     rows = [];
-    ORIGENS_FIXAS.forEach(o => (p.origins[o]?.leads || []).forEach(l => rows.push({ Origem: o, Empresa: l.empresa, Cadência: cadences.find(c => c.id === l.status)?.label || l.status, Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios || 0 })));
+    ORIGENS_FIXAS.forEach(o => (p.origins[o]?.leads || []).forEach(l => rows.push({ Origem: o, Empresa: l.empresa, Cadência: getCadenciaLabelById(l.status), Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios || 0 })));
   } else if (tabId === 'temperatura') {
     rows = [];
     ['frio', 'morno', 'quente'].forEach(t => (p.temperatures[t]?.leads || []).forEach(l => rows.push({ Temperatura: t, Empresa: l.empresa, Responsável: l.responsavel, 'Último contato': l.lastTouch || '', 'Valor de Faturamento': l.honorarios || 0 })));
   } else if (tabId === 'honorarios') {
-    rows = p.current.filter(l => (l.honorarios || 0) > 0).map(l => ({ Empresa: l.empresa, Cadência: cadences.find(c => c.id === l.status)?.label || l.status, Temperatura: l.thermal, Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios }));
+    rows = p.current.filter(l => (l.honorarios || 0) > 0).map(l => ({ Empresa: l.empresa, Cadência: getCadenciaLabelById(l.status), Temperatura: l.thermal, Responsável: l.responsavel, 'Valor de Faturamento': l.honorarios }));
   }
 
   if (!rows.length) { alert('Nenhum dado para exportar neste painel.'); return; }
@@ -12889,6 +13483,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.log('[Boot] Vínculos de cadências carregados:', vinculosCadencias.length);
     } catch (err) {
       console.error('[Boot] Erro ao carregar vínculos de cadências:', err);
+    }
+
+    // Carregar cadências do banco de dados (para CRM dinâmico)
+    try {
+      await loadDbCadencias();
+      console.log('[Boot] Cadências do DB carregadas:', _dbCadenciasCache.length);
+    } catch (err) {
+      console.error('[Boot] Erro ao carregar cadências do DB:', err);
     }
 
     // Carregar visibilidade de cadências por perfil
