@@ -93,16 +93,16 @@ serve(async (req) => {
         })
       }
 
-      // 1. Buscar ou criar lead (prioridade: telefone + centros_custo_id)
-      const leadId = await findOrCreateLead(supabase, membroId, centrosCustoId, phone, pushName)
+      // 1. Buscar ou criar contato (prioridade: centros_custo_id) — NÃO cria lead automaticamente
+      const contactId = await findOrCreateContact(supabase, membroId, centrosCustoId, phone, pushName, null)
 
-      // 2. Buscar ou criar contato (prioridade: centros_custo_id)
-      const contactId = await findOrCreateContact(supabase, membroId, centrosCustoId, phone, pushName, leadId)
+      // 2. Buscar ou criar conversa (prioridade: centros_custo_id) — sem lead_id inicial
+      const conversationId = await findOrCreateConversation(supabase, membroId, centrosCustoId, contactId, contentText, null)
 
-      // 3. Buscar ou criar conversa (prioridade: centros_custo_id)
-      const conversationId = await findOrCreateConversation(supabase, membroId, centrosCustoId, contactId, contentText, leadId)
+      // leadId permanece null — lead só será criado via botão "Sincronizar como Lead" no frontend
+      const leadId = null
 
-      // 4. Inserir mensagem
+      // 3. Inserir mensagem
       const senderType = fromMe ? 'member' : 'contact'
       const messageTimestamp = msgTimestamp
         ? new Date(typeof msgTimestamp === 'number' ? msgTimestamp * 1000 : msgTimestamp).toISOString()
@@ -303,63 +303,6 @@ function extractMessageContent(message: Record<string, any>): {
   }
 
   return { contentType: 'text', contentText: '', mediaUrl: '' }
-}
-
-// ── findOrCreateLead: busca por telefone + centros_custo_id ──
-async function findOrCreateLead(
-  supabase: any,
-  membroId: string | null,
-  centrosCustoId: string | null,
-  phone: string,
-  pushName: string
-): Promise<string | null> {
-  if (!centrosCustoId) {
-    console.log('[webhook] findOrCreateLead: sem centros_custo_id, pulando criação de lead')
-    return null
-  }
-
-  // Buscar lead existente por telefone + centro_custo_id
-  const { data: existing } = await supabase
-    .from('leads')
-    .select('id')
-    .eq('telefone', phone)
-    .eq('centro_custo_id', centrosCustoId)
-    .maybeSingle()
-
-  if (existing) {
-    // Atualizar nome se mudou
-    if (pushName) {
-      await supabase
-        .from('leads')
-        .update({ nome: pushName })
-        .eq('id', existing.id)
-        .neq('nome', pushName)
-    }
-    return existing.id
-  }
-
-  // Criar novo lead
-  const insertPayload: Record<string, any> = {
-    telefone: phone,
-    nome: pushName || phone,
-    centro_custo_id: centrosCustoId,
-    created_at: new Date().toISOString()
-  }
-  if (membroId) insertPayload.membro_id = membroId
-
-  const { data: newLead, error: leadError } = await supabase
-    .from('leads')
-    .insert([insertPayload])
-    .select('id')
-    .maybeSingle()
-
-  if (leadError) {
-    console.error('[webhook] Erro ao criar lead:', leadError)
-    return null
-  }
-
-  console.log('[webhook] Lead criado:', { leadId: newLead?.id, phone, centrosCustoId })
-  return newLead?.id || null
 }
 
 // ── findOrCreateContact: prioridade centros_custo_id, vincula lead ──

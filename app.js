@@ -2870,21 +2870,23 @@ function initBrandingSection() {
 let _userPermCache = null;
 
 const _sidebarMenuItems = [
-  { page: 'home', icon: 'home', label: 'Home' },
-  { page: 'dashboard', icon: 'layout-dashboard', label: 'Dashboard' },
-  { page: 'crm', icon: 'kanban-square', label: 'CRM' },
-  { page: 'contratos', icon: 'file-text', label: 'Contratos' },
-  { page: 'clientes', icon: 'users', label: 'Cliente da Base' },
-  { page: 'calendario', icon: 'calendar-days', label: 'Calendário' },
-  { page: 'rotina', icon: 'clipboard-list', label: 'Rotina Blue' },
-  { page: 'pomodoro', icon: 'timer', label: 'Pomodoro' },
-  { page: 'conversas', icon: 'message-circle', label: 'Conversas' },
-  { page: 'configuracoes', icon: 'settings', label: 'Configurações' },
-  { page: 'auditoria', icon: 'shield', label: 'Auditoria' },
-  { page: 'administrador', icon: 'shield-check', label: 'Administrador' }
-];
-const _sidebarShortcuts = [
-  { page: 'calibragem', icon: 'gauge', label: 'Calibragem' }
+  { category: 'Principal', items: [
+    { page: 'home', icon: 'home', label: 'Home' },
+    { page: 'dashboard', icon: 'layout-dashboard', label: 'Dashboard' },
+    { page: 'crm', icon: 'kanban-square', label: 'CRM' },
+    { page: 'conversas', icon: 'message-circle', label: 'Conversas' },
+    { page: 'contratos', icon: 'file-text', label: 'Contratos' },
+    { page: 'clientes', icon: 'users', label: 'Cliente da Base' },
+    { page: 'calendario', icon: 'calendar-days', label: 'Calendário' },
+    { page: 'rotina', icon: 'clipboard-list', label: 'Rotina Blue' },
+    { page: 'pomodoro', icon: 'timer', label: 'Pomodoro' }
+  ]},
+  { category: 'Ferramentas', items: [
+    { page: 'configuracoes', icon: 'settings', label: 'Configurações' },
+    { page: 'auditoria', icon: 'shield', label: 'Auditoria' },
+    { page: 'administrador', icon: 'shield-check', label: 'Administrador' },
+    { page: 'calibragem', icon: 'gauge', label: 'Calibragem' }
+  ]}
 ];
 
 const _permKeyMap = {
@@ -2986,33 +2988,27 @@ function renderSidebar() {
 
   console.log('[Sidebar] Rendering, _userPermCache =', _userPermCache ? 'loaded' : 'null');
 
-  const allowedMenu = _sidebarMenuItems.filter(m => isPageAllowed(m.page, _userPermCache));
-  // Calibragem: exclusivo do Administrador (sobresai permissão do banco)
   const isAdmin = _userPermCache && _userPermCache.perfil === 'Administrador';
-  const allowedShortcuts = _sidebarShortcuts.filter(m =>
-    m.page === 'calibragem' ? (isAdmin && isPageAllowed(m.page, _userPermCache)) : isPageAllowed(m.page, _userPermCache)
-  );
 
-  console.log('[Sidebar] Allowed menu items:', allowedMenu.map(m => m.page).join(', '));
-  console.log('[Sidebar] Allowed shortcuts:', allowedShortcuts.map(m => m.page).join(', '));
+  let html = '';
+  _sidebarMenuItems.forEach(category => {
+    const allowedItems = category.items.filter(item => {
+      if (item.page === 'calibragem') {
+        return isAdmin && isPageAllowed(item.page, _userPermCache);
+      }
+      return isPageAllowed(item.page, _userPermCache);
+    });
 
-  let html = '<p class="nav-label">Menu principal</p><ul>';
-  allowedMenu.forEach((item, i) => {
-    const activeClass = (item.page === activePage) ? ' active' : '';
-    html += `<li><a href="#" class="nav-item${activeClass}" data-page="${item.page}">
-      <i data-lucide="${item.icon}"></i><span>${item.label}</span></a></li>`;
-  });
-  html += '</ul>';
+    if (allowedItems.length === 0) return;
 
-  if (allowedShortcuts.length > 0) {
-    html += '<p class="nav-label">Atalhos</p><ul>';
-    allowedShortcuts.forEach(item => {
+    html += `<p class="nav-label">${category.category}</p><ul>`;
+    allowedItems.forEach(item => {
       const activeClass = (item.page === activePage) ? ' active' : '';
       html += `<li><a href="#" class="nav-item${activeClass}" data-page="${item.page}">
         <i data-lucide="${item.icon}"></i><span>${item.label}</span></a></li>`;
     });
     html += '</ul>';
-  }
+  });
 
   nav.innerHTML = html;
 
@@ -3127,6 +3123,7 @@ function renderHomeModules(filter = '') {
     pomodoro: _userPermCache.can_pomodoro,
     conversas: _userPermCache.can_conversas,
     auditoria: _userPermCache.can_auditoria,
+    administrador: _userPermCache.can_administrador,
     calibragem: _userPermCache.can_calibragem
   } : null;
   const permFiltered = permMap
@@ -3255,14 +3252,16 @@ const homeModules = [
   { id: 'home', title: 'Home', desc: 'Acesse rapidamente os principais módulos do sistema.', icon: 'home', route: '/home', section: 'Principal' },
   { id: 'dashboard', title: 'Dashboard', desc: 'Indicadores e métricas em tempo real.', icon: 'layout-dashboard', route: '/dashboard', section: 'Principal' },
   { id: 'crm', title: 'CRM', desc: 'Centralize o relacionamento com clientes.', icon: 'kanban-square', route: '/crm', section: 'Principal' },
+  { id: 'conversas', title: 'Conversas', desc: 'Central de conversas e mensagens da equipe.', icon: 'message-circle', route: '/conversas', section: 'Principal' },
   { id: 'contratos', title: 'Contratos', desc: 'Gere e gerencie contratos de prestação de serviços.', icon: 'file-text', route: '/contratos', section: 'Principal' },
   { id: 'clientes', title: 'Cliente da Base', desc: 'Organize e qualifique os clientes.', icon: 'users', route: '/cliente-da-base', section: 'Principal' },
   { id: 'calendario', title: 'Calendário', desc: 'Organize as datas dos eventos.', icon: 'calendar-days', route: '/calendario', section: 'Principal' },
-  { id: 'configuracoes', title: 'Configurações', desc: 'Personalize conta e equipe.', icon: 'settings', route: '/configuracoes', section: 'Principal' },
-  { id: 'rotina', title: 'Rotina Blue', desc: 'Organize tarefas, reuniões e lembretes do dia a dia.', icon: 'clipboard-list', route: '/rotina', section: 'Ferramentas' },
-  { id: 'pomodoro', title: 'Pomodoro', desc: 'Gestão de tempo e foco com ciclos de trabalho.', icon: 'timer', route: '/pomodoro', section: 'Ferramentas' },
-  { id: 'conversas', title: 'Conversas', desc: 'Central de conversas e mensagens da equipe.', icon: 'message-circle', route: '/conversas', section: 'Ferramentas' },
-  { id: 'auditoria', title: 'Auditoria', desc: 'Rastreamento completo de ações e histórico do sistema.', icon: 'shield', route: '/auditoria', section: 'Ferramentas' }
+  { id: 'rotina', title: 'Rotina Blue', desc: 'Organize tarefas, reuniões e lembretes do dia a dia.', icon: 'clipboard-list', route: '/rotina', section: 'Principal' },
+  { id: 'pomodoro', title: 'Pomodoro', desc: 'Gestão de tempo e foco com ciclos de trabalho.', icon: 'timer', route: '/pomodoro', section: 'Principal' },
+  { id: 'configuracoes', title: 'Configurações', desc: 'Personalize conta e equipe.', icon: 'settings', route: '/configuracoes', section: 'Ferramentas' },
+  { id: 'auditoria', title: 'Auditoria', desc: 'Rastreamento completo de ações e histórico do sistema.', icon: 'shield', route: '/auditoria', section: 'Ferramentas' },
+  { id: 'administrador', title: 'Administrador', desc: 'Gerencie usuários, permissões e configurações do sistema.', icon: 'shield-check', route: '/administrador', section: 'Ferramentas' },
+  { id: 'calibragem', title: 'Calibragem', desc: 'Calibre e ajuste parâmetros do sistema.', icon: 'gauge', route: '/calibragem', section: 'Ferramentas' }
 ];
 
 const knownPages = new Set(['home', 'dashboard', 'crm', 'clientes', 'contratos', 'calendario', 'configuracoes', 'rotina', 'pomodoro', 'conversas', 'auditoria', 'administrador', 'obrigacoes', 'documentos', 'suporte', 'calibragem', 'centros-custo', 'centro-custo-detail']);
@@ -7609,7 +7608,105 @@ let _notifRealtimeChannel = null;
 function _subscribeNotificacoesRealtime() {
   if (_notifRealtimeChannel) _supabase.removeChannel(_notifRealtimeChannel);
 
-  console.log('[REALTIME] Inscrito no canal global-notifications...');
+  // Filtrar notificações por empresa/usuário do usuário logado
+  const userCCIds = (currentUser?.centro_custo_ids || []).filter(Boolean);
+  const userMembroId = currentUser?.id || null;
+  const isAdmin = isCurrentUserAdmin();
+  
+  // Log para debug
+  console.log('[Notif] Subscribing with:', { userCCIds, userMembroId, isAdmin, perfil: currentUser?.perfil });
+  
+  // Helper para verificar se deve notificar (LEADS)
+  // REGRA DE NEGÓCIO:
+  // ADMIN: Notifica TUDO das empresas dele (ignora membro_id)
+  // ATENDENTE: Isolamento rigoroso
+  //   - Dono do lead (membro_id === user.id) -> NOTIFICA
+  //   - Órfão (membro_id === null) -> NOTIFICA (triagem)
+  //   - De outro atendente -> NÃO NOTIFICA
+  const shouldNotifyLead = (lead) => {
+    const leadCCId = lead.centro_custo_id;
+    const leadMembroId = lead.membro_id;
+    
+    // Lead "órfão" (sem centro_custo_id) -> notifica Admins e Atendentes para triagem
+    if (!leadCCId) {
+      return true;
+    }
+    
+    // Lead COM centro_custo_id: verifica se está nas empresas do usuário
+    if (!userCCIds.includes(leadCCId)) {
+      return false; // Empresa fora do escopo
+    }
+    
+    // EXCEÇÃO ADMIN: se for admin da empresa, notifica TUDO (ignora membro_id)
+    if (isAdmin) {
+      return true;
+    }
+    
+    // ATENDENTE: isolamento rigoroso
+    // Dono do lead
+    if (leadMembroId && leadMembroId === userMembroId) {
+      return true;
+    }
+    
+    // Órfão (sem dono) -> triagem
+    if (leadMembroId === null) {
+      return true;
+    }
+    
+    // De outro atendente -> NÃO NOTIFICA
+    return false;
+  };
+  
+  // Helper para verificar se deve notificar (MENSAGENS)
+  // REGRA DE NEGÓCIO:
+  // ADMIN: Notifica TUDO das empresas dele (ignora membro_id)
+  // ATENDENTE: Isolamento rigoroso
+  //   - Dono da conversa (membro_id === user.id) -> NOTIFICA
+  //   - Órfã (membro_id === null) -> NOTIFICA (triagem)
+  //   - De outro atendente -> NÃO NOTIFICA
+  const shouldNotifyMessage = async (msg) => {
+    const { data: conv } = await _supabase
+      .from('conversations')
+      .select('centros_custo_id, membro_id')
+      .eq('id', msg.conversation_id)
+      .maybeSingle();
+    
+    if (!conv) return false;
+    
+    const convCCId = conv.centros_custo_id;
+    const convMembroId = conv.membro_id;
+    
+    // 1. FILTRO DE EMPRESA: deve pertencer a uma das empresas do usuário
+    if (!convCCId) {
+      // Sem empresa: só notifica se também não tem dono (órfã total)
+      return convMembroId === null;
+    }
+    
+    if (!userCCIds.includes(convCCId)) {
+      return false; // Empresa fora do escopo
+    }
+    
+    // 2. EXCEÇÃO ADMIN: se for admin da empresa, notifica TUDO (ignora membro_id)
+    if (isAdmin) {
+      return true;
+    }
+    
+    // 3. ATENDENTE: isolamento rigoroso
+    // Dono da conversa
+    if (convMembroId && convMembroId === userMembroId) {
+      return true;
+    }
+    
+    // Órfã (sem dono) -> triagem
+    if (convMembroId === null) {
+      return true;
+    }
+    
+    // De outro atendente -> NÃO NOTIFICA
+    return false;
+  };
+
+  console.log('[REALTIME] Inscrito no canal global-notifications (com filtro por usuário)...');
   _notifRealtimeChannel = _supabase
     .channel('global-notifications')
     .on('postgres_changes', {
@@ -7618,6 +7715,13 @@ function _subscribeNotificacoesRealtime() {
       table: 'leads'
     }, async payload => {
       const lead = payload.new;
+      
+      // FILTRO: só notificar se lead pertence à empresa do usuário ou é atribuído a ele
+      if (!shouldNotifyLead(lead)) {
+        console.log('[REALTIME] Lead ignorado (fora do escopo):', lead.id);
+        return;
+      }
+      
       const leadName = lead.nome || lead.empresa || 'Novo lead';
       let ccName = 'CRM';
       if (lead.centro_custo_id) {
@@ -7646,6 +7750,13 @@ function _subscribeNotificacoesRealtime() {
       }
       if (_notifWasProcessed(msg.id)) {
         console.log('[REALTIME] Ignorado: duplicado id =', msg.id);
+        return;
+      }
+
+      // FILTRO: só notificar se mensagem pertence à empresa do usuário ou é atribuída a ele
+      const notify = await shouldNotifyMessage(msg);
+      if (!notify) {
+        console.log('[REALTIME] Mensagem ignorada (fora do escopo):', msg.id);
         return;
       }
 
@@ -7705,7 +7816,7 @@ function _subscribeNotificacoesRealtime() {
     .subscribe((status, err) => {
       console.log('[REALTIME STATUS] Global notifications:', status, err || '');
       if (status === 'SUBSCRIBED') {
-        console.log('[REALTIME] ✅ Canal global-notifications conectado — escutando leads e messages');
+        console.log('[REALTIME] ✅ Canal global-notifications conectado — escutando leads e messages (filtrado por usuário)');
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         console.warn('[REALTIME] ❌ Falha no canal global-notifications:', status, err);
         setTimeout(() => _subscribeNotificacoesRealtime(), 5000);
@@ -7717,18 +7828,74 @@ function _subscribeNotificacoesRealtime() {
 async function _loadUnreadCount() {
   try {
     if (!_supabase || !currentUser?.id) return;
-    const { data, error } = await _supabase
+    
+    const isAdmin = isCurrentUserAdmin();
+    const userCCIds = (currentUser?.centro_custo_ids || []).filter(Boolean);
+    const userMembroId = currentUser?.id || null;
+    
+    console.log('[Notif] Loading unread count:', { userCCIds, userMembroId, isAdmin, perfil: currentUser?.perfil });
+    
+    // Buscar conversas das empresas do usuário + órfãs (sem empresa)
+    let query = _supabase
       .from('conversations')
-      .select('id, unread_count, lead_id, contact_id, centros_custo_id')
-      .eq('membro_id', currentUser.id)
+      .select('id, unread_count, lead_id, contact_id, centros_custo_id, membro_id')
       .eq('status', 'open')
       .gt('unread_count', 0);
+    
+    if (isAdmin) {
+      // ADMIN: filtro apenas por empresa (vê tudo das empresas dele)
+      if (userCCIds.length > 0) {
+        query = query.or(`centros_custo_id.in.(${userCCIds.join(',')}),centros_custo_id.is.null`);
+      } else {
+        query = query.is('centros_custo_id', null);
+      }
+    } else {
+      // ATENDENTE: filtro por empresa E por membro_id (sua conversa OU órfã)
+      // .or() no Supabase: (centro_custo_id IN userCCIds OR centro_custo_id IS NULL) 
+      // AND (membro_id IS NULL OR membro_id EQ userMembroId)
+      if (userCCIds.length > 0) {
+        query = query.or(`centros_custo_id.in.(${userCCIds.join(',')}),centros_custo_id.is.null`);
+      } else {
+        query = query.is('centros_custo_id', null);
+      }
+      // Filtro rigoroso de membro_id: apenas conversas do atendente OU sem dono (triagem)
+      query = query.or(`membro_id.is.null,membro_id.eq.${userMembroId}`);
+    }
+    
+    const { data, error } = await query;
     if (error) { console.error('[Notif] Erro ao buscar não-lidas:', error.message); return; }
-    const totalUnread = (data || []).reduce((sum, c) => sum + (c.unread_count || 0), 0);
+    
+    // Client-side filter mantido como segurança adicional (especialmente para órfãs sem empresa)
+    let filteredData = (data || []).filter(conv => {
+      const convCCId = conv.centros_custo_id;
+      const convMembroId = conv.membro_id;
+      
+      // Sem empresa: só inclui se também não tem dono (órfã total)
+      if (!convCCId) {
+        return convMembroId === null;
+      }
+      
+      // Tem empresa: ADMIN vê tudo, ATENDENTE segue isolamento
+      if (isAdmin) {
+        return true;
+      }
+      
+      // ATENDENTE:
+      // Dono da conversa
+      if (convMembroId && convMembroId === userMembroId) return true;
+      
+      // Órfã de dono -> triagem
+      if (convMembroId === null) return true;
+      
+      // De outro atendente -> exclui
+      return false;
+    });
+    
+    const totalUnread = filteredData.reduce((sum, c) => sum + (c.unread_count || 0), 0);
     if (totalUnread > 0) {
       const list = _getNotifications();
       const existingIds = new Set(list.map(n => n.data?.conversationId));
-      for (const conv of (data || [])) {
+      for (const conv of filteredData) {
         if (existingIds.has(conv.id)) continue;
         let leadName = 'Contato';
         let ccName = '';
@@ -12291,6 +12458,7 @@ function _renderConvMessages() {
   if (!container) return;
 
   if (conversasState.waStatus !== 'connected') {
+    conversasState.messages = [];
     container.innerHTML = '<div class="conv-empty-state" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;opacity:0.7;"><i data-lucide="wifi-off" style="width:48px;height:48px;margin-bottom:12px;"></i><p style="font-size:15px;font-weight:500;">WhatsApp Desconectado</p><p style="font-size:13px;margin-top:4px;">Conecte o aparelho para visualizar as conversas.</p></div>';
     initIcons();
     return;
@@ -12430,6 +12598,9 @@ function _renderConvCrmPanel(chat) {
   const thermo = chat.temperature || 'frio';
   const notes = chat.notes || [];
   const leadId = chat.lead_id || null;
+  const contactId = chat._contactId || null;
+  const centrosCustoId = chat._centroCustoId || conversasState.selectedCentroCustoId || null;
+  const membroId = currentUser?.id || null;
 
   panel.style.display = 'block';
   panel.innerHTML = `
@@ -12444,8 +12615,24 @@ function _renderConvCrmPanel(chat) {
         <div class="conv-profile-phone">${chat.contact_phone ? '+' + chat.contact_phone : ''}</div>
         ${chat.contact_email ? `<div class="conv-profile-field"><span class="label">Email</span><span class="value">${_convHtmlEscape(chat.contact_email)}</span></div>` : ''}
         <div class="conv-profile-field"><span class="label">Conversa</span><span class="value">${_CONV_STATUS_LABELS[chat.status] || chat.status}</span></div>
-        <div class="conv-profile-field"><span class="label">Responsavel</span><span class="value">${assignee ? _convHtmlEscape(assignee.nome) : 'Nao atribuido'}</span></div>
-        ${leadId ? `<a class="conv-btn-link" href="#" onclick="event.preventDefault();window._convVerLeadNoCRM('${leadId}');">Ver lead no CRM</a>` : ''}
+        ${leadId
+          ? `<a class="conv-btn-link" href="#" onclick="event.preventDefault();window._convVerLeadNoCRM('${leadId}');">Ver lead no CRM</a>`
+          : `<div class="conv-sync-lead" style="margin-top:10px;">
+              <div class="conv-crm-field">
+                <label>Empresa</label>
+                <select id="convSyncLeadCC" onchange="document.getElementById('convSyncLeadBtn').disabled = !this.value">
+                  <option value="">Selecione a empresa...</option>
+                  ${(conversasState.centrosCustoList || []).map(cc => `<option value="${cc.id}"${cc.id === centrosCustoId ? ' selected' : ''}>${_convHtmlEscape(cc.nome)}</option>`).join('')}
+                </select>
+              </div>
+              <button class="btn btn-primary btn-sm" id="convSyncLeadBtn" style="width:100%;margin-top:6px;"
+                ${contactId && centrosCustoId ? '' : 'disabled'}
+                onclick="convSyncContactToLead('${contactId}', document.getElementById('convSyncLeadCC').value, '${membroId}')">
+                <i data-lucide="user-plus"></i> Sincronizar como Lead
+              </button>
+              ${!contactId ? `<span class="conv-hint-text" style="display:block;margin-top:6px;font-size:11px;">Aguarde o contato ser criado para sincronizar</span>` : ''}
+            </div>`
+        }
       </div>
     </div>
 
@@ -12481,7 +12668,12 @@ function _renderConvCrmPanel(chat) {
           <label>Responsavel</label>
           <select onchange="convSetAssignee('${chat.id}', this.value,${leadId ? `'${leadId}'` : 'null'})">
             <option value="">Nao atribuido</option>
-            ${conversasState.members.map(m => `<option value="${m.id}"${chat.assigned_to === m.id ? ' selected' : ''}>${_convHtmlEscape(m.nome)}</option>`).join('')}
+            ${conversasState.members.map(m => {
+              const isSelected = chat.assigned_to
+                ? chat.assigned_to === m.id
+                : m.id === membroId;
+              return `<option value="${m.id}"${isSelected ? ' selected' : ''}>${_convHtmlEscape(m.nome)}</option>`;
+            }).join('')}
           </select>
         </div>
         <div class="conv-priority-toggle">
@@ -12539,15 +12731,38 @@ async function convSetStatus(chatId, status) {
 }
 async function convSetAssignee(chatId, userId, leadId) {
   const chat = conversasState.allChats.find(c => c.id === chatId);
+  const previousAssignee = chat?.assigned_to || null;
+  
   if (chat) chat.assigned_to = userId || null;
-  if (leadId && _isValidUUID(leadId)) {
-    try {
-      const { error } = await _supabase.from('leads').update({ membro_id: userId || null }).eq('id', leadId);
-      if (error) console.error('[Conversas] Erro ao salvar responsavel:', error.message, error.code);
+  
+  try {
+    // Atualizar tabela conversations (chat) no Supabase
+    const { error: convError } = await _supabase
+      .from('conversations')
+      .update({ membro_id: userId || null, updated_at: new Date().toISOString() })
+      .eq('id', chatId);
+    
+    if (convError) throw convError;
+
+    // Se houver lead vinculado, atualizar também a tabela leads
+    if (leadId && _isValidUUID(leadId)) {
+      const { error: leadError } = await _supabase
+        .from('leads')
+        .update({ membro_id: userId || null })
+        .eq('id', leadId);
+      if (leadError) console.error('[Conversas] Erro ao salvar responsavel no lead:', leadError.message, leadError.code);
       if (chat?._leadData) chat._leadData.membro_id = userId || null;
-    } catch (e) { console.error('[Conversas] Erro ao atualizar responsavel no lead:', e); }
+    }
+
+    if (conversasState.selectedChatId === chatId) _renderConvCrmPanel(chat);
+    toast('Responsavel atualizado com sucesso!', 'success');
+  } catch (err) {
+    console.error('[Conversas] Erro ao atualizar responsavel:', err);
+    // Reverter estado local em caso de erro
+    if (chat) chat.assigned_to = previousAssignee;
+    if (conversasState.selectedChatId === chatId) _renderConvCrmPanel(chat);
+    toast(`Erro ao atualizar responsavel: ${err.message}`, 'error');
   }
-  if (conversasState.selectedChatId === chatId) _renderConvCrmPanel(chat);
 }
 async function convSetPriority(chatId, on) {
   const chat = conversasState.allChats.find(c => c.id === chatId);
@@ -12572,6 +12787,40 @@ async function convAddNote(chatId, leadId) {
   }
   _renderConvCrmPanel(chat);
   toast('Observacao salva');
+}
+
+/* ---------- Sync Contact to Lead ---------- */
+async function convSyncContactToLead(contactId, centrosCustoId, membroId) {
+  const btn = event?.target?.closest('button');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="auth-spinner"></span>';
+  }
+  
+  try {
+    const { data, error } = await _supabase.functions.invoke('sync-contact-to-lead', {
+      body: { contactId, centrosCustoId, membroId }
+    });
+    
+    if (error) throw new Error(error.message);
+    
+    if (data?.ok) {
+      toast(data.message || 'Contato sincronizado como Lead com sucesso!');
+      // Recarregar conversas para atualizar o painel
+      await loadConversasChats();
+    } else {
+      throw new Error(data?.error || 'Erro ao sincronizar');
+    }
+  } catch (err) {
+    console.error('[Conversas] Erro ao sincronizar contato:', err);
+    toast(err.message || 'Erro ao sincronizar como Lead', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="user-plus"></i> Sincronizar como Lead';
+      initIcons();
+    }
+  }
 }
 async function convArchiveChat(chatId) {
   if (!confirm('Arquivar esta conversa?')) return;
@@ -15207,29 +15456,41 @@ async function _confirmContratoDelete() {
   const storagePath = contrato?.assinado_storage_path;
   _closeContratoDeleteModal();
   try {
-    // Remover PDF assinado do Storage (se existir)
+    // 1. Remover PDF assinado do Storage (se existir)
     if (storagePath) {
       const { error: storageErr } = await _supabase.storage.from('contratos').remove([storagePath]);
-      if (storageErr) console.warn('[Contratos] Aviso ao remover PDF do Storage:', storageErr.message);
+      if (storageErr) {
+        console.warn('[Contratos] Aviso ao remover PDF do Storage:', storageErr.message);
+        // Não bloqueia a exclusão do contrato se falhar no storage
+      }
     }
 
-    // Soft delete: marcar deleted_at em vez de hard delete
-    const { data, error } = await _supabase
+    // 2. Hard delete no banco (requer política DELETE na tabela contratos)
+    const { error, count } = await _supabase
       .from('contratos')
-      .update({ deleted_at: new Date().toISOString() })
-      .eq('id', id)
-      .select('id');
-    if (error) throw error;
-    if (!data || data.length === 0) {
-      throw new Error('Nenhum registro afetado. Verifique sua permissão.');
+      .delete({ count: 'exact' })
+      .eq('id', id);
+
+    if (error) {
+      // Se falhar por falta de política DELETE, tentar soft delete como fallback
+      if (error.code === '42501' || error.message?.includes('policy')) {
+        console.warn('[Contratos] DELETE bloqueado por RLS, tentando soft delete...');
+        const { error: softErr } = await _supabase
+          .from('contratos')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', id);
+        if (softErr) throw softErr;
+      } else {
+        throw error;
+      }
     }
 
-    // Recarregar do banco para refletir o estado real
+    // 3. Recarregar do banco para refletir o estado real
     await refreshContratosTable();
     toast(`Contrato ${numero} excluído com sucesso!`, 'success');
   } catch (err) {
     console.error('[Contratos] Erro ao excluir:', err);
-    toast(`Erro ao excluir o contrato ${numero}. Tente novamente.`, 'error');
+    toast(`Erro ao excluir o contrato ${numero}: ${err.message}. Tente novamente.`, 'error');
   }
 }
 
@@ -15579,6 +15840,7 @@ window.convSetStatus = convSetStatus;
 window.convSetAssignee = convSetAssignee;
 window.convSetPriority = convSetPriority;
 window.convAddNote = convAddNote;
+window.convSyncContactToLead = convSyncContactToLead;
 window._convVerLeadNoCRM = function(leadId) {
   if (!leadId) return;
   setActivePage('crm');
