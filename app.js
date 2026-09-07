@@ -7618,8 +7618,7 @@ function _subscribeNotificacoesRealtime() {
   
   // Helper para verificar se deve notificar (LEADS)
   // REGRA DE NEGÓCIO:
-  // ADMIN: Notifica TUDO das empresas dele (ignora membro_id)
-  // ATENDENTE: Isolamento rigoroso
+  // TODOS (admin e atendente): Isolamento rigoroso
   //   - Dono do lead (membro_id === user.id) -> NOTIFICA
   //   - Órfão (membro_id === null) -> NOTIFICA (triagem)
   //   - De outro atendente -> NÃO NOTIFICA
@@ -7627,22 +7626,11 @@ function _subscribeNotificacoesRealtime() {
     const leadCCId = lead.centro_custo_id;
     const leadMembroId = lead.membro_id;
     
-    // Lead "órfão" (sem centro_custo_id) -> notifica Admins e Atendentes para triagem
-    if (!leadCCId) {
-      return true;
-    }
-    
     // Lead COM centro_custo_id: verifica se está nas empresas do usuário
-    if (!userCCIds.includes(leadCCId)) {
+    if (leadCCId && !userCCIds.includes(leadCCId)) {
       return false; // Empresa fora do escopo
     }
     
-    // EXCEÇÃO ADMIN: se for admin da empresa, notifica TUDO (ignora membro_id)
-    if (isAdmin) {
-      return true;
-    }
-    
-    // ATENDENTE: isolamento rigoroso
     // Dono do lead
     if (leadMembroId && leadMembroId === userMembroId) {
       return true;
@@ -7659,8 +7647,7 @@ function _subscribeNotificacoesRealtime() {
   
   // Helper para verificar se deve notificar (MENSAGENS)
   // REGRA DE NEGÓCIO:
-  // ADMIN: Notifica TUDO das empresas dele (ignora membro_id)
-  // ATENDENTE: Isolamento rigoroso
+  // TODOS (admin e atendente): Isolamento rigoroso
   //   - Dono da conversa (membro_id === user.id) -> NOTIFICA
   //   - Órfã (membro_id === null) -> NOTIFICA (triagem)
   //   - De outro atendente -> NÃO NOTIFICA
@@ -7677,21 +7664,11 @@ function _subscribeNotificacoesRealtime() {
     const convMembroId = conv.membro_id;
     
     // 1. FILTRO DE EMPRESA: deve pertencer a uma das empresas do usuário
-    if (!convCCId) {
-      // Sem empresa: só notifica se também não tem dono (órfã total)
-      return convMembroId === null;
-    }
-    
-    if (!userCCIds.includes(convCCId)) {
+    if (convCCId && !userCCIds.includes(convCCId)) {
       return false; // Empresa fora do escopo
     }
     
-    // 2. EXCEÇÃO ADMIN: se for admin da empresa, notifica TUDO (ignora membro_id)
-    if (isAdmin) {
-      return true;
-    }
-    
-    // 3. ATENDENTE: isolamento rigoroso
+    // 2. Isolamento rigoroso (admin e atendente seguem a mesma regra)
     // Dono da conversa
     if (convMembroId && convMembroId === userMembroId) {
       return true;
@@ -7836,36 +7813,26 @@ async function _loadUnreadCount() {
     console.log('[Notif] Loading unread count:', { userCCIds, userMembroId, isAdmin, perfil: currentUser?.perfil });
     
     // Buscar conversas das empresas do usuário + órfãs (sem empresa)
+    // REGRA: Admin e atendente seguem a mesma regra - isolamento rigoroso + triagem
     let query = _supabase
       .from('conversations')
       .select('id, unread_count, lead_id, contact_id, centros_custo_id, membro_id')
       .eq('status', 'open')
       .gt('unread_count', 0);
     
-    if (isAdmin) {
-      // ADMIN: filtro apenas por empresa (vê tudo das empresas dele)
-      if (userCCIds.length > 0) {
-        query = query.or(`centros_custo_id.in.(${userCCIds.join(',')}),centros_custo_id.is.null`);
-      } else {
-        query = query.is('centros_custo_id', null);
-      }
+    // Filtro por empresa: empresas do usuário + órfãs (sem empresa)
+    if (userCCIds.length > 0) {
+      query = query.or(`centros_custo_id.in.(${userCCIds.join(',')}),centros_custo_id.is.null`);
     } else {
-      // ATENDENTE: filtro por empresa E por membro_id (sua conversa OU órfã)
-      // .or() no Supabase: (centro_custo_id IN userCCIds OR centro_custo_id IS NULL) 
-      // AND (membro_id IS NULL OR membro_id EQ userMembroId)
-      if (userCCIds.length > 0) {
-        query = query.or(`centros_custo_id.in.(${userCCIds.join(',')}),centros_custo_id.is.null`);
-      } else {
-        query = query.is('centros_custo_id', null);
-      }
-      // Filtro rigoroso de membro_id: apenas conversas do atendente OU sem dono (triagem)
-      query = query.or(`membro_id.is.null,membro_id.eq.${userMembroId}`);
+      query = query.is('centros_custo_id', null);
     }
+    // Filtro rigoroso de membro_id: apenas conversas do usuário OU sem dono (triagem)
+    query = query.or(`membro_id.is.null,membro_id.eq.${userMembroId}`);
     
     const { data, error } = await query;
     if (error) { console.error('[Notif] Erro ao buscar não-lidas:', error.message); return; }
     
-    // Client-side filter mantido como segurança adicional (especialmente para órfãs sem empresa)
+    // Client-side filter mantido como segurança adicional
     let filteredData = (data || []).filter(conv => {
       const convCCId = conv.centros_custo_id;
       const convMembroId = conv.membro_id;
@@ -7875,12 +7842,7 @@ async function _loadUnreadCount() {
         return convMembroId === null;
       }
       
-      // Tem empresa: ADMIN vê tudo, ATENDENTE segue isolamento
-      if (isAdmin) {
-        return true;
-      }
-      
-      // ATENDENTE:
+      // Tem empresa: isolamento rigoroso (admin e atendente igual)
       // Dono da conversa
       if (convMembroId && convMembroId === userMembroId) return true;
       
