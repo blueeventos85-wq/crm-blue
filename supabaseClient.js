@@ -341,7 +341,7 @@ async function fetchLeadsSupabase(filterMemberId) {
       statusCliente: 'Prospect',
       statusServico: 'Pendente',
       statusHonorarios: 'Pendente',
-      origem: 'Supabase',
+      origem: row.origem || 'Supabase',
       observacoes: row.observacoes || '',
       createdAt: nowStr,
       lastTouch: today,
@@ -360,7 +360,7 @@ async function insertLeadSupabase(data) {
           quantidade_horas, temperatura, honorarios, observacoes,
           tipo_servico_id, cadencia_id, owner_id, centro_custo_id,
           cpf, cnpj, email, endereco_residencial,
-          bairro, cidade, estado, cep, servicos_selecionados } = data;
+          bairro, cidade, estado, cep, servicos_selecionados, origem } = data;
 
   console.log('[Supabase] Inserindo lead:', { nome, telefone, data_evento });
 
@@ -390,7 +390,8 @@ async function insertLeadSupabase(data) {
     cidade: cidade || null,
     estado: estado || null,
     cep: cep || null,
-    servicos_selecionados: servicos_selecionados || null
+    servicos_selecionados: servicos_selecionados || null,
+    origem: origem || 'Manual'
   };
   if (owner_id) payload.owner_id = owner_id;
   if (tipo_servico_id) payload.tipo_servico_id = Array.isArray(tipo_servico_id) ? tipo_servico_id : [tipo_servico_id];

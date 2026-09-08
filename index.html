@@ -418,6 +418,43 @@
           </div>
         </section>
 
+        <!-- ============ MODAL: DRILL-DOWN LEADS ============ -->
+        <div class="modal-overlay" id="drillDownOverlay"></div>
+        <div class="modal modal-lg" id="drillDownModal" role="dialog" aria-labelledby="drillDownTitle">
+          <div class="modal-head">
+            <div class="modal-head-left">
+              <div class="modal-avatar" id="drillDownIcon"><i data-lucide="list"></i></div>
+              <div class="modal-head-info">
+                <h2 id="drillDownTitle">Leads</h2>
+                <span class="drill-badge" id="drillDownCount">0 leads</span>
+              </div>
+            </div>
+            <div class="modal-head-right">
+              <button class="icon-btn small modal-head-close" id="drillDownClose" title="Fechar">
+                <i data-lucide="x"></i>
+              </button>
+            </div>
+          </div>
+          <div class="modal-body drill-down-body">
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>Telefone</th>
+                    <th>Origem</th>
+                    <th>Temperatura</th>
+                    <th>Cadência</th>
+                  </tr>
+                </thead>
+                <tbody id="drillDownTableBody">
+                </tbody>
+              </table>
+            </div>
+            <p class="empty-state" id="drillDownEmpty" hidden>Nenhum lead encontrado para este filtro.</p>
+          </div>
+        </div>
+
         <!-- ============ CRM ============ -->
         <section class="page" id="page-crm">
           <!-- Resumo por Cadência -->
@@ -1577,25 +1614,25 @@
           <div class="admin-tab-content" id="adminTabPermissoes">
             <div class="admin-section-header">
               <div>
-                <p class="admin-section-text" style="margin-bottom:2px">Configure o que cada membro pode acessar e fazer na plataforma.</p>
+                <p class="admin-section-text" style="margin-bottom:2px">Configure as permissões globais por perfil. Todos os usuários de um perfil herdam estas permissões.</p>
               </div>
-              <div class="admin-search-wrap">
-                <i data-lucide="search"></i>
-                <input type="text" class="admin-input" placeholder="Buscar membro..." id="adminPermSearchInput" />
-              </div>
+              <button class="btn-primary" id="adminPermSaveGlobal"><i data-lucide="save"></i> Salvar Permissões Globais</button>
             </div>
             <div class="admin-table-wrap">
               <table class="admin-table">
                 <thead>
                   <tr>
-                    <th>Nome</th>
-                    <th>E-mail</th>
-                    <th>Cargo</th>
-                    <th>Perfil de Permissão</th>
-                    <th>Ações</th>
+                    <th style="min-width:280px">Permissão</th>
+                    <th style="text-align:center;min-width:120px">Administrador</th>
+                    <th style="text-align:center;min-width:120px">Atendente</th>
+                    <th style="text-align:center;min-width:120px">Marketing</th>
+                    <th style="text-align:center;min-width:120px">Pré Vendas</th>
+                    <th style="text-align:center;min-width:120px">Membro</th>
                   </tr>
                 </thead>
-                <tbody id="adminPermBody"></tbody>
+                <tbody id="adminPermMatrixBody">
+                  <!-- Preenchido via JS -->
+                </tbody>
               </table>
             </div>
           </div>
@@ -2090,89 +2127,6 @@
             </div>
           </div>
 
-          <!-- Modal: Editar Permissões -->
-          <div class="modal-overlay" id="adminPermOverlay"></div>
-          <div class="modal modal-lg" id="adminPermModal" role="dialog" aria-labelledby="adminPermTitle">
-            <div class="modal-head">
-              <div class="modal-head-left">
-                <div class="modal-avatar" style="background:var(--blue-50);color:var(--blue-600)"><i data-lucide="shield"></i></div>
-                <div>
-                  <h2 id="adminPermTitle">Editar Permissões</h2>
-                  <p class="modal-meta" id="adminPermSubtitle"></p>
-                </div>
-              </div>
-              <button class="icon-btn small" data-action="close-admin-perm" title="Fechar"><i data-lucide="x"></i></button>
-            </div>
-            <div class="modal-body admin-member-body">
-              <input type="hidden" id="adminPermMembroId" value="" />
-
-              <!-- Seção 1: Perfil -->
-              <div class="admin-form-section">
-                <h3 class="admin-form-section-title">Perfil de Permissão</h3>
-                <div class="form-grid-2">
-                  <div class="form-group full">
-                    <label>Perfil de acesso</label>
-                    <select id="adminPermPerfil">
-                      <option value="Administrador">Administrador</option>
-                      <option value="Atendente">Atendente</option>
-                      <option value="Marketing">Marketing</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Seção 2: Módulos da Sidebar -->
-              <div class="admin-form-section">
-                <h3 class="admin-form-section-title">Módulos da Sidebar</h3>
-
-                <p class="perm-group-label">Menu Principal</p>
-                <div class="perm-checks-grid">
-                  <label class="perm-check"><input type="checkbox" id="permHome" /> Home</label>
-                  <label class="perm-check"><input type="checkbox" id="permDashboard" /> Dashboard</label>
-                  <label class="perm-check"><input type="checkbox" id="permCrm" /> CRM</label>
-                  <label class="perm-check"><input type="checkbox" id="permContratos" /> Contratos</label>
-                  <label class="perm-check"><input type="checkbox" id="permClienteBase" /> Cliente da Base</label>
-                  <label class="perm-check"><input type="checkbox" id="permCalendario" /> Calendário</label>
-                  <label class="perm-check"><input type="checkbox" id="permRotinaBlue" /> Rotina Blue</label>
-                  <label class="perm-check"><input type="checkbox" id="permPomodoro" /> Pomodoro</label>
-                  <label class="perm-check"><input type="checkbox" id="permConversas" /> Conversas</label>
-                  <label class="perm-check"><input type="checkbox" id="permConfiguracoes" /> Configurações</label>
-                  <label class="perm-check"><input type="checkbox" id="permAuditoria" /> Auditoria</label>
-                  <label class="perm-check"><input type="checkbox" id="permAdministrador" /> Administrador</label>
-                  <label class="perm-check"><input type="checkbox" id="permObrigacoes" /> Obrigações</label>
-                  <label class="perm-check"><input type="checkbox" id="permDocumentos" /> Documentos</label>
-                  <label class="perm-check"><input type="checkbox" id="permSuporte" /> Suporte</label>
-                </div>
-
-                <p class="perm-group-label">Atalhos</p>
-                <div class="perm-checks-grid">
-                  <label class="perm-check"><input type="checkbox" id="permCalibragem" /> Calibragem</label>
-                </div>
-              </div>
-
-              <!-- Seção 3: Dados sensíveis -->
-              <div class="admin-form-section">
-                <h3 class="admin-form-section-title">Dados sensíveis</h3>
-                <div class="perm-checks-grid">
-                  <label class="perm-check">
-                    <input type="checkbox" id="permDeleteTelefone" />
-                    Pode apagar número de telefone do cliente
-                  </label>
-                </div>
-                <small class="perm-hint">Se desmarcado, este usuário não pode remover o telefone dos clientes.</small>
-              </div>
-
-            </div>
-            <div class="modal-foot admin-member-foot">
-              <p class="admin-foot-note">As permissões são salvas no Supabase e aplicadas imediatamente.</p>
-              <div class="modal-foot-actions">
-                <button class="btn-ghost" data-action="close-admin-perm">Cancelar</button>
-                <button class="btn-primary" id="adminPermSaveBtn"><i data-lucide="save"></i> Salvar Permissões</button>
-              </div>
-            </div>
-          </div>
-        </section>
-
         <!-- ============ CALIBRAGEM ============ -->
         <section class="page" id="page-calibragem">
           <!-- Header -->
@@ -2602,6 +2556,24 @@
             <label>CNPJ</label>
             <input type="text" name="cnpj" placeholder="00.000.000/0000-00" maxlength="18" />
             <span class="form-error" data-error="cnpj"></span>
+          </div>
+          <div class="form-group">
+            <label>Origem do lead</label>
+            <select name="origem">
+              <option value="">Selecione...</option>
+              <option value="Indicação">Indicação</option>
+              <option value="Google Ads">Google Ads</option>
+              <option value="Facebook Ads">Facebook Ads</option>
+              <option value="Instagram Ads">Instagram Ads</option>
+              <option value="LinkedIn Ads">LinkedIn Ads</option>
+              <option value="Ação de Rua">Ação de Rua</option>
+              <option value="LinkedIn">LinkedIn</option>
+              <option value="Instagram">Instagram</option>
+              <option value="Site">Site</option>
+              <option value="Orgânico">Orgânico</option>
+              <option value="Outro">Outro</option>
+            </select>
+            <span class="form-error" data-error="origem"></span>
           </div>
           <div class="form-group">
             <label>E-mail</label>

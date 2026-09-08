@@ -131,8 +131,12 @@ async function loadMemberFromAuth(authUserId, authEmail) {
 async function initAuth() {
   if (!_supabase) { showAuthOverlay(); return; }
 
+  // Ensure no stale cache on fresh boot
+  _userPermCache = null;
+
   const { data: { session } } = await _supabase.auth.getSession();
   if (session && session.user) {
+    console.log('[Auth] initAuth: session found for user:', session.user.id);
     _authUser = session.user;
     currentUser.authUserId = session.user.id;
 
@@ -166,10 +170,37 @@ async function initAuth() {
       return;
     }
 
-    // For SIGNED_IN or INITIAL_SESSION: only re-initialize if user actually changed
     const newAuthUserId = session.user.id;
+
+    // INITIAL_SESSION fires on every page load/refresh — always recalculate
+    // permissions to avoid stale cache. Only skip re-init for SIGNED_IN when
+    // the same user is already fully loaded.
+    if (event === 'INITIAL_SESSION') {
+      console.log('[Auth] INITIAL_SESSION — clearing permission cache and re-initializing');
+      _userPermCache = null;
+      _authUser = session.user;
+      currentUser.authUserId = newAuthUserId;
+
+      const member = await loadMemberFromAuth(session.user.id, session.user.email);
+      if (member) {
+        currentUser.id = member.id;
+        currentUser.nome = member.nome || session.user.email?.split('@')[0] || 'Usuário';
+        currentUser.centro_custo_id = member.centro_custo_id || null;
+        currentUser.centro_custo_ids = member._centro_custo_ids || [];
+        currentUser.foto_url = member.foto_url || null;
+      } else if (!currentUser.id) {
+        currentUser.nome = session.user.user_metadata?.nome || session.user.email?.split('@')[0] || 'Usuário';
+        console.warn('[Auth] loadMemberFromAuth failed in INITIAL_SESSION, loadUserPermissions will attempt resolution');
+      }
+
+      hideAuthOverlay();
+      await onAuthReady();
+      return;
+    }
+
+    // SIGNED_IN: only re-initialize if user actually changed
     if (currentUser.authUserId === newAuthUserId && currentUser.id && _userPermCache) {
-      console.log('[Auth] Same user, permissions already loaded, skipping re-init');
+      console.log('[Auth] SIGNED_IN same user, permissions already loaded, skipping re-init');
       return;
     }
 
@@ -184,7 +215,6 @@ async function initAuth() {
       currentUser.centro_custo_ids = member._centro_custo_ids || [];
       currentUser.foto_url = member.foto_url || null;
     } else if (!currentUser.id) {
-      // Only set nome if we can't resolve — loadUserPermissions will try to find member
       currentUser.nome = session.user.user_metadata?.nome || session.user.email?.split('@')[0] || 'Usuário';
       console.warn('[Auth] loadMemberFromAuth failed in onAuthStateChange, loadUserPermissions will attempt resolution');
     }
@@ -451,15 +481,7 @@ function initAdminView() {
     if (delOverlay) delOverlay.addEventListener('click', closeDeleteModal);
     if (delConfirmBtn) delConfirmBtn.addEventListener('click', handleMemberDelete);
 
-    // ── Modal de permissões ──
-    const permOverlay = document.getElementById('adminPermOverlay');
-    const permCloseBtns = document.querySelectorAll('[data-action="close-admin-perm"]');
-    const permSaveBtn = document.getElementById('adminPermSaveBtn');
-    permCloseBtns.forEach(btn => btn.addEventListener('click', closePermModal));
-    if (permOverlay) permOverlay.addEventListener('click', closePermModal);
-    if (permSaveBtn) permSaveBtn.addEventListener('click', handlePermSave);
-
-    // ── Busca permissões ──
+    // ── Busca permissões (antiga - agora usa matriz) ──
     const permSearch = document.getElementById('adminPermSearchInput');
     if (permSearch) {
       let permDebounce;
@@ -467,21 +489,16 @@ function initAdminView() {
         clearTimeout(permDebounce);
         permDebounce = setTimeout(() => {
           const q = permSearch.value.toLowerCase().trim();
-          document.querySelectorAll('#adminPermBody tr').forEach(row => {
+          document.querySelectorAll('#adminPermMatrixBody tr').forEach(row => {
             row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
           });
         }, 150);
       });
-      permSearch.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          clearTimeout(permDebounce);
-          const q = permSearch.value.toLowerCase().trim();
-          document.querySelectorAll('#adminPermBody tr').forEach(row => {
-            row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
-          });
-        }
-      });
     }
+
+    // ── Botão Salvar Permissões Globais ──
+    const permSaveGlobalBtn = document.getElementById('adminPermSaveGlobal');
+    if (permSaveGlobalBtn) permSaveGlobalBtn.addEventListener('click', handlePermMatrixSave);
 
     // ── Auto-fill perfil checkboxes ──
     const perfilSel = document.getElementById('adminPermPerfil');
@@ -857,52 +874,92 @@ async function loadMembersFromSupabase() {
    ============================================ */
 
 /* ── Modal helpers permissões ── */
-function openPermModal() {
-  const overlay = document.getElementById('adminPermOverlay');
-  const modal = document.getElementById('adminPermModal');
-  if (overlay) overlay.classList.add('open');
-  if (modal) { modal.classList.add('open'); modal.scrollTop = 0; }
-  initIcons();
-}
+/* ── Permissões CRUD Granulares - Keys ─── */
+const PERM_CRUD_KEYS = [
+  // Contratos
+  'can_contratos_create', 'can_contratos_read', 'can_contratos_update', 'can_contratos_delete',
+  'can_contratos_assinado_upload', 'can_contratos_cancelar',
+  // Leads
+  'can_leads_create', 'can_leads_read', 'can_leads_update', 'can_leads_delete',
+  'can_leads_export', 'can_leads_import', 'can_leads_add_phone', 'can_leads_transferir',
+  // Conversas
+  'can_conversas_create', 'can_conversas_read', 'can_conversas_update', 'can_conversas_delete',
+  'can_conversas_transferir', 'can_conversas_delete_msg', 'can_conversas_sync_lead',
+  // Calendário
+  'can_calendario_create', 'can_calendario_read', 'can_calendario_update', 'can_calendario_delete',
+  // Rotina
+  'can_rotina_create', 'can_rotina_read', 'can_rotina_update', 'can_rotina_delete',
+  // Config
+  'can_config_read', 'can_config_update', 'can_config_whatsapp', 'can_config_integracao',
+  // Auditoria
+  'can_auditoria_read', 'can_auditoria_export',
+  // Admin
+  'can_admin_create_user', 'can_admin_read_user', 'can_admin_update_user', 'can_admin_delete_user',
+  'can_admin_manage_perms', 'can_admin_manage_cc',
+  // Sensível
+  'can_delete_cliente_telefone'
+];
 
-function closePermModal() {
-  const overlay = document.getElementById('adminPermOverlay');
-  const modal = document.getElementById('adminPermModal');
-  if (overlay) overlay.classList.remove('open');
-  if (modal) modal.classList.remove('open');
-}
+/* ── Perfil defaults globais (expandido com CRUD) ── */
+const PERFIL_DEFAULTS = {
+  'Administrador': {
+    home: true, dashboard: true, crm: true, contratos: true, cliente_base: true, calendario: true,
+    rotina_blue: true, pomodoro: true, conversas: true, configuracoes: true,
+    auditoria: true, administrador: true,
+    calibragem: true,
+    delete_telefone: true,
+    ...Object.fromEntries(PERM_CRUD_KEYS.map(k => [k, true]))
+  },
+  'Atendente': {
+    home: false, dashboard: false, crm: true, contratos: false, cliente_base: true, calendario: true,
+    rotina_blue: true, pomodoro: true, conversas: true, configuracoes: false,
+    auditoria: false, administrador: false,
+    calibragem: false,
+    delete_telefone: false,
+    can_contratos_create: true, can_contratos_read: true, can_contratos_update: true,
+    can_contratos_assinado_upload: true,
+    can_leads_create: true, can_leads_read: true, can_leads_update: true,
+    can_leads_add_phone: true,
+    can_conversas_create: true, can_conversas_read: true, can_conversas_update: true,
+    can_conversas_transferir: true, can_conversas_sync_lead: true,
+    can_calendario_create: true, can_calendario_read: true, can_calendario_update: true,
+    can_rotina_create: true, can_rotina_read: true, can_rotina_update: true,
+    can_config_read: true,
+    can_auditoria_read: true,
+  },
+  'Marketing': {
+    home: true, dashboard: true, crm: true, contratos: false, cliente_base: true, calendario: true,
+    rotina_blue: false, pomodoro: false, conversas: false, configuracoes: true,
+    auditoria: true, administrador: false,
+    calibragem: false,
+    delete_telefone: true,
+    can_leads_read: true, can_leads_export: true,
+    can_contratos_read: true,
+    can_conversas_read: true,
+    can_config_read: true,
+  },
+  'Pre Vendas': {
+    home: true, dashboard: true, crm: true, cliente_base: true,
+    conversas: true,
+    can_leads_create: true, can_leads_read: true, can_leads_update: true,
+    can_conversas_create: true, can_conversas_read: true, can_conversas_sync_lead: true,
+  },
+  'Membro': {
+    home: true, dashboard: true,
+    can_leads_read: true,
+  }
+};
 
-/* ── Perfil defaults ── */
+/* ── Perfil defaults (expandido com CRUD) ── */
 function applyPerfilDefaults(perfil) {
   const allModules = [
     'permHome', 'permDashboard', 'permCrm', 'permContratos', 'permClienteBase', 'permCalendario',
     'permRotinaBlue', 'permPomodoro', 'permConversas', 'permConfiguracoes',
     'permAuditoria', 'permAdministrador', 'permObrigacoes', 'permDocumentos', 'permSuporte'
   ];
-  const presets = {
-    'Administrador': {
-      home: true, dashboard: true, crm: true, contratos: true, cliente_base: true, calendario: true,
-      rotina_blue: true, pomodoro: true, conversas: true, configuracoes: true,
-      auditoria: true, administrador: true,
-      calibragem: true,
-      delete_telefone: true
-    },
-    'Atendente': {
-      home: false, dashboard: false, crm: true, contratos: false, cliente_base: true, calendario: true,
-      rotina_blue: true, pomodoro: true, conversas: true, configuracoes: false,
-      auditoria: false, administrador: false,
-      calibragem: false,
-      delete_telefone: false
-    },
-    'Marketing': {
-      home: true, dashboard: true, crm: true, contratos: false, cliente_base: true, calendario: true,
-      rotina_blue: false, pomodoro: false, conversas: false, configuracoes: true,
-      auditoria: true, administrador: false,
-      calibragem: false,
-      delete_telefone: true
-    }
-  };
-  const p = presets[perfil] || presets['Atendente'];
+  const p = PERFIL_DEFAULTS[perfil] || PERFIL_DEFAULTS['Atendente'];
+  
+  // Sidebar modules (colunas booleanas)
   document.getElementById('permHome').checked = p.home;
   document.getElementById('permDashboard').checked = p.dashboard;
   document.getElementById('permCrm').checked = p.crm;
@@ -915,135 +972,32 @@ function applyPerfilDefaults(perfil) {
   document.getElementById('permConfiguracoes').checked = p.configuracoes;
   document.getElementById('permAuditoria').checked = p.auditoria;
   document.getElementById('permAdministrador').checked = p.administrador;
+  document.getElementById('permObrigacoes').checked = p.obrigacoes || false;
+  document.getElementById('permDocumentos').checked = p.documentos || false;
+  document.getElementById('permSuporte').checked = p.suporte || false;
   document.getElementById('permDeleteTelefone').checked = p.delete_telefone;
   document.getElementById('permCalibragem').checked = !!p.calibragem;
-}
-
-/* ── Render row de permissões ── */
-function renderPermRow(m, perm) {
-  const initials = (m.nome || '').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
-  const badgeClass = m.cargo === 'Administrador' ? 'admin-badge-admin' :
-    m.cargo === 'Marketing' ? 'admin-badge-marketing' : 'admin-badge-attend';
-  const perfil = perm ? perm.perfil : 'Sem permissão';
-  const perfilCls = perm ? ({
-    'Administrador': 'perm-badge-admin',
-    'Atendente': 'perm-badge-atend',
-    'Marketing': 'perm-badge-marketing'
-  })[perm.perfil] || 'perm-badge-readonly' : 'perm-badge-readonly';
-
-  const row = document.createElement('tr');
-  row.dataset.membroId = m.id;
-  row.innerHTML = `
-    <td><div class="admin-user-cell"><span class="admin-avatar">${escapeHtml(initials)}</span> ${escapeHtml(m.nome || '')}</div></td>
-    <td>${escapeHtml(m.email || '')}</td>
-    <td><span class="admin-badge ${badgeClass}">${escapeHtml(m.cargo || '—')}</span></td>
-    <td><span class="perm-badge ${perfilCls}">${escapeHtml(perfil)}</span></td>
-    <td class="admin-actions-cell">
-      <button class="btn-icon" title="Editar Permissões" data-perm-edit="${m.id}"><i data-lucide="pencil"></i></button>
-    </td>`;
-
-  const editBtn = row.querySelector('[data-perm-edit]');
-  if (editBtn) {
-    editBtn.addEventListener('click', () => openPermModalForMember(m, perm));
-  }
-  return row;
-}
-
-/* ── Abrir modal de permissões para um membro ── */
-function openPermModalForMember(member, perm) {
-  document.getElementById('adminPermMembroId').value = member.id;
-  document.getElementById('adminPermTitle').textContent = 'Permissões – ' + member.nome;
-  document.getElementById('adminPermSubtitle').textContent = member.email;
-
-  if (perm) {
-    document.getElementById('adminPermPerfil').value = perm.perfil || 'Somente leitura';
-    document.getElementById('permHome').checked = !!perm.can_home;
-    document.getElementById('permDashboard').checked = !!perm.can_dashboard;
-    document.getElementById('permCrm').checked = !!perm.can_crm;
-    document.getElementById('permContratos').checked = !!perm.can_contratos;
-    document.getElementById('permClienteBase').checked = !!perm.can_cliente_base;
-    document.getElementById('permCalendario').checked = !!perm.can_calendario;
-    document.getElementById('permRotinaBlue').checked = !!perm.can_rotina_blue;
-    document.getElementById('permPomodoro').checked = !!perm.can_pomodoro;
-    document.getElementById('permConversas').checked = !!perm.can_conversas;
-    document.getElementById('permConfiguracoes').checked = !!perm.can_configuracoes;
-    document.getElementById('permAuditoria').checked = !!perm.can_auditoria;
-    document.getElementById('permAdministrador').checked = !!perm.can_administrador;
-    document.getElementById('permDeleteTelefone').checked = !!perm.can_delete_cliente_telefone;
-    document.getElementById('permCalibragem').checked = !!perm.can_calibragem;
-  } else {
-    applyPerfilDefaults('Somente leitura');
-  }
-
-  openPermModal();
-}
-
-/* ── Salvar permissões (upsert) ── */
-async function handlePermSave() {
-  const membroId = document.getElementById('adminPermMembroId').value;
-  if (!membroId) return;
-
-  const saveBtn = document.getElementById('adminPermSaveBtn');
-  saveBtn.disabled = true;
-  saveBtn.innerHTML = '<span class="auth-spinner"></span>';
-
-  const payload = {
-    membro_id: membroId,
-    perfil: document.getElementById('adminPermPerfil').value,
-    can_home: document.getElementById('permHome').checked,
-    can_dashboard: document.getElementById('permDashboard').checked,
-    can_crm: document.getElementById('permCrm').checked,
-    can_contratos: document.getElementById('permContratos').checked,
-    can_cliente_base: document.getElementById('permClienteBase').checked,
-    can_calendario: document.getElementById('permCalendario').checked,
-    can_rotina_blue: document.getElementById('permRotinaBlue').checked,
-    can_pomodoro: document.getElementById('permPomodoro').checked,
-    can_conversas: document.getElementById('permConversas').checked,
-    can_configuracoes: document.getElementById('permConfiguracoes').checked,
-    can_auditoria: document.getElementById('permAuditoria').checked,
-    can_administrador: document.getElementById('permAdministrador').checked,
-    can_obrigacoes: document.getElementById('permObrigacoes').checked,
-    can_documentos: document.getElementById('permDocumentos').checked,
-    can_suporte: document.getElementById('permSuporte').checked,
-    can_calibragem: document.getElementById('permCalibragem').checked,
-    can_delete_cliente_telefone: document.getElementById('permDeleteTelefone').checked,
-    updated_at: new Date().toISOString()
-  };
-
-  try {
-    const { data: existing } = await _supabase.from('membros_permissoes')
-      .select('id').eq('membro_id', membroId).maybeSingle();
-
-    let error;
-    if (existing) {
-      const res = await _supabase.from('membros_permissoes').update(payload).eq('id', existing.id);
-      error = res.error;
-    } else {
-      const res = await _supabase.from('membros_permissoes').insert([payload]);
-      error = res.error;
+  
+  // CRUD granular (JSONB)
+  PERM_CRUD_KEYS.forEach(k => {
+    if (p[k] !== undefined) {
+      const el = document.querySelector(`[data-perm="${k}"]`);
+      if (el) el.checked = p[k];
     }
-
-    if (error) {
-      console.error('[Admin] Erro ao salvar permissões:', error.message, error.code, error.hint);
-      throw error;
-    }
-
-    toast('Permissões salvas com sucesso!');
-    if (typeof registrarAuditoria === 'function') registrarAuditoria({ acao: 'Atualizações', caminho_url: '/administrador', modulo: 'Administrador' });
-    closePermModal();
-    await loadPermissionsFromSupabase();
-
-  } catch (err) {
-    console.error('[Admin] Erro ao salvar permissões:', err);
-    toast(err.message || 'Erro ao salvar permissões', 'error');
-  } finally {
-    saveBtn.disabled = false;
-    saveBtn.innerHTML = '<i data-lucide="save"></i> Salvar Permissões';
-    initIcons();
-  }
+  });
 }
 
-/* ── Carregar permissões do Supabase ── */
+/* ── Helper global para checar permissão CRUD ─── */
+function can(permKey) {
+  const cache = _userPermCache;
+  if (!cache) return true; // fallback permissivo se cache não carregado
+  // Colunas booleanas (sidebar/modules)
+  if (cache[permKey] === true) return true;
+  // JSONB granular (CRUD)
+  return cache.permissions?.[permKey] === true;
+}
+
+/* ── Carregar permissões do Supabase e renderizar MATRIZ ── */
 async function loadPermissionsFromSupabase() {
   if (!_supabase) return;
 
@@ -1052,6 +1006,21 @@ async function loadPermissionsFromSupabase() {
     _adminMembersCache = data || [];
   }
 
+  // 1. Buscar permissões globais por perfil (nova tabela perfis_permissoes)
+  let profilePermsFromDB = {};
+  try {
+    const { data, error } = await _supabase.from('perfis_permissoes').select('perfil, permissions');
+    if (!error && data) {
+      data.forEach(row => {
+        const norm = (row.perfil || '').toLowerCase().replace(' ', '_');
+        profilePermsFromDB[norm] = row.permissions || {};
+      });
+    }
+  } catch (err) {
+    console.warn('[Admin] Tabela perfis_permissoes não encontrada, usando fallback local:', err.message);
+  }
+
+  // 2. Buscar permissões individuais dos membros (membros_permissoes)
   try {
     const { data, error } = await _supabase.from('membros_permissoes').select('*');
     if (error) {
@@ -1068,19 +1037,243 @@ async function loadPermissionsFromSupabase() {
   const permMap = {};
   _adminPermCache.forEach(p => { permMap[p.membro_id] = p; });
 
-  const tbody = document.getElementById('adminPermBody');
+  // 3. Renderizar MATRIZ usando dados do banco (perfis_permissoes) com fallback para PERFIL_DEFAULTS
+  renderPermMatrix(permMap, profilePermsFromDB);
+}
+
+const PERM_MATRIX_ROWS = [
+  { group: 'Contratos', perms: [
+    { key: 'can_contratos_create', label: 'Criar Contrato' },
+    { key: 'can_contratos_read', label: 'Visualizar Contratos' },
+    { key: 'can_contratos_update', label: 'Editar Contrato' },
+    { key: 'can_contratos_delete', label: 'Apagar Contrato' },
+    { key: 'can_contratos_assinado_upload', label: 'Upload Assinado' },
+    { key: 'can_contratos_cancelar', label: 'Cancelar Contrato' },
+  ]},
+  { group: 'Leads / Clientes', perms: [
+    { key: 'can_leads_create', label: 'Criar Lead' },
+    { key: 'can_leads_read', label: 'Visualizar Leads' },
+    { key: 'can_leads_update', label: 'Editar Lead' },
+    { key: 'can_leads_delete', label: 'Apagar Lead' },
+    { key: 'can_leads_export', label: 'Exportar Base' },
+    { key: 'can_leads_import', label: 'Importar Leads' },
+    { key: 'can_leads_add_phone', label: 'Adicionar Número' },
+    { key: 'can_leads_transferir', label: 'Transferir Lead' },
+  ]},
+  { group: 'Conversas', perms: [
+    { key: 'can_conversas_create', label: 'Nova Conversa' },
+    { key: 'can_conversas_read', label: 'Visualizar Conversas' },
+    { key: 'can_conversas_update', label: 'Editar Conversa' },
+    { key: 'can_conversas_delete', label: 'Arquivar/Apagar' },
+    { key: 'can_conversas_transferir', label: 'Transferir Conversa' },
+    { key: 'can_conversas_delete_msg', label: 'Apagar Mensagem' },
+    { key: 'can_conversas_sync_lead', label: 'Sincronizar como Lead' },
+  ]},
+  { group: 'Calendário', perms: [
+    { key: 'can_calendario_create', label: 'Criar Evento' },
+    { key: 'can_calendario_read', label: 'Visualizar Calendário' },
+    { key: 'can_calendario_update', label: 'Editar Evento' },
+    { key: 'can_calendario_delete', label: 'Apagar Evento' },
+  ]},
+  { group: 'Rotina Blue', perms: [
+    { key: 'can_rotina_create', label: 'Criar Tarefa' },
+    { key: 'can_rotina_read', label: 'Visualizar Rotina' },
+    { key: 'can_rotina_update', label: 'Editar Tarefa' },
+    { key: 'can_rotina_delete', label: 'Apagar Tarefa' },
+  ]},
+  { group: 'Configurações', perms: [
+    { key: 'can_config_read', label: 'Visualizar Configurações' },
+    { key: 'can_config_update', label: 'Editar Configurações' },
+    { key: 'can_config_whatsapp', label: 'Gerenciar WhatsApp' },
+    { key: 'can_config_integracao', label: 'Gerenciar Integrações' },
+  ]},
+  { group: 'Auditoria', perms: [
+    { key: 'can_auditoria_read', label: 'Ver Auditoria' },
+    { key: 'can_auditoria_export', label: 'Exportar Auditoria' },
+  ]},
+  { group: 'Administração', perms: [
+    { key: 'can_admin_create_user', label: 'Criar Usuário' },
+    { key: 'can_admin_read_user', label: 'Listar Usuários' },
+    { key: 'can_admin_update_user', label: 'Editar Usuário' },
+    { key: 'can_admin_delete_user', label: 'Apagar Usuário' },
+    { key: 'can_admin_manage_perms', label: 'Gerenciar Permissões' },
+    { key: 'can_admin_manage_cc', label: 'Gerenciar Centros de Custo' },
+  ]},
+  { group: 'Dados Sensíveis', perms: [
+    { key: 'can_delete_cliente_telefone', label: 'Apagar Telefone do Cliente' },
+  ]},
+];
+
+const PERM_MATRIX_COLS = [
+  { key: 'administrador', label: 'Administrador' },
+  { key: 'atendente', label: 'Atendente' },
+  { key: 'marketing', label: 'Marketing' },
+  { key: 'pre_vendas', label: 'Pré Vendas' },
+  { key: 'membro', label: 'Membro' },
+];
+
+function renderPermMatrix(permMap, profilePermsFromDB = {}) {
+  const tbody = document.getElementById('adminPermMatrixBody');
   if (!tbody) return;
-  tbody.innerHTML = '';
 
-  if (_adminMembersCache.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted-text)">Nenhum membro cadastrado</td></tr>';
-    return;
-  }
+  const profilePerms = getProfilePermissions(permMap, profilePermsFromDB);
 
-  _adminMembersCache.forEach(m => {
-    tbody.appendChild(renderPermRow(m, permMap[m.id] || null));
+  let html = '';
+  PERM_MATRIX_ROWS.forEach(({ group, perms }) => {
+    html += `<tr class="perm-group-header"><td colspan="7" class="perm-group-label">${group}</td></tr>`;
+    perms.forEach(({ key, label }) => {
+      html += `<tr data-perm-key="${key}">`;
+      html += `<td class="perm-name">${escapeHtml(label)}</td>`;
+      PERM_MATRIX_COLS.forEach(col => {
+        const checked = profilePerms[col.key]?.[key] === true;
+        html += `<td style="text-align:center"><input type="checkbox" class="perm-matrix-check" data-perm="${key}" data-profile="${col.key}"${checked ? ' checked' : ''}></td>`;
+      });
+      html += `</tr>`;
+    });
   });
+  tbody.innerHTML = html;
   initIcons();
+}
+
+function getProfilePermissions(permMap, profilePermsFromDB = {}) {
+  const profilePerms = {};
+  Object.keys(PERFIL_DEFAULTS).forEach(perfil => {
+    const norm = perfil.toLowerCase().replace(' ', '_');
+    // Usa dados do banco (perfis_permissoes) como base, fallback para PERFIL_DEFAULTS
+    profilePerms[norm] = { ...PERFIL_DEFAULTS[perfil], ...(profilePermsFromDB[norm] || {}) };
+  });
+  // Merge com permissões individuais dos membros (membros_permissoes)
+  const seenProfiles = new Set();
+  Object.values(permMap).forEach(p => {
+    const perfilNorm = (p.perfil || '').toLowerCase().replace(' ', '_');
+    if (!seenProfiles.has(perfilNorm)) {
+      seenProfiles.add(perfilNorm);
+      const merged = { ...p };
+      if (p.permissions) Object.assign(merged, p.permissions);
+      profilePerms[perfilNorm] = { ...profilePerms[perfilNorm], ...merged };
+    }
+  });
+  return profilePerms;
+}
+
+async function handlePermMatrixSave() {
+  const saveBtn = document.getElementById('adminPermSaveGlobal');
+  if (!saveBtn) return;
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '<span class="auth-spinner"></span>';
+
+  try {
+    const updates = {};
+    document.querySelectorAll('#adminPermMatrixBody .perm-matrix-check').forEach(cb => {
+      const permKey = cb.dataset.perm;
+      const profileKey = cb.dataset.profile;
+      if (!updates[profileKey]) updates[profileKey] = {};
+      updates[profileKey][permKey] = cb.checked;
+    });
+
+    // 1. Atualiza PERFIL_DEFAULTS em memória (para uso imediato)
+    Object.entries(updates).forEach(([profileKey, perms]) => {
+      const perfilMap = { administrador: 'Administrador', atendente: 'Atendente', marketing: 'Marketing', pre_vendas: 'Pre Vendas', membro: 'Membro' };
+      const perfilName = perfilMap[profileKey];
+      if (perfilName && PERFIL_DEFAULTS[perfilName]) {
+        Object.assign(PERFIL_DEFAULTS[perfilName], perms);
+      }
+    });
+
+    // 2. Salva na tabela perfis_permissoes (configurações globais por cargo)
+    const perfilMap = { administrador: 'Administrador', atendente: 'Atendente', marketing: 'Marketing', pre_vendas: 'Pre Vendas', membro: 'Membro' };
+    for (const [profileKey, perms] of Object.entries(updates)) {
+      const perfilName = perfilMap[profileKey];
+      if (!perfilName) continue;
+
+      const { error } = await _supabase
+        .from('perfis_permissoes')
+        .upsert({
+          perfil: perfilName,
+          permissions: perms
+          // updated_at é gerenciado pelo trigger
+        }, { onConflict: 'perfil' });
+
+      if (error) {
+        console.error('[Admin] Erro ao salvar perfis_permissoes', perfilName, error);
+        throw new Error(`perfis_permissoes: ${error.message}`);
+      }
+    }
+
+    // 3. Propaga para membros_permissoes (cada membro herda do seu cargo)
+    for (const member of _adminMembersCache) {
+      const perfilNorm = (member.cargo || '').toLowerCase().replace(' ', '_');
+      const perfilMap = { administrador: 'Administrador', atendente: 'Atendente', marketing: 'Marketing', pre_vendas: 'Pre Vendas', membro: 'Membro' };
+      const perfilName = perfilMap[perfilNorm];
+      if (!perfilName) continue;
+
+      // Merge: PERFIL_DEFAULTS (already updated by matrix save) + CRUD from matrix
+      const profileDefaults = PERFIL_DEFAULTS[perfilName] || {};
+      const crudOverrides = updates[perfilNorm] || {};
+
+      const existingPerm = _adminPermCache.find(p => p.membro_id === member.id);
+
+      // Sidebar booleans: read from PERFIL_DEFAULTS (which has the correct profile values)
+      const sidebarData = {};
+      _sidebarPermKeys.forEach(k => {
+        // Map can_xxx → profile key xxx
+        const profileKey = k === 'can_delete_cliente_telefone' ? 'delete_telefone' : k.replace('can_', '');
+        sidebarData[k] = profileDefaults[profileKey] === true;
+      });
+
+      // CRUD granular: use matrix checkbox values, fallback to profile defaults
+      const crudData = {};
+      PERM_CRUD_KEYS.forEach(k => {
+        if (crudOverrides[k] !== undefined) {
+          crudData[k] = crudOverrides[k] === true;
+        } else {
+          crudData[k] = profileDefaults[k] === true;
+        }
+      });
+
+      const payload = {
+        ...sidebarData,
+        can_delete_cliente_telefone: profileDefaults.delete_telefone === true,
+        permissions: crudData,
+        updated_at: new Date().toISOString()
+      };
+
+      if (existingPerm) {
+        const { error: memberError } = await _supabase
+          .from('membros_permissoes')
+          .update(payload)
+          .eq('id', existingPerm.id);
+        if (memberError) {
+          console.error('[Admin] Erro ao atualizar membro_permissoes', member.id, memberError);
+          throw new Error(`membros_permissoes: ${memberError.message}`);
+        }
+      } else {
+        // Create membros_permissoes record for member that doesn't have one yet
+        const insertPayload = {
+          membro_id: member.id,
+          perfil: perfilName,
+          ...payload
+        };
+        const { error: insertError } = await _supabase
+          .from('membros_permissoes')
+          .insert(insertPayload);
+        if (insertError) {
+          console.error('[Admin] Erro ao criar membros_permissoes para membro', member.id, insertError);
+        }
+      }
+    }
+
+    toast('Permissões globais salvas com sucesso!', 'success');
+    if (typeof registrarAuditoria === 'function') registrarAuditoria({ acao: 'Atualizações', caminho_url: '/administrador', modulo: 'Administrador' });
+
+  } catch (err) {
+    console.error('[Admin] Erro ao salvar matriz de permissões:', err);
+    toast('Erro ao salvar permissões: ' + err.message, 'error');
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = '<i data-lucide="save"></i> Salvar Permissões Globais';
+    initIcons();
+  }
 }
 
 /* ============================================
@@ -2898,7 +3091,23 @@ const _permKeyMap = {
   calibragem: 'can_calibragem'
 };
 
+const _sidebarPermKeys = [
+  'can_home','can_dashboard','can_crm','can_contratos','can_cliente_base',
+  'can_calendario','can_rotina_blue','can_pomodoro','can_conversas','can_configuracoes',
+  'can_auditoria','can_administrador','can_obrigacoes','can_documentos','can_suporte','can_calibragem'
+];
+
+const _profileToPermKey = {
+  home: 'can_home', dashboard: 'can_dashboard', crm: 'can_crm',
+  contratos: 'can_contratos', cliente_base: 'can_cliente_base', calendario: 'can_calendario',
+  rotina_blue: 'can_rotina_blue', pomodoro: 'can_pomodoro', conversas: 'can_conversas',
+  configuracoes: 'can_configuracoes', auditoria: 'can_auditoria', administrador: 'can_administrador',
+  calibragem: 'can_calibragem', delete_telefone: 'can_delete_cliente_telefone',
+  obrigacoes: 'can_obrigacoes', documentos: 'can_documentos', suporte: 'can_suporte'
+};
+
 async function loadUserPermissions() {
+  console.log('[Perm] ─── loadUserPermissions() START ─── currentUser.id:', currentUser.id, 'perfil:', currentUser.perfil);
   if (!_supabase) {
     console.warn('[Perm] _supabase is null, returning null');
     return null;
@@ -2952,27 +3161,117 @@ async function loadUserPermissions() {
     }
   }
 
-  // Step 2: Query permissions
+  // Step 2: Determine user's profile — robust fallback chain
+  const validProfiles = ['Administrador', 'Atendente', 'Marketing', 'Pre Vendas', 'Membro'];
+  let perfil = currentUser.perfil;
+  if (!perfil || !validProfiles.includes(perfil)) {
+    console.warn('[Perm] Invalid or missing perfil:', JSON.stringify(perfil), '— falling back to Membro');
+    perfil = 'Membro';
+  }
+  currentUser.perfil = perfil;
+
+  // Step 3: Load profile-level permissions from perfis_permissoes (fallback: PERFIL_DEFAULTS)
+  let profilePerms = { ...(PERFIL_DEFAULTS[perfil] || PERFIL_DEFAULTS['Membro']) };
+  try {
+    const { data: profileData, error: profileError } = await _supabase
+      .from('perfis_permissoes')
+      .select('permissions')
+      .eq('perfil', perfil)
+      .maybeSingle();
+    if (!profileError && profileData?.permissions) {
+      profilePerms = { ...profilePerms, ...profileData.permissions };
+    }
+  } catch (err) {
+    console.warn('[Perm] perfis_permissoes lookup failed, using PERFIL_DEFAULTS:', err.message);
+  }
+  console.log('[Perm] Profile permissions loaded for', perfil, '- home:', profilePerms.home, 'crm:', profilePerms.crm, 'conversas:', profilePerms.conversas);
+
+  // Step 4: Load individual permissions from membros_permissoes
   console.log('[Perm] Querying membros_permissoes for membro_id:', currentUser.id);
+  let memberPerm = null;
   try {
     const { data, error } = await _supabase.from('membros_permissoes')
       .select('*').eq('membro_id', currentUser.id).maybeSingle();
     if (error) {
       console.error('[Perm] Query error:', error.message, error.code);
-      return null;
+    } else {
+      memberPerm = data;
     }
-    if (!data) {
-      console.warn('[Perm] No permission record found for membro_id:', currentUser.id);
-      return null;
-    }
-    console.log('[Perm] Permissions loaded:', JSON.stringify(data));
-    _userPermCache = data;
-    currentUser.perfil = data.perfil || currentUser.perfil;
-    return data;
   } catch (err) {
     console.error('[Perm] Exception:', err);
-    return null;
   }
+
+  // Step 5: Build merged permission cache
+  // Base: profile defaults converted to can_* format
+  const merged = {};
+  Object.entries(_profileToPermKey).forEach(([profileKey, permKey]) => {
+    merged[permKey] = profilePerms[profileKey] === true;
+  });
+  merged.perfil = perfil;
+
+  // Step 6: Overlay individual overrides from membros_permissoes
+  if (memberPerm) {
+    merged.perfil = memberPerm.perfil || perfil;
+    merged.id = memberPerm.id;
+    merged.membro_id = memberPerm.membro_id;
+    merged.created_at = memberPerm.created_at;
+    merged.updated_at = memberPerm.updated_at;
+
+    // Sidebar booleans: use individual value if explicitly set (not null/undefined)
+    _sidebarPermKeys.forEach(permKey => {
+      if (memberPerm[permKey] !== undefined && memberPerm[permKey] !== null) {
+        merged[permKey] = memberPerm[permKey] === true;
+      }
+    });
+    merged.can_delete_cliente_telefone = memberPerm.can_delete_cliente_telefone === true;
+
+    // CRUD granular permissions: merge from individual record
+    if (memberPerm.permissions) {
+      merged.permissions = { ...(merged.permissions || {}), ...memberPerm.permissions };
+    }
+  } else {
+    // No individual record - create one from profile defaults
+    console.warn('[Perm] No membros_permissoes record for', currentUser.id, '- creating from profile');
+    try {
+      const insertPayload = {
+        membro_id: currentUser.id,
+        perfil: perfil,
+        permissions: profilePerms
+      };
+      _sidebarPermKeys.forEach(k => { insertPayload[k] = merged[k] === true; });
+      insertPayload.can_delete_cliente_telefone = merged.can_delete_cliente_telefone === true;
+
+      const { data: inserted, error: insertError } = await _supabase
+        .from('membros_permissoes')
+        .insert(insertPayload)
+        .select()
+        .single();
+      if (!insertError && inserted) {
+        merged.id = inserted.id;
+        merged.membro_id = inserted.membro_id;
+        console.log('[Perm] Created membros_permissoes from profile:', inserted.id);
+      } else {
+        console.warn('[Perm] Could not create membros_permissoes:', insertError?.message);
+      }
+    } catch (err) {
+      console.warn('[Perm] Exception creating membros_permissoes:', err.message);
+    }
+  }
+
+  _userPermCache = merged;
+  currentUser.perfil = merged.perfil;
+  console.log('[Perm] ═══ FINAL MERGED PERMISSIONS ═══');
+  console.log('[Perm] Profile:', merged.perfil);
+  console.log('[Perm] Sidebar modules:', {
+    home: merged.can_home, dashboard: merged.can_dashboard, crm: merged.can_crm,
+    contratos: merged.can_contratos, clientes: merged.can_cliente_base,
+    calendario: merged.can_calendario, rotina: merged.can_rotina_blue,
+    pomodoro: merged.can_pomodoro, conversas: merged.can_conversas,
+    configuracoes: merged.can_configuracoes, auditoria: merged.can_auditoria,
+    administrador: merged.can_administrador, calibragem: merged.can_calibragem
+  });
+  console.log('[Perm] Full object:', JSON.stringify(merged));
+  return merged;
 }
 
 function isPageAllowed(page, perm) {
@@ -3275,7 +3574,7 @@ const pageConfig = {
   },
   dashboard: {
     title: 'Dashboard',
-    subtitle: 'Visão gerencial · Junho 2026',
+    subtitle: 'Visão gerencial',
     primary: 'Exportar',
     primaryIcon: 'download'
   },
@@ -7175,7 +7474,7 @@ async function saveLead() {
       statusCliente: 'Prospect',
       statusServico: 'Pendente',
       statusHonorarios: 'Pendente',
-      origem: 'Manual',
+      origem: fields.origem || 'Manual',
       observacoes: fields.observacoes || '',
       createdAt: nowStr,
       lastTouch: today,
@@ -7215,7 +7514,8 @@ async function saveLead() {
         centro_custo_id: fields.empresaId || null,
         cpf: fields.cpf || '',
         cnpj: fields.cnpj || '',
-        email: fields.email || ''
+        email: fields.email || '',
+        origem: fields.origem || 'Manual'
       });
       if (result && result[0] && result[0].id) {
         newLead.id = result[0].id;
@@ -7296,7 +7596,8 @@ async function saveLead() {
         observacoes: fields.observacoes || '',
         cpf: fields.cpf || '',
         cnpj: fields.cnpj || '',
-        email: fields.email || ''
+        email: fields.email || '',
+        origem: fields.origem || 'Manual'
       };
 
       if (fields.tiposServico) {
@@ -7956,7 +8257,14 @@ function initCRM() {
   $('#leadModalOverlay').addEventListener('click', closeLeadModal);
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('#leadModal').classList.contains('open')) closeLeadModal();
+    if (e.key === 'Escape' && drillDownOpen) closeDrillDown();
   });
+
+  // Drill-down modal: fechar
+  const ddOverlay = document.getElementById('drillDownOverlay');
+  const ddCloseBtn = document.getElementById('drillDownClose');
+  if (ddOverlay) ddOverlay.addEventListener('click', closeDrillDown);
+  if (ddCloseBtn) ddCloseBtn.addEventListener('click', closeDrillDown);
 
   // Salvar
   $('#leadSaveBtn').addEventListener('click', saveLead);
@@ -8056,12 +8364,13 @@ const ORIGIN_MAP = {
   'Orgânico': 'Oferta Ativa',
   'Outro': 'Oferta Ativa'
 };
-const ORIGENS_FIXAS = ['Indicação de Cliente', 'Anúncio Pago', 'Ação de Rua', 'Oferta Ativa'];
+const ORIGENS_FIXAS = ['Indicação de Cliente', 'Anúncio Pago', 'Ação de Rua', 'Oferta Ativa', 'Não informada'];
 const ORIGEM_COLOR = {
   'Indicação de Cliente': '#165BFF',
   'Anúncio Pago': '#F59E0B',
   'Ação de Rua': '#10B981',
-  'Oferta Ativa': '#A855F7'
+  'Oferta Ativa': '#A855F7',
+  'Não informada': '#94A3B8'
 };
 const TEMP_COLOR = { frio: '#0284C7', morno: '#D97706', quente: '#DC2626' };
 
@@ -8075,6 +8384,78 @@ const dashState = {
   cache: { ts: 0, payload: null }
 };
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+
+// ----- Drill-down state
+let drillDownOpen = false;
+let drillDownFilter = null; // { tipo: 'status'|'origem'|'thermal', valor: string, leads: Lead[] }
+
+function openDrillDown(tipo, valor, leads) {
+  drillDownFilter = { tipo, valor, leads };
+  drillDownOpen = true;
+  renderDrillDown();
+  const overlay = document.getElementById('drillDownOverlay');
+  const modal = document.getElementById('drillDownModal');
+  if (overlay) overlay.classList.add('open');
+  if (modal) modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeDrillDown() {
+  drillDownOpen = false;
+  drillDownFilter = null;
+  const overlay = document.getElementById('drillDownOverlay');
+  const modal = document.getElementById('drillDownModal');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function renderDrillDown() {
+  if (!drillDownFilter) return;
+  const { tipo, valor, leads } = drillDownFilter;
+  const titleEl = document.getElementById('drillDownTitle');
+  const countEl = document.getElementById('drillDownCount');
+  const tbody = document.getElementById('drillDownTableBody');
+  const emptyEl = document.getElementById('drillDownEmpty');
+
+  const tipoLabel = tipo === 'status' ? 'Status' : tipo === 'origem' ? 'Origem' : 'Temperatura';
+  if (titleEl) titleEl.textContent = `Leads — ${tipoLabel}: ${valor}`;
+  if (countEl) countEl.textContent = `${leads.length} lead${leads.length !== 1 ? 's' : ''}`;
+
+  if (!leads.length) {
+    if (tbody) tbody.innerHTML = '';
+    if (emptyEl) emptyEl.hidden = false;
+    return;
+  }
+  if (emptyEl) emptyEl.hidden = true;
+
+  const cadenceLabels = {
+    'novo-lead': 'Novo Lead', 'dados-ia': 'Dados IA', 'coletados-frio': 'Coletados Frio',
+    'geladeira': 'Geladeira', 'stand-by': 'Stand-by', 'qualificado': 'Qualificado',
+    'em-atendimento': 'Em Atendimento', 'diagnostico-gratis': 'Diagnóstico Grátis',
+    'reuniao-agendada': 'Reunião Agendada', 'reuniao-realizada': 'Reunião Realizada',
+    'contrato-fechado': 'Contrato Fechado', 'cobranca-enviada': 'Cobrança Enviada',
+    'pagamento-recebido': 'Pagamento Recebido', 'servico-executado': 'Serviço Executado',
+    'pos-vendas': 'Pós-Vendas'
+  };
+
+  if (tbody) {
+    tbody.innerHTML = leads.map(l => `
+      <tr class="lead-row-clickable" data-lead-id="${l.id}">
+        <td><strong>${escapeHtml(l.empresa || '')}</strong></td>
+        <td>${escapeHtml(l.telefone || '')}</td>
+        <td>${escapeHtml(normalizeOrigin(l.origem))}</td>
+        <td><span class="drill-thermal-tag ${l.thermal || 'frio'}">${escapeHtml(l.thermal || 'frio')}</span></td>
+        <td><span class="drill-cadencia-tag">${cadenceLabels[l.status] || l.status || '—'}</span></td>
+      </tr>
+    `).join('');
+  }
+}
+
+function handleDrillDownClick(tipo, valor, leads) {
+  if (drillDownOpen) closeDrillDown();
+  else openDrillDown(tipo, valor, leads);
+}
 
 // ----- Datas (parsing + range)
 function parseLeadDate(s) {
@@ -8186,13 +8567,38 @@ function formatPeriodBadge(start, end) {
   return `${fmt(start)} — ${fmt(end)}`;
 }
 
+function getPeriodLabel() {
+  const { start, end } = getPeriodRange();
+  switch (dashState.period) {
+    case 'today': return 'Hoje';
+    case 'yesterday': return 'Ontem';
+    case 'week': {
+      const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+      return `Semana (${dayNames[start.getDay()]} ${String(start.getDate()).padStart(2, '0')}/${String(start.getMonth() + 1).padStart(2, '0')} — ${dayNames[end.getDay()]} ${String(end.getDate()).padStart(2, '0')}/${String(end.getMonth() + 1).padStart(2, '0')})`;
+    }
+    case 'month': {
+      const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+      return `${monthNames[start.getMonth()]} ${start.getFullYear()}`;
+    }
+    case 'custom':
+      return formatPeriodBadge(start, end);
+    default:
+      return formatPeriodBadge(start, end);
+  }
+}
+
+function updateDashboardSubtitle() {
+  const subtitleEl = document.getElementById('pageSubtitle');
+  if (subtitleEl) subtitleEl.textContent = `Visão gerencial · ${getPeriodLabel()}`;
+}
+
 // ----- Categorização de leads
 function getStatusCategory(status) {
   return STATUS_CATEGORY[status] || 'andamento';
 }
 function normalizeOrigin(orig) {
-  if (!orig) return 'Oferta Ativa';
-  return ORIGIN_MAP[orig] || 'Oferta Ativa';
+  if (!orig || !orig.trim()) return 'Não informada';
+  return ORIGIN_MAP[orig.trim()] || 'Não informada';
 }
 
 // ----- Cache
@@ -8878,6 +9284,7 @@ function renderDashAll(force = false) {
   // renderiza também os widgets que precisam estar atualizados fora do dashboard
   renderCalUpcoming();
   renderDashRemindersWidget();
+  updateDashboardSubtitle();
 }
 
 // ----- Trocar aba
@@ -10061,6 +10468,52 @@ function refreshDashboard() {
   renderProximosEventos(start, end);
   const badge = document.getElementById('dashPeriodBadge');
   if (badge) badge.textContent = formatPeriodBadge(start, end);
+  updateDashboardSubtitle();
+
+  // --- Drill-down: armazenar leads filtrados e bind click handlers ---
+  const currentLeads = metrics.current;
+
+  // KPI cards click
+  const kpiTotal = document.querySelector('[data-kpi="total"]');
+  const kpiFin = document.querySelector('[data-kpi="finalizados"]');
+  const kpiAnd = document.querySelector('[data-kpi="andamento"]');
+  const kpiPen = document.querySelector('[data-kpi="pendentes"]');
+  if (kpiTotal) kpiTotal.onclick = () => openDrillDown('status', 'Total', currentLeads);
+  if (kpiFin) kpiFin.onclick = () => openDrillDown('status', 'Finalizados', currentLeads.filter(l => getStatusCategory(l.status) === 'finalizado'));
+  if (kpiAnd) kpiAnd.onclick = () => openDrillDown('status', 'Em Andamento', currentLeads.filter(l => getStatusCategory(l.status) === 'andamento'));
+  if (kpiPen) kpiPen.onclick = () => openDrillDown('status', 'Pendentes', currentLeads.filter(l => getStatusCategory(l.status) === 'pendente'));
+
+  // Origins legend click
+  const originsData = computeOrigins(currentLeads);
+  const origLegend = document.getElementById('originsLegend');
+  if (origLegend) {
+    origLegend.querySelectorAll('li').forEach(li => {
+      li.style.cursor = 'pointer';
+      li.onclick = () => {
+        const origem = li.dataset.origem;
+        if (origem && originsData[origem]) {
+          openDrillDown('origem', origem, originsData[origem].leads);
+        }
+      };
+    });
+  }
+
+  // Temperature rows click
+  const tempData = computeTemperatures(currentLeads);
+  const tempContainer = document.getElementById('tempContainer');
+  if (tempContainer) {
+    tempContainer.querySelectorAll('.temp-row').forEach((row, i) => {
+      row.style.cursor = 'pointer';
+      const tempKeys = ['quente', 'morno', 'frio'];
+      const tempLabels = ['Quente', 'Morno', 'Frio'];
+      row.onclick = () => {
+        const key = tempKeys[i];
+        if (key && tempData[key]) {
+          openDrillDown('thermal', tempLabels[i], tempData[key].leads);
+        }
+      };
+    });
+  }
 }
 
 function renderKpiTotal(t) {
@@ -10150,7 +10603,7 @@ function renderOrigins(originsMap) {
   canvas.style.display = '';
   const ctx = canvas.getContext('2d');
   const total = entries.reduce((s, [, v]) => s + v.count, 0);
-  const colors = ['#165BFF', '#10b981', '#F0A500', '#a855f7', '#94A3B8'];
+  const fallbackColors = ['#165BFF', '#10b981', '#F0A500', '#a855f7', '#94A3B8'];
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.parentElement.offsetWidth - 40;
   canvas.width = w * dpr; canvas.height = 180 * dpr;
@@ -10158,11 +10611,11 @@ function renderOrigins(originsMap) {
   ctx.scale(dpr, dpr);
   const cx = w / 2, cy = 90, r = 70;
   let startAngle = -Math.PI / 2;
-  entries.forEach(([, v], i) => {
+  entries.forEach(([k, v], i) => {
     const slice = (v.count / total) * Math.PI * 2;
     ctx.beginPath(); ctx.moveTo(cx, cy);
     ctx.arc(cx, cy, r, startAngle, startAngle + slice);
-    ctx.closePath(); ctx.fillStyle = colors[i % colors.length]; ctx.fill();
+    ctx.closePath(); ctx.fillStyle = ORIGEM_COLOR[k] || fallbackColors[i % fallbackColors.length]; ctx.fill();
     startAngle += slice;
   });
   ctx.beginPath(); ctx.arc(cx, cy, 38, 0, Math.PI * 2);
@@ -10173,7 +10626,7 @@ function renderOrigins(originsMap) {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(total.toLocaleString('pt-BR'), cx, cy);
   legend.innerHTML = entries.map(([k, v], i) =>
-    `<li><span class="dot" style="background:${colors[i % colors.length]}"></span>${k}: ${v.count}</li>`
+    `<li><span class="dot" style="background:${ORIGEM_COLOR[k] || fallbackColors[i % fallbackColors.length]}"></span>${k}: ${v.count}</li>`
   ).join('');
 }
 
@@ -12031,39 +12484,16 @@ async function loadConversasChats() {
     const waConfig = await waFetchConfig(membroId, ccId);
     _convUpdateConnectionStatus(waConfig);
 
-    // Buscar conversas: admin vê todas do CC, corretor vê as dele + sem dono
+    // Buscar conversas: TODOS (admin e atendente) veem apenas próprias conversas + órfãs (triagem)
     let convData, convError;
-    const isAdmin = isCurrentUserAdmin();
-    if (isAdmin) {
-      const result = await _supabase
-        .from('conversations')
-        .select('id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at')
-        .eq('centros_custo_id', ccId)
-        .order('last_message_at', { ascending: false, nullsFirst: false });
-      convData = result.data;
-      convError = result.error;
-    } else {
-      // Corretor: próprias conversas + conversas sem dono (unassigned)
-      const [ownResult, unassignedResult] = await Promise.all([
-        _supabase
-          .from('conversations')
-          .select('id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at')
-          .eq('centros_custo_id', ccId)
-          .eq('membro_id', membroId)
-          .order('last_message_at', { ascending: false, nullsFirst: false }),
-        _supabase
-          .from('conversations')
-          .select('id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at')
-          .eq('centros_custo_id', ccId)
-          .is('membro_id', null)
-          .order('last_message_at', { ascending: false, nullsFirst: false })
-      ]);
-      convData = [...(ownResult.data || []), ...(unassignedResult.data || [])];
-      convError = ownResult.error || unassignedResult.error;
-      // Deduplicar por conversation id
-      const seen = new Set();
-      convData = convData.filter(c => { if (seen.has(c.id)) return false; seen.add(c.id); return true; });
-    }
+    const result = await _supabase
+      .from('conversations')
+      .select('id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at')
+      .eq('centros_custo_id', ccId)
+      .or(`membro_id.is.null,membro_id.eq.${membroId}`)
+      .order('last_message_at', { ascending: false, nullsFirst: false });
+    convData = result.data;
+    convError = result.error;
 
     if (convError) {
       console.error('[Conversas] Erro ao buscar conversas:', convError);
@@ -13020,9 +13450,8 @@ function _convSubscribeRealtime() {
       const updated = payload.new;
       // Ignorar updates que não são desta empresa
       if (updated.centros_custo_id !== ccId) return;
-      // Admin vê tudo do CC; corretor vê as dele + sem dono
-      const isAdminRT = isCurrentUserAdmin();
-      if (!isAdminRT && updated.membro_id !== membroId && updated.membro_id !== null) return;
+      // REGRA: TODOS (admin e atendente) seguem mesmo isolamento
+      if (updated.membro_id !== membroId && updated.membro_id !== null) return;
 
       const idx = conversasState.allChats.findIndex(c => c._conversationId === updated.id || c.id === updated.id);
       if (idx >= 0) {
@@ -15808,3 +16237,7 @@ window._convVerLeadNoCRM = function(leadId) {
   setActivePage('crm');
   setTimeout(() => { if (typeof openLeadModal === 'function') openLeadModal(leadId); }, 200);
 };
+
+// Expose Permission functions (called from onclick in generated HTML)
+window.applyPerfilDefaults = applyPerfilDefaults;
+window.can = can;
