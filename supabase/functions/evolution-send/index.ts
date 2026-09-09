@@ -6,35 +6,66 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function cleanBase64(data: string): string {
+  if (!data) return ''
+  if (data.includes(';base64,')) {
+    return data.split(';base64,')[1]
+  }
+  return data
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const { membroId, conversationId, contentText, mediaUrl, contentType = 'text', centrosCustoId, number: payloadNumber, instanceName: payloadInstanceName } = await req.json()
+    const body = await req.json()
+    const { membroId, conversationId, contentText, mediaUrl, contentType = 'text', centrosCustoId, number: payloadNumber, instanceName: payloadInstanceName, ptt = false, mimeType, fileName } = body
 
-    console.log('[send] Payload recebido:', { membroId, conversationId, contentType, centrosCustoId, payloadNumber, payloadInstanceName })
+    console.log('[send] Payload recebido:', {
+      membroId,
+      conversationId,
+      contentType,
+      centrosCustoId,
+      payloadNumber: payloadNumber || '(none)',
+      payloadInstanceName: payloadInstanceName || '(none)',
+      ptt,
+      mediaUrlSize: mediaUrl ? `${Math.round(mediaUrl.length / 1024)}KB` : '(none)',
+      mediaUrlPrefix: mediaUrl ? mediaUrl.substring(0, 40) : '(none)'
+    })
 
     if (!membroId || !conversationId || (!contentText && !mediaUrl)) {
+      console.error('[send] Validação falhou: membroId:', !!membroId, 'conversationId:', !!conversationId, 'contentText:', !!contentText, 'mediaUrl:', !!mediaUrl)
       return new Response(JSON.stringify({ error: 'membroId, conversationId e conteúdo são obrigatórios' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    const apiUrl = Deno.env.get('EVOLUTION_API_URL')!
-    const apiKey = Deno.env.get('EVOLUTION_GLOBAL_API_KEY')!
+    const apiUrl = Deno.env.get('EVOLUTION_API_URL') || ''
+    const apiKey = Deno.env.get('EVOLUTION_GLOBAL_API_KEY') || ''
+
+    console.log('[send] Env vars:', { apiUrl: apiUrl ? apiUrl.substring(0, 50) : '(empty)', apiKey: apiKey ? 'SET' : '(empty)' })
 
     if (!apiUrl || !apiKey) {
+      console.error('[send] Variáveis de ambiente não configuradas')
       return new Response(JSON.stringify({ error: 'EVOLUTION_API_URL e EVOLUTION_GLOBAL_API_KEY devem estar configuradas' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const serviceRoleKey = Deno.env.get('SERVICE_ROLE_KEY')!
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
+    const serviceRoleKey = Deno.env.get('SERVICE_ROLE_KEY') || ''
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error('[send] SUPABASE_URL ou SERVICE_ROLE_KEY não configuradas')
+      return new Response(JSON.stringify({ error: 'Variáveis SUPABASE não configuradas' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false }
@@ -52,15 +83,16 @@ serve(async (req) => {
     }
 
     if (!conversation) {
+      console.error('[send] Conversa não encontrada:', conversationId)
       return new Response(JSON.stringify({ error: 'Conversa não encontrada' }), {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    console.log('[send] Conversa encontrada:', { id: conversation.id, ccId: conversation.centros_custo_id, contactId: conversation.contact_id })
+    console.log('[send] Conversa:', { id: conversation.id, ccId: conversation.centros_custo_id, contactId: conversation.contact_id })
 
-    // 2. Buscar contato separadamente
+    // 2. Buscar contato
     const { data: contact, error: contactError } = await supabase
       .from('contacts')
       .select('id, phone')
@@ -71,17 +103,19 @@ serve(async (req) => {
       console.error('[send] Erro ao buscar contato:', contactError)
     }
 
-    const phone = payloadNumber || contact?.phone
+    const rawPhone = payloadNumber || contact?.phone || ''
+    const phone = rawPhone.replace(/\D/g, '')
     if (!phone) {
+      console.error('[send] Telefone não encontrado. payloadNumber:', payloadNumber, 'contact.phone:', contact?.phone)
       return new Response(JSON.stringify({ error: 'Telefone do contato não encontrado' }), {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    console.log('[send] Telefone do contato:', phone)
+    console.log('[send] Telefone:', phone)
 
-    // 3. Buscar instância do WhatsApp
+    // 3. Buscar config WhatsApp
     const effectiveCCId = centrosCustoId || conversation.centros_custo_id
 
     let configQuery = supabase
@@ -103,7 +137,7 @@ serve(async (req) => {
     }
 
     if (!config) {
-      console.error('[send] Config não encontrada. effectiveCCId:', effectiveCCId, 'membroId:', membroId)
+      console.error('[send] Config não encontrada. ccId:', effectiveCCId, 'membroId:', membroId)
       return new Response(JSON.stringify({ error: 'WhatsApp não conectado para este centro de custo' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -112,116 +146,186 @@ serve(async (req) => {
 
     const instanceName = payloadInstanceName || config?.provider_config?.instanceName
     if (!instanceName) {
-      console.error('[send] instanceName não encontrado. payload:', payloadInstanceName, 'config:', config?.provider_config)
+      console.error('[send] instanceName não encontrado. payload:', payloadInstanceName, 'provider_config:', config?.provider_config)
       return new Response(JSON.stringify({ error: 'InstanceName não encontrado na config' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    console.log('[send] Config encontrada. instanceName:', instanceName)
+    console.log('[send] instanceName:', instanceName)
 
-    // 4. Enviar mensagem via Evolution API
-    const jid = `${phone}@s.whatsapp.net`
+    // 4. Montar payload para Evolution API
     let apiUrlEndpoint = ''
     let payload: Record<string, any> = {}
 
     if (contentType === 'text' || !mediaUrl) {
       apiUrlEndpoint = `${apiUrl}/message/sendText/${instanceName}`
       payload = {
-        number: jid,
+        number: phone,
         text: contentText || ''
+      }
+    } else if (contentType === 'audio' || ptt) {
+      apiUrlEndpoint = `${apiUrl}/message/sendWhatsAppAudio/${instanceName}`
+      payload = {
+        number: phone,
+        audio: cleanBase64(mediaUrl)
       }
     } else if (contentType === 'image') {
       apiUrlEndpoint = `${apiUrl}/message/sendMedia/${instanceName}`
       payload = {
-        number: jid,
+        number: phone,
         mediatype: 'image',
-        media: mediaUrl,
+        mimetype: mimeType || 'image/jpeg',
+        media: cleanBase64(mediaUrl),
         caption: contentText || ''
       }
     } else if (contentType === 'video') {
       apiUrlEndpoint = `${apiUrl}/message/sendMedia/${instanceName}`
       payload = {
-        number: jid,
+        number: phone,
         mediatype: 'video',
-        media: mediaUrl,
+        mimetype: mimeType || 'video/mp4',
+        media: cleanBase64(mediaUrl),
         caption: contentText || ''
-      }
-    } else if (contentType === 'audio') {
-      apiUrlEndpoint = `${apiUrl}/message/sendMedia/${instanceName}`
-      payload = {
-        number: jid,
-        mediatype: 'audio',
-        media: mediaUrl
       }
     } else if (contentType === 'document') {
       apiUrlEndpoint = `${apiUrl}/message/sendMedia/${instanceName}`
       payload = {
-        number: jid,
+        number: phone,
         mediatype: 'document',
-        media: mediaUrl,
-        fileName: contentText || 'documento'
+        mimetype: mimeType || 'application/pdf',
+        media: cleanBase64(mediaUrl),
+        fileName: fileName || contentText || 'documento'
       }
     } else {
       apiUrlEndpoint = `${apiUrl}/message/sendText/${instanceName}`
       payload = {
-        number: jid,
+        number: phone,
         text: contentText || ''
       }
     }
 
-    console.log('[send] Enviando para Evolution API:', { endpoint: apiUrlEndpoint, number: jid, type: contentType })
+    // Log do payload (truncar media para não explodir o console)
+    const logPayload = { ...payload }
+    if (logPayload.media && logPayload.media.length > 100) {
+      logPayload.media = logPayload.media.substring(0, 60) + `... (${Math.round(logPayload.media.length / 1024)}KB)`
+    }
+    console.log('[send] → Evolution API:', { endpoint: apiUrlEndpoint, payload: logPayload })
 
-    const sendResponse = await fetch(apiUrlEndpoint, {
-      method: 'POST',
-      headers: {
-        'apikey': apiKey,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    })
-
-    const errText = await sendResponse.text()
-    console.log('[send] Resposta Evolution API:', { status: sendResponse.status, body: errText })
-
-    if (!sendResponse.ok) {
-      return new Response(JSON.stringify({ error: `Erro ao enviar: ${errText}` }), {
-        status: 500,
+    // 5. Chamar Evolution API
+    let sendResponse: Response
+    try {
+      sendResponse = await fetch(apiUrlEndpoint, {
+        method: 'POST',
+        headers: {
+          'apikey': apiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      })
+    } catch (fetchErr) {
+      console.error('[send] Fetch exception:', fetchErr)
+      return new Response(JSON.stringify({
+        error: 'Falha ao conectar com Evolution API',
+        details: fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
+      }), {
+        status: 502,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    let sendData
-    try { sendData = JSON.parse(errText) } catch { sendData = {} }
-    const externalMsgId = sendData.key?.id || sendData.id || ''
-
-    // 5. Salvar mensagem no banco
-    const { data: savedMsg, error: msgError } = await supabase
-      .from('messages')
-      .insert([{
-        conversation_id: conversationId,
-        membro_id: membroId,
-        sender_type: 'member',
-        content_type: contentType,
-        content_text: contentText || '',
-        media_url: mediaUrl || '',
-        message_id: externalMsgId,
-        status: 'sent',
-        created_at: new Date().toISOString()
-      }])
-      .select('id')
-      .single()
-
-    if (msgError) {
-      console.error('[send] Erro ao salvar mensagem:', msgError)
+    // Fallback: se sendWhatsAppAudio retornou 404, tentar via sendMedia
+    if (!sendResponse.ok && sendResponse.status === 404 && (contentType === 'audio' || ptt)) {
+      console.log('[send] sendWhatsAppAudio retornou 404, tentando fallback via sendMedia')
+      apiUrlEndpoint = `${apiUrl}/message/sendMedia/${instanceName}`
+      payload = {
+        number: phone,
+        mediatype: 'audio',
+        mimetype: mimeType || 'audio/ogg; codecs=opus',
+        media: cleanBase64(mediaUrl),
+        ptt: true
+      }
+      try {
+        sendResponse = await fetch(apiUrlEndpoint, {
+          method: 'POST',
+          headers: {
+            'apikey': apiKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        })
+      } catch (fetchErr) {
+        console.error('[send] Fallback fetch exception:', fetchErr)
+        return new Response(JSON.stringify({
+          error: 'Falha ao conectar com Evolution API (fallback)',
+          details: fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
+        }), {
+          status: 502,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
     }
 
-    console.log('[send] Mensagem enviada e salva:', { conversationId, phone, contentType })
+    const evoResponseText = await sendResponse.text()
+    console.log('[send] ← Evolution API:', {
+      status: sendResponse.status,
+      ok: sendResponse.ok,
+      body: evoResponseText.substring(0, 500)
+    })
+
+    if (!sendResponse.ok) {
+      console.error('[send] ✗ Evolution API erro:', sendResponse.status, evoResponseText)
+      return new Response(JSON.stringify({
+        error: 'Evolution API retornou erro',
+        status: sendResponse.status,
+        details: evoResponseText
+      }), {
+        status: 502,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    let sendData: Record<string, any>
+    try { sendData = JSON.parse(evoResponseText) } catch { sendData = {} }
+    const externalMsgId = sendData.key?.id || sendData.id || ''
+
+    console.log('[send] ✓ Enviado. externalMsgId:', externalMsgId)
+
+    // 6. Salvar mensagem no banco (protegido)
+    const mimeTypes: Record<string, string> = {
+      image: 'image/jpeg',
+      video: 'video/mp4',
+      audio: 'audio/ogg; codecs=opus',
+      document: 'application/pdf'
+    }
+
+    try {
+      const { error: msgError } = await supabase
+        .from('messages')
+        .insert([{
+          conversation_id: conversationId,
+          membro_id: membroId,
+          sender_type: 'member',
+          content_type: contentType,
+          content_text: contentText || '',
+          media_url: mediaUrl || '',
+          mime_type: mimeTypes[contentType] || null,
+          message_id: externalMsgId,
+          status: 'sent',
+          created_at: new Date().toISOString()
+        }])
+
+      if (msgError) {
+        console.error('[send] DB insert error (não crítico):', msgError)
+      }
+    } catch (dbErr) {
+      console.error('[send] DB exception (não crítico):', dbErr)
+    }
 
     return new Response(JSON.stringify({
       success: true,
-      messageId: savedMsg?.id,
+      messageId: null,
       externalMessageId: externalMsgId
     }), {
       status: 200,
@@ -229,7 +333,7 @@ serve(async (req) => {
     })
 
   } catch (err) {
-    console.error('[send] Erro geral:', err.message, err.stack)
+    console.error('[send] ERRO GERAL:', err.message, err.stack)
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

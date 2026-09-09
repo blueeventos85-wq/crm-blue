@@ -1872,7 +1872,7 @@ function renderCadenciaVisibilityTable(allCadences) {
   tbody.innerHTML = '';
   allCadences.forEach(cad => {
     if (!cad.uuid) {
-      console.warn('[CadVis] Cadência sem UUID mapeado:', cad.slug, cad.label);
+      console.warn('[CadVis] Cadência sem UUID:', cad.label);
     }
     const tr = document.createElement('tr');
     const checksHtml = CADENCIA_VIS_PERFIS.map(perfil => {
@@ -1883,7 +1883,7 @@ function renderCadenciaVisibilityTable(allCadences) {
         <input type="checkbox" class="cad-vis-check" data-cadencia-uuid="${cad.uuid || ''}" data-perfil="${perfil}" ${checked ? 'checked' : ''} ${disabled ? 'disabled title="Administrador sempre vê todas"' : ''} ${!cad.uuid ? 'disabled title="Cadência não encontrada no banco"' : ''} />
       </td>`;
     }).join('');
-    tr.innerHTML = `<td><strong>${escapeHtml(cad.label)}</strong><span style="color:var(--gray-400);font-size:11px;margin-left:6px">${cad.slug}</span></td>${checksHtml}`;
+    tr.innerHTML = `<td><strong>${escapeHtml(cad.label)}</strong></td>${checksHtml}`;
     tbody.appendChild(tr);
   });
 
@@ -5508,66 +5508,19 @@ function initTimeTracker() {
 
 /* ============================================
    CRM · DADOS
+   Colunas do Kanban são 100% dinâmicas (tabela cadencias).
    ============================================ */
-const cadences = [
-  { id: 'novo-lead',          label: 'NOVO LEAD',           short: 'Novo Lead',          color: '#165BFF' },
-  { id: 'dados-ia',           label: 'DADOS IA',            short: 'Dados IA',           color: '#94A3B8' },
-  { id: 'coletados-frio',     label: 'COLETADOS FRIOS',     short: 'Coletados Frios',    color: '#6E8FFF' },
-  { id: 'qualificado',        label: 'QUALIFICADO IA',      short: 'Qualificado IA',     color: '#4D80FF' },
-  { id: 'em-atendimento',     label: 'AGUARDANDO RESPOSTA', short: 'Aguardando Resposta', color: '#2563EB' },
-  { id: 'geladeira',          label: 'EM ATENDIMENTO',      short: 'Em Atendimento',     color: '#CBD5E1' },
-  { id: 'stand-by',           label: 'FOLLOW-UP 1',         short: 'Follow-up 1',        color: '#94A3B8' },
-  { id: 'diagnostico-gratis', label: 'FOLLOW-UP 2',         short: 'Follow-up 2',        color: '#2563EB' },
-  { id: 'reuniao-agendada',   label: 'FOLLOW-UP 3',         short: 'Follow-up 3',        color: '#1D4ED8' },
-  { id: 'reuniao-realizada',  label: 'FOLLOW-UP 4',         short: 'Follow-up 4',        color: '#1E40AF' },
-  { id: 'contrato-enviado',   label: 'CONTRATO ENVIADO',    short: 'Contrato Enviado',   color: '#06B6D4' },
-  { id: 'contrato-fechado',   label: 'PARCEIROS',           short: 'Parceiros',          color: '#A855F7' },
-  { id: 'cobranca-enviada',   label: 'STANDY-BY',           short: 'Standy-by',          color: '#F59E0B' },
-  { id: 'pagamento-recebido', label: 'GELADEIRA',           short: 'Geladeira',          color: '#1E40AF' },
-  { id: 'servico-executado',  label: 'ACOMPANHAMENTO',      short: 'Acompanhamento',     color: '#10B981' },
-  { id: 'pos-vendas',         label: 'GERAÇÃO DE CONTRATO', short: 'Geração de Contrato', color: '#10B981' }
-];
-
-// Mapeamento fixo: slug da coluna Kanban → UUID real da tabela cadencias no Supabase
-// IMPORTANTE: Execute migration_novo_lead_cadencia.sql e substitua o UUID abaixo
-const mapaCadencias = {
-  "novo-lead": "50dafcf2-00d1-491d-9297-98bf0906f5c4",
-  "dados-ia": "3cf00875-b5e8-471b-8dd7-c389f8c9d22a",
-  "coletados-frio": "509aa84e-5bcb-43f6-ba63-96ceee4adf3b",
-  "qualificado": "0ec70bba-f34b-4658-a95a-1463ed621d86",
-  "aguardando-resposta": "1a18bc95-3aaf-4de1-8d9e-efab7762fee0",
-  "em-atendimento": "61182408-299b-49cc-9ce6-91bf9b4be190",
-  "geladeira": "74426e6b-e5cb-40bd-9c01-04f8a71a8b27",
-  "stand-by": "2b543a5f-eeba-4256-8043-84e8a93ed469",
-  "diagnostico-gratis": "8c58c670-7cdc-486d-88dd-1f746d2e554d",
-  "follow-up-1": "4847febb-1a1c-4a0c-a988-85d72309bce2",
-  "follow-up-2": "8c58c670-7cdc-486d-88dd-1f746d2e554d",
-  "follow-up-3": "4e1eee02-ede7-433a-bf7b-60144ed496b8",
-  "follow-up-4": "ac1c4d91-3964-44cc-b375-3f67e2252a7f",
-  "reuniao-agendada": "4e1eee02-ede7-433a-bf7b-60144ed496b8",
-  "reuniao-realizada": "ac1c4d91-3964-44cc-b375-3f67e2252a7f",
-  "contrato-enviado": "87fdfa17-c356-4363-b036-b703fcdf8a24",
-  "contrato-fechado": "87fdfa17-c356-4363-b036-b703fcdf8a24",
-  "cobranca-enviada": "2b543a5f-eeba-4256-8043-84e8a93ed469",
-  "pagamento-recebido": "74426e6b-e5cb-40bd-9c01-04f8a71a8b27",
-  "servico-executado": "a914c5c0-c5cc-4bca-9a13-91eb827abf0d",
-  "acompanhamento": "a914c5c0-c5cc-4bca-9a13-91eb827abf0d",
-  "pos-vendas": "1c8d3c69-442a-49bf-9eef-9840f4e8d415",
-  "geracao-de-contrato": "1c8d3c69-442a-49bf-9eef-9840f4e8d415"
-};
-window.mapaCadencias = mapaCadencias;
 
 function getVisibleCadences(centroCustoId) {
-  // Use database cadencias ordered by ordem
+  // Colunas 100% dinâmicas — fonte: tabela cadencias no Supabase
   let dbCadencias = getDbCadencias();
   
-  // If DB cadencias not loaded yet, fall back to hardcoded array
   if (dbCadencias.length === 0) {
-    dbCadencias = cadences.map(c => ({ id: c.id, nome: c.label, cor: c.color, ordem: 0 }));
+    console.warn('[CRM] Nenhuma cadência carregada do banco');
+    return [];
   }
   
-  // Apply visibility filtering for non-admins (works for both DB and fallback data)
-  // Allow by default: only block cadences with explicit visible=false for this perfil
+  // Apply visibility filtering for non-admins
   let visible = dbCadencias.map(dbCadenciaToCrmFormat);
   
   if (!isCurrentUserAdmin() && _cadenciaVisibilityData.length > 0) {
@@ -5649,29 +5602,19 @@ function getDbCadencias() {
   return _dbCadenciasCache;
 }
 
-// Build reverse map: UUID -> slug (kanban column ID)
-function buildUuidToSlugMap() {
-  const map = {};
-  if (typeof mapaCadencias !== 'undefined' && mapaCadencias) {
-    Object.entries(mapaCadencias).forEach(([slug, uuid]) => {
-      map[uuid] = slug;
-    });
-  }
-  return map;
-}
-
-const _uuidToSlugMap = buildUuidToSlugMap();
-
 function dbCadenciaToCrmFormat(dbCadencia) {
-  const slug = _uuidToSlugMap[dbCadencia.id] || dbCadencia.id;
   return {
     id: dbCadencia.id,
-    slug: slug,
     label: dbCadencia.nome,
     short: dbCadencia.nome.length > 12 ? dbCadencia.nome.substring(0, 12) + '…' : dbCadencia.nome,
     color: dbCadencia.cor || '#3B82F6',
     ordem: dbCadencia.ordem
   };
+}
+
+function getFirstCadenciaId() {
+  const sorted = [..._dbCadenciasCache].sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+  return sorted.length > 0 ? sorted[0].id : null;
 }
 
 // Helper to get cadence info by UUID from database cache
@@ -5847,9 +5790,9 @@ let kanbanExpanded = {};
    ============================================
    Tanto o "Resumo por Cadência" quanto o "Pipeline de Leads"
    derivam seus contadores daqui:
-   - `cadences`   → define as cadências (id + label + short)
-   - `leads`      → fonte primária dos dados
-   - `getVisibleLeads()` → aplica os filtros ativos (cadência + busca)
+   - `getVisibleCadences()` → define as colunas dinâmicas (UUID + label + color)
+   - `leads`                → fonte primária dos dados
+   - `getVisibleLeads()`    → aplica os filtros ativos (cadência + busca)
    Qualquer mutation em `leads` (criar / mover / excluir / editar) deve
    chamar `renderAll()` para que ambos os componentes atualizem juntos.
    ============================================ */
@@ -5864,11 +5807,7 @@ function getVisibleLeads() {
   const q = leadSearchQuery.toLowerCase().trim();
   return leads.filter(l => {
     if (activeCadenceFilter && l.status !== activeCadenceFilter) {
-      // Also check if the active filter is a slug that matches this lead's status
-      const filterCadence = getVisibleCadences(currentCrmEmpresaFilter).find(c => c.id === activeCadenceFilter || c.slug === activeCadenceFilter);
-      if (!filterCadence || (l.status !== filterCadence.id && l.status !== filterCadence.slug)) {
-        return false;
-      }
+      return false;
     }
     if (q && !l.empresa.toLowerCase().includes(q) && !l.telefone.includes(q) && !l.cnpj.includes(q)) return false;
     return true;
@@ -5878,10 +5817,9 @@ function getVisibleLeads() {
 function cadencesSummary() {
   const allLeads = getSearchFilteredLeads();
   return getVisibleCadences(currentCrmEmpresaFilter).map(c => {
-    // Match by UUID (c.id) OR slug (c.slug) for backward compatibility
-    const list = allLeads.filter(l => l.status === c.id || l.status === c.slug);
+    const list = allLeads.filter(l => l.status === c.id);
     const value = list.reduce((s, l) => s + (l.honorarios || 0), 0);
-    return { id: c.id, label: c.short, count: list.length, value, color: c.color };
+    return { id: c.id, label: c.label, count: list.length, value, color: c.color };
   });
 }
 
@@ -6129,27 +6067,25 @@ function renderKanban() {
   const allLeads = getSearchFilteredLeads();
 
   board.innerHTML = getVisibleCadences(currentCrmEmpresaFilter).map(c => {
-    // Match leads by UUID (c.id) OR by slug (c.slug) for backward compatibility
-    const list = allLeads.filter(l => l.status === c.id || l.status === c.slug);
+    const list = allLeads.filter(l => l.status === c.id);
     const total = list.length;
     const totalFat = list.reduce((a, l) => a + (Number(l.honorarios) || 0), 0);
-    const isHighlighted = activeCadenceFilter === c.id || activeCadenceFilter === c.slug;
-    const expanded = kanbanExpanded[c.id] || kanbanExpanded[c.slug] || VISIBLE_CARDS_PER_COLUMN;
+    const isHighlighted = activeCadenceFilter === c.id;
+    const expanded = kanbanExpanded[c.id] || VISIBLE_CARDS_PER_COLUMN;
     const showCount = Math.min(total, expanded);
     const visibleList = list.slice(0, showCount);
     const hasMore = total > showCount;
     const remaining = total - showCount;
     const cards = visibleList.map(l => leadCardHTML(l)).join('');
     const colColor = c.color || '#3B82F6';
-    // Use UUID as data-cadence for consistency, but drop-zone accepts both
     return `
-      <div class="kanban-col${isHighlighted ? ' kanban-col-highlight' : ''}" data-cadence="${c.id}" data-cadence-slug="${c.slug}" style="--cadence-color: ${colColor};">
+      <div class="kanban-col${isHighlighted ? ' kanban-col-highlight' : ''}" data-cadence="${c.id}" style="--cadence-color: ${colColor};">
         <div class="kanban-col-head">
-          <span class="kanban-col-title" title="${c.label}">${c.short}</span>
+          <span class="kanban-col-title">${c.label}</span>
           <span class="kanban-col-count" aria-label="${total} leads">${total}</span>
           ${totalFat > 0 ? `<span class="kanban-col-fat" title="Faturamento total">${formatBRL(totalFat)}</span>` : ''}
         </div>
-        <div class="kanban-col-list" data-drop-zone="${c.id}" data-drop-zone-slug="${c.slug}">
+        <div class="kanban-col-list" data-drop-zone="${c.id}">
           ${cards || '<div class="kanban-empty">Nenhum lead nesta etapa</div>'}
           ${hasMore ? `
             <button type="button"
@@ -6187,17 +6123,8 @@ function expandCadence(cadenceId) {
   renderKanban();
 
   // Acessibilidade: anuncia para leitores de tela quantos cards estão visíveis agora
-  // Match by UUID or slug for backward compatibility
-  const cadence = getDbCadencias().find(c => c.id === cadenceId);
-  const matchSlug = cadence ? _uuidToSlugMap[cadenceId] : null;
-  const visibleCount = Math.min(next, getSearchFilteredLeads().filter(l => l.status === cadenceId || (matchSlug && l.status === matchSlug)).length);
+  const visibleCount = Math.min(next, getSearchFilteredLeads().filter(l => l.status === cadenceId).length);
   announce(`${visibleCount} leads visíveis nesta etapa`);
-}
-
-// Also support expanding by slug (backward compatibility)
-function expandCadenceBySlug(slug) {
-  const cadence = getDbCadencias().find(c => _uuidToSlugMap[c.id] === slug || c.id === slug);
-  if (cadence) expandCadence(cadence.id);
 }
 
 function bindLoadMore() {
@@ -6729,23 +6656,14 @@ async function handleChangeCadence(cadenceId) {
   lead.lastTouch = new Date().toLocaleDateString('pt-BR');
   invalidateDashCache();
 
-  const _cadMap = window._cadenciaColToUuid || {};
-  let newCadenciaUuid = _cadMap[cadenceId] || null;
-
-  if (!newCadenciaUuid && typeof mapaCadencias !== 'undefined') {
-    newCadenciaUuid = mapaCadencias[cadenceId] || null;
-  }
-
-  if (newCadenciaUuid) {
-    lead._cadenciaId = newCadenciaUuid;
-  // Update owner to current user to keep lead visible for the attendant
+  // cadenceId já é o UUID da cadência (vem da journey bar ou kanban)
+  lead._cadenciaId = cadenceId;
   lead.owner_id = currentUser.id || null;
-  const updates = { cadencia_id: newCadenciaUuid };
+  const updates = { cadencia_id: cadenceId };
   if (lead.owner_id) updates.owner_id = lead.owner_id;
   updateLeadSupabase(lead.id, updates)
-    .then(() => console.log('[Journey] cadencia_id e owner_id salvo:', newCadenciaUuid, lead.owner_id))
+    .then(() => console.log('[Journey] cadencia_id e owner_id salvo:', cadenceId, lead.owner_id))
     .catch(err => console.error('[Journey] Erro ao salvar cadencia_id/owner_id:', err));
-  }
 
   if (lead.id && oldStatus && cadenceId && oldStatus !== cadenceId) {
     try {
@@ -7448,14 +7366,14 @@ async function saveLead() {
       _ownerId: currentUser.id || null,
       _membroId: null,
       _centroCustoId: fields.empresaId || null,
-      status: 'novo-lead',
+      status: getFirstCadenciaId(),
       thermal: fields.thermal || 'frio',
       honorarios: fields.honorarios,
       servicos: [],
       dataEvento: fields.dataEvento,
       tiposServico: fields.tiposServico,
       _tipoServicoIds: fields.tiposServico.map(name => _servicosByName[name]?.id).filter(Boolean),
-      _cadenciaId: (window._cadenciaColToUuid || {})['novo-lead'] || (typeof mapaCadencias !== 'undefined' ? mapaCadencias['novo-lead'] : null) || null,
+      _cadenciaId: getFirstCadenciaId(),
       enderecoEvento: fields.enderecoEvento || '',
       enderecoResidencial: fields.enderecoResidencial || '',
       bairro: fields.bairro || '',
@@ -7605,7 +7523,7 @@ async function saveLead() {
         if (ids.length > 0) payload.tipo_servico_id = ids;
       }
 
-      const cadUuid = (window._cadenciaColToUuid || {})[lead.status] || (typeof mapaCadencias !== 'undefined' ? mapaCadencias[lead.status] : null) || lead._cadenciaId;
+      const cadUuid = lead.status || lead._cadenciaId;
       if (cadUuid) payload.cadencia_id = cadUuid;
 
       console.log('[Edit] Payload para Supabase:', JSON.stringify(payload, null, 2));
@@ -8113,45 +8031,20 @@ async function _loadUnreadCount() {
     
     console.log('[Notif] Loading unread count:', { userCCIds, userMembroId, isAdmin, perfil: currentUser?.perfil });
     
-    // Buscar conversas das empresas do usuário + órfãs (sem empresa)
-    // REGRA: Admin e atendente seguem a mesma regra - isolamento rigoroso + triagem
+    // Buscar conversas do usuário — isolamento total
     let query = _supabase
       .from('conversations')
       .select('id, unread_count, lead_id, contact_id, centros_custo_id, membro_id')
       .eq('status', 'open')
-      .gt('unread_count', 0);
-    
-    // Filtro por empresa: empresas do usuário + órfãs (sem empresa)
-    if (userCCIds.length > 0) {
-      query = query.or(`centros_custo_id.in.(${userCCIds.join(',')}),centros_custo_id.is.null`);
-    } else {
-      query = query.is('centros_custo_id', null);
-    }
-    // Filtro rigoroso de membro_id: apenas conversas do usuário OU sem dono (triagem)
-    query = query.or(`membro_id.is.null,membro_id.eq.${userMembroId}`);
+      .gt('unread_count', 0)
+      .eq('membro_id', userMembroId);
     
     const { data, error } = await query;
     if (error) { console.error('[Notif] Erro ao buscar não-lidas:', error.message); return; }
     
-    // Client-side filter mantido como segurança adicional
+    // Client-side filter: isolamento total
     let filteredData = (data || []).filter(conv => {
-      const convCCId = conv.centros_custo_id;
-      const convMembroId = conv.membro_id;
-      
-      // Sem empresa: só inclui se também não tem dono (órfã total)
-      if (!convCCId) {
-        return convMembroId === null;
-      }
-      
-      // Tem empresa: isolamento rigoroso (admin e atendente igual)
-      // Dono da conversa
-      if (convMembroId && convMembroId === userMembroId) return true;
-      
-      // Órfã de dono -> triagem
-      if (convMembroId === null) return true;
-      
-      // De outro atendente -> exclui
-      return false;
+      return conv.membro_id === userMembroId;
     });
     
     const totalUnread = filteredData.reduce((sum, c) => sum + (c.unread_count || 0), 0);
@@ -8429,16 +8322,6 @@ function renderDrillDown() {
   }
   if (emptyEl) emptyEl.hidden = true;
 
-  const cadenceLabels = {
-    'novo-lead': 'Novo Lead', 'dados-ia': 'Dados IA', 'coletados-frio': 'Coletados Frio',
-    'geladeira': 'Geladeira', 'stand-by': 'Stand-by', 'qualificado': 'Qualificado',
-    'em-atendimento': 'Em Atendimento', 'diagnostico-gratis': 'Diagnóstico Grátis',
-    'reuniao-agendada': 'Reunião Agendada', 'reuniao-realizada': 'Reunião Realizada',
-    'contrato-fechado': 'Contrato Fechado', 'cobranca-enviada': 'Cobrança Enviada',
-    'pagamento-recebido': 'Pagamento Recebido', 'servico-executado': 'Serviço Executado',
-    'pos-vendas': 'Pós-Vendas'
-  };
-
   if (tbody) {
     tbody.innerHTML = leads.map(l => `
       <tr class="lead-row-clickable" data-lead-id="${l.id}">
@@ -8446,7 +8329,7 @@ function renderDrillDown() {
         <td>${escapeHtml(l.telefone || '')}</td>
         <td>${escapeHtml(normalizeOrigin(l.origem))}</td>
         <td><span class="drill-thermal-tag ${l.thermal || 'frio'}">${escapeHtml(l.thermal || 'frio')}</span></td>
-        <td><span class="drill-cadencia-tag">${cadenceLabels[l.status] || l.status || '—'}</span></td>
+        <td><span class="drill-cadencia-tag">${escapeHtml(getCadenciaLabelById(l.status))}</span></td>
       </tr>
     `).join('');
   }
@@ -8724,9 +8607,9 @@ function computeReminders(leads) {
 }
 
 function computeHonorarios(leads) {
-  const honLeads = leads.filter(l => (l.status || '') === 'pos-vendas');
+  const honLeads = leads.filter(l => (l.status || '') !== null);
   const total = honLeads.reduce((s, l) => s + (l.honorarios || 0), 0);
-  const byCadence = cadences
+  const byCadence = getVisibleCadences(currentCrmEmpresaFilter)
     .map(c => {
       const ls = honLeads.filter(l => l.status === c.id);
       return { id: c.id, label: c.label, value: ls.reduce((s, l) => s + (l.honorarios || 0), 0), count: ls.length };
@@ -12437,7 +12320,9 @@ const conversasState = {
   realtimeChannel: null,
   selectedCentroCustoId: null,
   centrosCustoList: [],
-  waStatus: 'disconnected'
+  waStatus: 'disconnected',
+  instanceName: null,
+  _loadAbortController: null
 };
 
 /* Navegação pendente: CRM → Conversas (deep-link) */
@@ -12467,6 +12352,14 @@ async function loadConversasChats() {
   const list = $('#convChatList');
   if (!list) return;
 
+  // Abortar requisição anterior se houver
+  if (conversasState._loadAbortController) {
+    conversasState._loadAbortController.abort();
+  }
+  const abortController = new AbortController();
+  conversasState._loadAbortController = abortController;
+  const signal = abortController.signal;
+
   try {
     const membroId = currentUser.id;
     const ccId = conversasState.selectedCentroCustoId;
@@ -12475,25 +12368,38 @@ async function loadConversasChats() {
     if (!ccId) {
       conversasState.allChats = [];
       conversasState.chats = [];
+      conversasState.instanceName = null;
       _renderConvChatList();
       list.innerHTML = '<div class="conv-empty-state"><p>Selecione uma empresa para ver as conversas.</p></div>';
       return;
     }
 
-    // Buscar WhatsApp status
+    // Buscar WhatsApp status + instanceName
     const waConfig = await waFetchConfig(membroId, ccId);
     _convUpdateConnectionStatus(waConfig);
 
-    // Buscar conversas: TODOS (admin e atendente) veem apenas próprias conversas + órfãs (triagem)
+    // Extrair instanceName da config
+    if (waConfig?.provider_config?.instanceName) {
+      conversasState.instanceName = waConfig.provider_config.instanceName;
+    } else {
+      conversasState.instanceName = null;
+    }
+
+    if (signal.aborted) return;
+
+    // Buscar conversas: VISIBILIDADE ESTRTA — apenas conversas do próprio membro
     let convData, convError;
+    console.log('[Conversas] Query:', { ccId, membroId });
     const result = await _supabase
       .from('conversations')
       .select('id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at')
       .eq('centros_custo_id', ccId)
-      .or(`membro_id.is.null,membro_id.eq.${membroId}`)
+      .eq('membro_id', membroId)
       .order('last_message_at', { ascending: false, nullsFirst: false });
     convData = result.data;
     convError = result.error;
+
+    if (signal.aborted) return;
 
     if (convError) {
       console.error('[Conversas] Erro ao buscar conversas:', convError);
@@ -12514,6 +12420,8 @@ async function loadConversasChats() {
       (contactsData || []).forEach(c => { contactsMap[c.id] = c; });
     }
 
+    if (signal.aborted) return;
+
     // Buscar leads vinculados às conversas
     const rawLeadIds = (convData || []).map(c => c.lead_id);
     const leadIds = [...new Set(rawLeadIds.filter(_isValidUUID))];
@@ -12532,6 +12440,8 @@ async function loadConversasChats() {
         (allLeads || []).forEach(l => { if (leadIdSet.has(l.id)) leadsMap[l.id] = l; });
       }
     }
+
+    if (signal.aborted) return;
 
     // Mapear para formato compativel com a UI
     conversasState.allChats = (convData || []).map(c => {
@@ -12696,6 +12606,7 @@ function _convUpdateComposerState() {
   const sendBtn = $('#convSendBtn');
   const attachBtn = $('#btnConvAttach');
   const emojiBtn = $('#btnConvEmoji');
+  const micBtn = $('#btnConvMic');
   const composer = $('#convComposer');
   const isDisconnected = conversasState.waStatus !== 'connected';
 
@@ -12706,6 +12617,7 @@ function _convUpdateComposerState() {
   if (sendBtn) sendBtn.disabled = isDisconnected;
   if (attachBtn) attachBtn.disabled = isDisconnected;
   if (emojiBtn) emojiBtn.disabled = isDisconnected;
+  if (micBtn) micBtn.disabled = isDisconnected;
   if (composer) composer.classList.toggle('conv-composer--disabled', isDisconnected);
 }
 
@@ -12833,15 +12745,99 @@ async function _convLoadMessages(chatId) {
   try {
     const { data, error } = await _supabase
       .from('messages')
-      .select('id, conversation_id, membro_id, sender_type, content_type, content_text, media_url, status, created_at')
+      .select('id, conversation_id, membro_id, sender_type, content_type, content_text, media_url, mime_type, message_id, status, created_at')
       .eq('conversation_id', chatId)
       .order('created_at', { ascending: true });
-    if (error) throw error;
+    if (error) {
+      console.error('[Conversas] Erro na query messages:', error);
+      throw error;
+    }
     conversasState.messages = data || [];
+    console.log('[Conversas] Mensagens carregadas:', data?.length || 0);
     _renderConvMessages();
   } catch (err) {
     console.error('[Conversas] Erro ao carregar mensagens:', err);
-    container.innerHTML = '<div class="conv-empty-state"><p>Erro ao carregar mensagens</p></div>';
+    container.innerHTML = `<div class="conv-empty-state"><p>Erro ao carregar mensagens</p><p style="font-size:12px;color:#999;margin-top:8px;">${escapeHtml(String(err.message || err))}</p></div>`;
+  }
+}
+
+/* ---------- media: resolver URL de mídia ---------- */
+function _convResolveMediaUrl(url, contentType, messageId, mimeType) {
+  const supabaseUrl = (_supabase && _supabase.supabaseUrl) || '';
+  if (!supabaseUrl) return url || '';
+  const proxyBase = `${supabaseUrl}/functions/v1/evolution-media-proxy`;
+  const anonKey = window.__SUPABASE_ANON_KEY || '';
+  const instName = conversasState.instanceName || '';
+
+  // Se não há URL, mas há messageId — usar fallback via proxy
+  if ((!url || url === '') && messageId) {
+    if (!instName) {
+      console.warn('[media] instanceName não disponível para fallback');
+      return '';
+    }
+    let fallbackUrl = `${proxyBase}?messageId=${encodeURIComponent(String(messageId))}&instanceName=${encodeURIComponent(instName)}`;
+    if (anonKey) fallbackUrl += `&key=${encodeURIComponent(anonKey)}`;
+    if (contentType || mimeType) fallbackUrl += `&contentType=${encodeURIComponent(mimeType || contentType || '')}`;
+    return fallbackUrl;
+  }
+
+  if (!url || typeof url !== 'string') return '';
+  // Já é data URI — retornar direto
+  if (url.startsWith('data:')) return url;
+  // Base64 puro (sem prefixo) — adicionar MIME type
+  if (/^[A-Za-z0-9+/=\s]{100,}$/.test(url.trim())) {
+    const mime = mimeType ||
+      (contentType === 'image' ? 'image/jpeg' :
+      contentType === 'audio' ? 'audio/ogg' :
+      contentType === 'video' ? 'video/mp4' :
+      'application/octet-stream');
+    return `data:${mime};base64,${url.trim()}`;
+  }
+  // URL externa (Evolution API) — proxy via Edge Function com auth
+  if (url.startsWith('http')) {
+    if (!anonKey) console.warn('[media] window.__SUPABASE_ANON_KEY is empty');
+    let proxyUrl = `${proxyBase}?url=${encodeURIComponent(url)}&key=${encodeURIComponent(anonKey)}`;
+    if (messageId) proxyUrl += `&messageId=${encodeURIComponent(String(messageId))}`;
+    if (instName) proxyUrl += `&instanceName=${encodeURIComponent(instName)}`;
+    if (contentType || mimeType) proxyUrl += `&contentType=${encodeURIComponent(mimeType || contentType || '')}`;
+    return proxyUrl;
+  }
+  return url;
+}
+
+/* ---------- media: buscar mídia via proxy (com fallback) ---------- */
+async function _convFetchMediaAsDataUrl(proxyUrl, contentType) {
+  try {
+    const resp = await fetch(proxyUrl);
+    if (!resp.ok) {
+      console.warn('[media] proxy retornou erro:', resp.status);
+      return '';
+    }
+    const ct = resp.headers.get('content-type') || '';
+
+    // Se retornou binário direto (image/*, audio/*, video/*)
+    if (ct.startsWith('image/') || ct.startsWith('audio/') || ct.startsWith('video/') || ct === 'application/octet-stream') {
+      const blob = await resp.blob();
+      return URL.createObjectURL(blob);
+    }
+
+    // Se retornou JSON (fallback getBase64FromMediaMessage)
+    if (ct.includes('application/json')) {
+      const data = await resp.json();
+      if (data.dataUri) return data.dataUri;
+      if (data.error) {
+        console.warn('[media] proxy error:', data.error);
+        return '';
+      }
+    }
+
+    // Fallback: tentar ler como blob
+    const blob = await resp.blob();
+    if (blob.size > 0) return URL.createObjectURL(blob);
+    return '';
+  } catch (e) {
+    console.error('[media] fetch exception:', e.message);
+    return '';
   }
 }
 
@@ -12866,6 +12862,7 @@ function _renderConvMessages() {
   let html = '';
   let lastDate = '';
   msgs.forEach(msg => {
+    try {
     const d = new Date(msg.created_at).toLocaleDateString('pt-BR');
     if (d !== lastDate) {
       html += `<div class="conv-date-separator"><span>${d}</span></div>`;
@@ -12877,15 +12874,34 @@ function _renderConvMessages() {
                        msg.status === 'delivered' ? '<span class="conv-msg-status">&#10003;&#10003;</span>' :
                        '<span class="conv-msg-status">&#10003;</span>';
 
-    // Exibir conteudo (texto ou placeholder de midia)
     let contentHtml = '';
-    if (msg.content_text) {
-      contentHtml = _convHtmlEscape(msg.content_text);
-    } else if (msg.media_url) {
-      const mediaLabels = { image: '[Imagem]', video: '[Video]', audio: '[Audio]', document: '[Documento]', sticker: '[Figurinha]' };
-      contentHtml = `<em>${mediaLabels[msg.content_type] || '[Arquivo]'}</em>`;
-    } else {
-      contentHtml = '<em>[Mensagem vazia]</em>';
+    try {
+      if (msg.content_type === 'image' && (msg.media_url || msg.message_id)) {
+        const proxyUrl = _convResolveMediaUrl(msg.media_url, 'image', msg.message_id, msg.mime_type);
+        contentHtml = `<img data-src="${_convHtmlEscape(proxyUrl)}" data-media-type="image" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='100'%3E%3Crect fill='%23222' width='200' height='100'/%3E%3Ctext x='50%25' y='50%25' fill='%23666' text-anchor='middle' dy='.3em' font-size='12'%3ECarregando...%3C/text%3E%3C/svg%3E" class="conv-media-img" loading="lazy" onclick="window.open(this.src,'_blank')" />`;
+        if (msg.content_text) contentHtml += `<div class="conv-media-caption">${_convHtmlEscape(msg.content_text)}</div>`;
+      } else if (msg.content_type === 'audio' && (msg.media_url || msg.message_id)) {
+        const proxyUrl = _convResolveMediaUrl(msg.media_url, 'audio', msg.message_id, msg.mime_type);
+        contentHtml = `<audio data-src="${_convHtmlEscape(proxyUrl)}" data-media-type="audio" controls preload="metadata" class="conv-media-audio"></audio>`;
+      } else if (msg.content_type === 'video' && (msg.media_url || msg.message_id)) {
+        const proxyUrl = _convResolveMediaUrl(msg.media_url, 'video', msg.message_id, msg.mime_type);
+        contentHtml = `<video data-src="${_convHtmlEscape(proxyUrl)}" data-media-type="video" controls preload="metadata" class="conv-media-video"></video>`;
+        if (msg.content_text) contentHtml += `<div class="conv-media-caption">${_convHtmlEscape(msg.content_text)}</div>`;
+      } else if (msg.content_type === 'document' && (msg.media_url || msg.message_id)) {
+        const proxyUrl = _convResolveMediaUrl(msg.media_url, 'document', msg.message_id, msg.mime_type);
+        const docName = msg.content_text || 'Documento';
+        contentHtml = `<a data-href="${_convHtmlEscape(proxyUrl)}" data-media-type="document" target="_blank" class="conv-media-doc"><i data-lucide="file-text"></i> ${_convHtmlEscape(docName)}</a>`;
+      } else if (msg.content_type === 'sticker' && (msg.media_url || msg.message_id)) {
+        const proxyUrl = _convResolveMediaUrl(msg.media_url, 'image', msg.message_id, msg.mime_type);
+        contentHtml = `<img data-src="${_convHtmlEscape(proxyUrl)}" data-media-type="image" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Crect fill='%23222' width='80' height='80'/%3E%3C/svg%3E" class="conv-media-sticker" />`;
+      } else if (msg.content_text) {
+        contentHtml = _convHtmlEscape(msg.content_text);
+      } else {
+        contentHtml = '<em>[Mensagem vazia]</em>';
+      }
+    } catch (mediaErr) {
+      console.error('[Conversas] Erro ao renderizar mídia:', mediaErr, msg);
+      contentHtml = msg.content_text ? _convHtmlEscape(msg.content_text) : `<em>[Mensagem vazia]</em>`;
     }
 
     html += `
@@ -12896,10 +12912,54 @@ function _renderConvMessages() {
           ${type === 'agent' ? statusIcon : ''}
         </div>
       </div>`;
+    } catch (msgErr) {
+      console.error('[Conversas] Erro ao renderizar mensagem:', msgErr, msg);
+    }
   });
   container.innerHTML = html;
   container.scrollTop = container.scrollHeight;
   initIcons();
+
+  // Resolver mídias assincronamente (NÃO bloquear renderização)
+  try { _resolveAllMedia(container); } catch (_) { /* fire-and-forget */ }
+}
+
+/* ---------- resolver todas as mídias pendentes no container ---------- */
+async function _resolveAllMedia(container) {
+  const elements = container.querySelectorAll('[data-src], [data-href]');
+  if (!elements.length) return;
+
+  console.log('[media] resolvendo', elements.length, 'elementos de mídia');
+  for (const el of elements) {
+    const proxyUrl = el.getAttribute('data-src') || el.getAttribute('data-href');
+    const mediaType = el.getAttribute('data-media-type') || 'image';
+    if (!proxyUrl) continue;
+
+    console.log('[media] buscando:', { tag: el.tagName, mediaType, url: proxyUrl.substring(0, 120) });
+    try {
+      const resolvedUrl = await _convFetchMediaAsDataUrl(proxyUrl, mediaType);
+      if (!resolvedUrl) {
+        console.warn('[media] falhou para:', proxyUrl.substring(0, 80));
+        if (el.tagName === 'IMG') {
+          el.alt = 'Mídia indisponível';
+          el.style.opacity = '0.3';
+        }
+        continue;
+      }
+      console.log('[media] OK:', { tag: el.tagName, resolvedType: resolvedUrl.substring(0, 30) });
+      if (el.hasAttribute('data-src')) {
+        el.src = resolvedUrl;
+        if (el.tagName === 'AUDIO') el.load();
+      } else if (el.hasAttribute('data-href')) {
+        el.href = resolvedUrl;
+      }
+      el.removeAttribute('data-src');
+      el.removeAttribute('data-href');
+      el.removeAttribute('data-media-type');
+    } catch (e) {
+      console.error('[media] resolve error:', e.message);
+    }
+  }
 }
 
 /* ---------- send message ---------- */
@@ -12908,6 +12968,13 @@ async function _convSendMessage() {
     toast('WhatsApp desconectado. Conecte o aparelho para enviar mensagens.', 'error');
     return;
   }
+
+  // Se há mídia pendente no preview, enviar em vez de texto
+  if (conversasState.pendingMedia) {
+    await _convSendPendingMedia();
+    return;
+  }
+
   const input = $('#convMessageInput');
   if (!input) return;
   const content = input.value.trim();
@@ -12919,9 +12986,7 @@ async function _convSendMessage() {
   if (!chat) return;
 
   try {
-    // Enviar via WhatsApp (Evolution API) e salvar no banco
     let ccId = chat._centroCustoId || conversasState.selectedCentroCustoId;
-    // Fallback: buscar centros_custo_id direto da conversa se ainda nulo
     if (!ccId) {
       try {
         const { data: convCC } = await _supabase
@@ -12932,7 +12997,6 @@ async function _convSendMessage() {
         ccId = convCC?.centros_custo_id || null;
       } catch (e) { /* ignore */ }
     }
-    // Buscar instanceName da config do WhatsApp
     let instanceName = null;
     if (ccId) {
       try {
@@ -12950,7 +13014,6 @@ async function _convSendMessage() {
     const number = cleanPhone ? (cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`) : null;
     console.log('[WA] _convSendMessage:', { number, instanceName, ccId });
 
-    // Hard stop: não enviar se ccId ou instanceName ainda forem nulos
     if (!ccId || !instanceName) {
       toast('Selecione uma empresa no filtro superior para enviar mensagens nesta conversa.', 'error');
       input.value = content;
@@ -12959,7 +13022,6 @@ async function _convSendMessage() {
 
     const result = await waSendText(currentUser.id, chat._conversationId || conversasState.selectedChatId, content, ccId, number, instanceName);
 
-    // Atualizar conversa
     await _supabase.from('conversations').update({
       last_message_text: content,
       last_message_at: new Date().toISOString(),
@@ -12976,6 +13038,236 @@ async function _convSendMessage() {
     toast('Erro ao enviar mensagem: ' + (err.message || 'Tente novamente'));
   }
 }
+
+/* ---------- media: state + helpers ---------- */
+conversasState.pendingMedia = null; // { file, dataUrl, type, previewUrl }
+conversasState.mediaRecorder = null;
+conversasState.audioChunks = [];
+conversasState.isRecording = false;
+
+function _convFileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function _convFileTypeToContentType(file) {
+  if (file.type.startsWith('image/')) return 'image';
+  if (file.type.startsWith('video/')) return 'video';
+  if (file.type.startsWith('audio/')) return 'audio';
+  return 'document';
+}
+
+function _convFormatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+/* ---------- media: preview ---------- */
+function _convShowMediaPreview(file, dataUrl) {
+  const contentType = _convFileTypeToContentType(file);
+  const previewEl = $('#convMediaPreview');
+  if (!previewEl) return;
+
+  let thumbHtml = '';
+  if (contentType === 'image') {
+    thumbHtml = `<img src="${dataUrl}" class="conv-media-preview-thumb" />`;
+  } else if (contentType === 'audio') {
+    thumbHtml = '<div style="width:48px;height:48px;border-radius:6px;background:var(--gray-100);display:grid;place-items:center"><i data-lucide="mic" style="width:20px;height:20px;color:var(--gray-500)"></i></div>';
+  } else if (contentType === 'video') {
+    thumbHtml = '<div style="width:48px;height:48px;border-radius:6px;background:var(--gray-100);display:grid;place-items:center"><i data-lucide="video" style="width:20px;height:20px;color:var(--gray-500)"></i></div>';
+  } else {
+    thumbHtml = '<div style="width:48px;height:48px;border-radius:6px;background:var(--gray-100);display:grid;place-items:center"><i data-lucide="file-text" style="width:20px;height:20px;color:var(--gray-500)"></i></div>';
+  }
+
+  previewEl.innerHTML = `
+    ${thumbHtml}
+    <div class="conv-media-preview-info">
+      <div class="conv-media-preview-name">${_convHtmlEscape(file.name || 'Áudio gravado')}</div>
+      <div class="conv-media-preview-size">${_convFormatFileSize(file.size || 0)}</div>
+    </div>
+    <button class="conv-media-preview-cancel" id="btnConvPreviewCancel" title="Cancelar"><i data-lucide="x"></i></button>
+  `;
+  previewEl.style.display = 'flex';
+  initIcons();
+
+  conversasState.pendingMedia = { file, dataUrl, type: contentType };
+
+  $('#btnConvPreviewCancel')?.addEventListener('click', _convClearMediaPreview);
+}
+
+function _convClearMediaPreview() {
+  conversasState.pendingMedia = null;
+  const previewEl = $('#convMediaPreview');
+  if (previewEl) { previewEl.innerHTML = ''; previewEl.style.display = 'none'; }
+}
+
+/* ---------- media: send pending media ---------- */
+async function _convSendPendingMedia() {
+  const media = conversasState.pendingMedia;
+  if (!media) return;
+
+  const chat = conversasState.allChats.find(c => c.id === conversasState.selectedChatId);
+  if (!chat) return;
+
+  _convClearMediaPreview();
+
+  try {
+    let ccId = chat._centroCustoId || conversasState.selectedCentroCustoId;
+    if (!ccId) {
+      try {
+        const { data: convCC } = await _supabase
+          .from('conversations')
+          .select('centros_custo_id')
+          .eq('id', chat._conversationId || conversasState.selectedChatId)
+          .maybeSingle();
+        ccId = convCC?.centros_custo_id || null;
+      } catch (e) { /* ignore */ }
+    }
+    let instanceName = null;
+    if (ccId) {
+      try {
+        const { data: waCfg } = await _supabase
+          .from('whatsapp_config')
+          .select('provider_config')
+          .eq('provider', 'evolution_api')
+          .eq('status', 'connected')
+          .eq('centros_custo_id', ccId)
+          .maybeSingle();
+        instanceName = waCfg?.provider_config?.instanceName || null;
+      } catch (e) { /* fallback */ }
+    }
+    const cleanPhone = (chat.contact_phone || '').replace(/\D/g, '');
+    const number = cleanPhone ? (cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`) : null;
+
+    if (!ccId || !instanceName) {
+      toast('Selecione uma empresa no filtro superior para enviar mídia.', 'error');
+      return;
+    }
+
+    const convId = chat._conversationId || conversasState.selectedChatId;
+    const input = $('#convMessageInput');
+    const caption = input ? input.value.trim() : '';
+    if (input) { input.value = ''; input.style.height = 'auto'; }
+
+    // Enviar conforme tipo
+    if (media.type === 'audio' && media._isVoiceNote) {
+      await waSendVoiceNote(currentUser.id, convId, media.dataUrl, ccId, number, instanceName);
+    } else {
+      await waSendMedia(currentUser.id, convId, media.dataUrl, media.type, caption, ccId, number, instanceName);
+    }
+
+    const lastText = caption || `[${media.type}]`;
+    await _supabase.from('conversations').update({
+      last_message_text: lastText,
+      last_message_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }).eq('id', convId);
+
+    chat.last_message = lastText;
+    chat.last_message_at = new Date().toISOString();
+
+    await _convLoadMessages(convId);
+
+  } catch (err) {
+    console.error('[Conversas] Erro ao enviar mídia:', err);
+    toast('Erro ao enviar mídia: ' + (err.message || 'Tente novamente'));
+  }
+}
+
+/* ---------- media: file input handler ---------- */
+function _convHandleFileSelect(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  // Reset input para poder selecionar o mesmo arquivo novamente
+  e.target.value = '';
+
+  if (file.size > 16 * 1024 * 1024) {
+    toast('Arquivo muito grande. Máximo 16MB.', 'error');
+    return;
+  }
+
+  _convFileToBase64(file).then(dataUrl => {
+    _convShowMediaPreview(file, dataUrl);
+  }).catch(err => {
+    console.error('[Conversas] Erro ao ler arquivo:', err);
+    toast('Erro ao ler arquivo', 'error');
+  });
+}
+
+/* ---------- media: audio recording ---------- */
+async function _convStartRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+    conversasState.mediaRecorder = new MediaRecorder(stream, { mimeType });
+    conversasState.audioChunks = [];
+    conversasState.isRecording = true;
+
+    conversasState.mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) conversasState.audioChunks.push(e.data);
+    };
+
+    conversasState.mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      conversasState.isRecording = false;
+      _convUpdateMicButton();
+
+      if (conversasState.audioChunks.length === 0) return;
+
+      const blob = new Blob(conversasState.audioChunks, { type: mimeType });
+      conversasState.audioChunks = [];
+
+      // Converter para base64
+      const dataUrl = await _convFileToBase64(blob);
+
+      // Criar arquivo sintético para o preview (File já herda size do Blob)
+      const file = new File([blob], `audio-${Date.now()}.webm`, { type: mimeType });
+
+      conversasState.pendingMedia = { file, dataUrl, type: 'audio', _isVoiceNote: true };
+      _convShowMediaPreview(file, dataUrl);
+      // Marcar como voice note no preview
+      if (conversasState.pendingMedia) conversasState.pendingMedia._isVoiceNote = true;
+    };
+
+    conversasState.mediaRecorder.start();
+    _convUpdateMicButton();
+  } catch (err) {
+    console.error('[Conversas] Erro ao acessar microfone:', err);
+    toast('Não foi possível acessar o microfone. Verifique as permissões do navegador.', 'error');
+  }
+}
+
+function _convStopRecording() {
+  if (conversasState.mediaRecorder && conversasState.mediaRecorder.state !== 'inactive') {
+    conversasState.mediaRecorder.stop();
+  }
+}
+
+function _convToggleRecording() {
+  if (conversasState.isRecording) {
+    _convStopRecording();
+  } else {
+    _convStartRecording();
+  }
+}
+
+function _convUpdateMicButton() {
+  const micBtn = $('#btnConvMic');
+  if (!micBtn) return;
+  if (conversasState.isRecording) {
+    micBtn.classList.add('recording');
+    micBtn.title = 'Parar gravação';
+  } else {
+    micBtn.classList.remove('recording');
+    micBtn.title = 'Gravar áudio';
+  }
+}
+
 function convSendMessageSuggestion(text) {
   const input = $('#convMessageInput');
   if (input) { input.value = text; input.focus(); }
@@ -13426,7 +13718,12 @@ function _convSubscribeRealtime() {
     }, payload => {
       const newMsg = payload.new;
       const chat = conversasState.allChats.find(c => c._conversationId === newMsg.conversation_id);
-      if (!chat) return;
+      if (!chat) {
+        // Conversa não está na lista (pode ser nova) — recarregar
+        console.log('[Conversas] Mensagem para conversa desconhecida, recarregando:', newMsg.conversation_id);
+        loadConversasChats();
+        return;
+      }
 
       const selectedConvId = conversasState.allChats.find(c => c.id === conversasState.selectedChatId)?._conversationId;
       if (newMsg.conversation_id === selectedConvId) {
@@ -13434,7 +13731,7 @@ function _convSubscribeRealtime() {
         _renderConvMessages();
       }
 
-      chat.last_message = newMsg.content_text || '';
+      chat.last_message = newMsg.content_text || (newMsg.content_type && newMsg.content_type !== 'text' ? `[${newMsg.content_type}]` : '');
       chat.last_message_at = newMsg.created_at;
       if (newMsg.conversation_id !== selectedConvId && newMsg.sender_type === 'contact') {
         chat.unread_count = (chat.unread_count || 0) + 1;
@@ -13450,8 +13747,8 @@ function _convSubscribeRealtime() {
       const updated = payload.new;
       // Ignorar updates que não são desta empresa
       if (updated.centros_custo_id !== ccId) return;
-      // REGRA: TODOS (admin e atendente) seguem mesmo isolamento
-      if (updated.membro_id !== membroId && updated.membro_id !== null) return;
+      // REGRA: isolamento total — apenas minhas conversas
+      if (updated.membro_id !== membroId) return;
 
       const idx = conversasState.allChats.findIndex(c => c._conversationId === updated.id || c.id === updated.id);
       if (idx >= 0) {
@@ -13465,6 +13762,23 @@ function _convSubscribeRealtime() {
           _renderConvCrmPanel(conversasState.allChats[idx]);
         }
       }
+    })
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'conversations'
+    }, payload => {
+      const conv = payload.new;
+      // Ignorar conversas de outra empresa
+      if (conv.centros_custo_id !== ccId) return;
+      // REGRA: isolamento total — apenas minhas conversas
+      if (conv.membro_id !== membroId) return;
+      // Já está na lista? Ignorar
+      if (conversasState.allChats.some(c => c._conversationId === conv.id)) return;
+
+      console.log('[Conversas] Nova conversa via realtime:', conv.id);
+      // Recarregar lista para obter dados completos (contato, lead)
+      loadConversasChats();
     })
     .subscribe();
 
@@ -13485,8 +13799,14 @@ function _convAutoResize(textarea) {
 
 /* ---------- centro de custo dropdown ---------- */
 async function _initConvCentroCustoDropdown() {
-  const select = $('#convCentroCustoSelect');
-  if (!select) return;
+  const btn = $('#convCompanyDropdownBtn');
+  const menu = $('#convCompanyDropdownMenu');
+  const label = $('#convSelectedCompanyLabel');
+  if (!btn || !menu || !label) return;
+
+  // Limpar listeners antigos
+  btn.onclick = null;
+  menu.onclick = null;
 
   // Buscar centros de custo do membro
   const { data: mccData } = await _supabase
@@ -13502,44 +13822,133 @@ async function _initConvCentroCustoDropdown() {
   conversasState.centrosCustoList = list;
 
   if (list.length === 0) {
-    select.innerHTML = '<option value="">Sem centros de custo</option>';
-    select.disabled = true;
+    label.textContent = 'Sem centros de custo';
+    btn.disabled = true;
     return;
   }
 
-  select.innerHTML = '<option value="">Selecione a empresa...</option>' +
-    list.map(cc => `<option value="${cc.id}">${escapeHtml(cc.nome)}</option>`).join('');
+  // Função unificada de troca de empresa
+  const handleCompanyChange = async (companyId) => {
+    // 'all' = todas as empresas (resetar filtro)
+    const effectiveId = companyId === 'all' ? null : companyId;
 
-  // Deep-link: forçar seleção do CC do lead
-  if (_pendingConvNavigation?.centroCustoId && list.some(cc => cc.id === _pendingConvNavigation.centroCustoId)) {
-    select.value = _pendingConvNavigation.centroCustoId;
-    conversasState.selectedCentroCustoId = _pendingConvNavigation.centroCustoId;
-  }
-  // Restaurar seleção anterior se existir
-  else if (conversasState.selectedCentroCustoId) {
-    select.value = conversasState.selectedCentroCustoId;
-  }
+    // 1. Atualizar estado global imediatamente
+    conversasState.selectedCentroCustoId = effectiveId;
+    conversasState.selectedCompanyId = effectiveId;
 
-  select.addEventListener('change', () => {
-    conversasState.selectedCentroCustoId = select.value || null;
+    // 2. Persistir no localStorage
+    if (effectiveId) {
+      localStorage.setItem('crm_selected_company_id', effectiveId);
+    } else {
+      localStorage.removeItem('crm_selected_company_id');
+    }
+
+    // 3. Atualizar label do botão
+    if (!effectiveId) {
+      label.textContent = 'Todas as Empresas';
+    } else {
+      const found = list.find(cc => cc.id === effectiveId);
+      label.textContent = found ? found.nome : 'Selecione a empresa...';
+    }
+
+    // Marcar item ativo no menu
+    menu.querySelectorAll('.filter-dropdown-item').forEach(item => {
+      item.classList.toggle('active', item.dataset.cc === companyId);
+    });
+
+    // 4. Feedback visual de carregamento imediato
+    const chatList = document.getElementById('convChatList') || $('#convChatList');
+    if (chatList) {
+      chatList.innerHTML = '<div class="conv-loading-state"><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div></div>';
+    }
+
+    // 5. Resetar chat ativo se pertencer a outra empresa
     conversasState.allChats = [];
     conversasState.chats = [];
     conversasState.selectedChatId = null;
     conversasState.messages = [];
-    // Resetar área do chat
-    const chatEmpty = $('#convChatEmpty');
-    const chatContent = $('#convChatContent');
+    conversasState.instanceName = null;
+    const chatEmpty = document.getElementById('convChatEmpty');
+    const chatContent = document.getElementById('convChatContent');
     if (chatEmpty) chatEmpty.style.display = '';
     if (chatContent) chatContent.style.display = 'none';
+
+    // 6. Buscar instanceName e carregar conversas
     _convSubscribeRealtime();
-    loadConversasChats();
+    await loadConversasChats();
+  };
+
+  // Renderizar opções do menu
+  const canShowAll = list.length > 1;
+  menu.innerHTML = '';
+  if (canShowAll) {
+    const allBtn = document.createElement('button');
+    allBtn.className = 'filter-dropdown-item';
+    allBtn.dataset.cc = 'all';
+    allBtn.textContent = 'Todas as Empresas';
+    menu.appendChild(allBtn);
+  }
+  list.forEach(cc => {
+    const item = document.createElement('button');
+    item.className = 'filter-dropdown-item';
+    item.dataset.cc = cc.id;
+    item.textContent = cc.nome;
+    menu.appendChild(item);
   });
 
-  // Auto-selecionar se só tem 1
-  if (list.length === 1 && !conversasState.selectedCentroCustoId) {
-    select.value = list[0].id;
-    conversasState.selectedCentroCustoId = list[0].id;
+  // Abrir/fechar menu no clique do botão (1 clique)
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    // Fechar outros dropdowns abertos
+    $$('.filter-dropdown').forEach(d => { if (d !== menu) d.classList.remove('open'); });
+    menu.classList.toggle('open');
+  };
+
+  // Selecionar opção no clique
+  menu.onclick = (e) => {
+    const item = e.target.closest('.filter-dropdown-item');
+    if (!item) return;
+    e.stopPropagation();
+    const val = item.dataset.cc || 'all';
+    menu.classList.remove('open');
+    handleCompanyChange(val);
+  };
+
+  // Fechar ao clicar fora
+  const closeConvDropdown = (e) => {
+    if (!btn.contains(e.target) && !menu.contains(e.target)) {
+      menu.classList.remove('open');
+    }
+  };
+  document.removeEventListener('click', closeConvDropdown);
+  document.addEventListener('click', closeConvDropdown);
+
+  // Determinar empresa-alvo para auto-seleção na inicialização
+  let initialTargetId = null;
+
+  if (_pendingConvNavigation?.centroCustoId && list.some(cc => cc.id === _pendingConvNavigation.centroCustoId)) {
+    initialTargetId = _pendingConvNavigation.centroCustoId;
+  } else {
+    const savedCompanyId = localStorage.getItem('crm_selected_company_id');
+    if (savedCompanyId && list.some(cc => cc.id === savedCompanyId)) {
+      initialTargetId = savedCompanyId;
+    } else if (list.length === 1) {
+      initialTargetId = list[0].id;
+    }
   }
+
+  if (initialTargetId) {
+    conversasState.selectedCentroCustoId = initialTargetId;
+    conversasState.selectedCompanyId = initialTargetId;
+    localStorage.setItem('crm_selected_company_id', initialTargetId);
+    await handleCompanyChange(initialTargetId);
+  } else {
+    // Nenhuma empresa selecionada: mostrar "Todas as Empresas" ou placeholder
+    label.textContent = canShowAll ? 'Todas as Empresas' : list[0].nome;
+    menu.querySelector('.filter-dropdown-item')?.classList.add('active');
+  }
+
+  if (typeof initIcons === 'function') initIcons();
 }
 
 /* ---------- load members for assignee dropdown ---------- */
@@ -13585,6 +13994,14 @@ function initConversas() {
     msgInput.addEventListener('input', () => _convAutoResize(msgInput));
   }
 
+  // Media: file input e microfone
+  const fileInput = $('#convFileInput');
+  const attachBtn = $('#btnConvAttach');
+  const micBtn = $('#btnConvMic');
+  if (fileInput) fileInput.addEventListener('change', _convHandleFileSelect);
+  if (attachBtn) attachBtn.addEventListener('click', () => fileInput?.click());
+  if (micBtn) micBtn.addEventListener('click', _convToggleRecording);
+
   if (newBtn) newBtn.addEventListener('click', _convOpenNewModal);
   if (newCloseBtn) newCloseBtn.addEventListener('click', _convCloseNewModal);
   if (newOverlay) newOverlay.addEventListener('click', _convCloseNewModal);
@@ -13603,7 +14020,7 @@ function initConversas() {
 
   _renderConvFilterChips();
   _loadConvMembers();
-  _initConvCentroCustoDropdown().then(() => loadConversasChats()).then(() => _processConvDeepLink());
+  _initConvCentroCustoDropdown().then(() => _processConvDeepLink());
   _convSubscribeRealtime();
 }
 

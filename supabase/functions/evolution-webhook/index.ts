@@ -46,7 +46,7 @@ serve(async (req) => {
 
       // Extrair conteúdo da mensagem
       const message = msgData.message || {}
-      const { contentType, contentText, mediaUrl } = extractMessageContent(message)
+      const { contentType, contentText, mediaUrl, mimeType } = extractMessageContent(message)
 
       if (!contentText && !mediaUrl && !remoteJid) {
         console.log('[webhook] Mensagem ignorada: sem conteúdo')
@@ -115,6 +115,7 @@ serve(async (req) => {
         content_type: contentType,
         content_text: contentText,
         media_url: mediaUrl,
+        mime_type: mimeType || null,
         message_id: msgId,
         status: 'delivered',
         created_at: messageTimestamp
@@ -133,6 +134,39 @@ serve(async (req) => {
       }
 
       console.log('[webhook] Mensagem salva:', { conversationId, phone, fromMe, contentType, leadId })
+
+      // Atualizar conversa: last_message, last_message_at, unread_count
+      const lastMessageSummary = contentText
+        || (contentType === 'image' ? '[Imagem]' :
+          contentType === 'audio' ? '[Áudio]' :
+          contentType === 'video' ? '[Vídeo]' :
+          contentType === 'document' ? '[Documento]' :
+          contentType === 'sticker' ? '[Figurinha]' :
+          contentType === 'location' ? '[Localização]' : '')
+
+      const convUpdates: Record<string, any> = {
+        last_message_text: lastMessageSummary,
+        last_message_at: messageTimestamp,
+        updated_at: new Date().toISOString()
+      }
+      if (!fromMe) {
+        // Incrementar não-lidas apenas para mensagens recebidas
+        const { data: convRow } = await supabase
+          .from('conversations')
+          .select('unread_count')
+          .eq('id', conversationId)
+          .maybeSingle()
+        convUpdates.unread_count = (convRow?.unread_count || 0) + 1
+      }
+
+      const { error: convUpdateError } = await supabase
+        .from('conversations')
+        .update(convUpdates)
+        .eq('id', conversationId)
+      if (convUpdateError) {
+        console.error('[webhook] Erro ao atualizar conversa:', convUpdateError)
+      }
+
       return new Response(JSON.stringify({ ok: true, conversationId, leadId }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -245,20 +279,22 @@ function extractMessageContent(message: Record<string, any>): {
   contentType: string
   contentText: string
   mediaUrl: string
+  mimeType: string
 } {
   if (message.conversation) {
-    return { contentType: 'text', contentText: message.conversation, mediaUrl: '' }
+    return { contentType: 'text', contentText: message.conversation, mediaUrl: '', mimeType: '' }
   }
 
   if (message.extendedTextMessage?.text) {
-    return { contentType: 'text', contentText: message.extendedTextMessage.text, mediaUrl: '' }
+    return { contentType: 'text', contentText: message.extendedTextMessage.text, mediaUrl: '', mimeType: '' }
   }
 
   if (message.imageMessage) {
     return {
       contentType: 'image',
       contentText: message.imageMessage.caption || '',
-      mediaUrl: message.imageMessage.url || ''
+      mediaUrl: message.imageMessage.mediaUrl || message.imageMessage.url || '',
+      mimeType: message.imageMessage.mimetype || 'image/jpeg'
     }
   }
 
@@ -266,7 +302,8 @@ function extractMessageContent(message: Record<string, any>): {
     return {
       contentType: 'video',
       contentText: message.videoMessage.caption || '',
-      mediaUrl: message.videoMessage.url || ''
+      mediaUrl: message.videoMessage.mediaUrl || message.videoMessage.url || '',
+      mimeType: message.videoMessage.mimetype || 'video/mp4'
     }
   }
 
@@ -274,7 +311,8 @@ function extractMessageContent(message: Record<string, any>): {
     return {
       contentType: 'audio',
       contentText: '',
-      mediaUrl: message.audioMessage.url || ''
+      mediaUrl: message.audioMessage.mediaUrl || message.audioMessage.url || '',
+      mimeType: message.audioMessage.mimetype || 'audio/ogg; codecs=opus'
     }
   }
 
@@ -282,7 +320,8 @@ function extractMessageContent(message: Record<string, any>): {
     return {
       contentType: 'document',
       contentText: message.documentMessage.fileName || '',
-      mediaUrl: message.documentMessage.url || ''
+      mediaUrl: message.documentMessage.mediaUrl || message.documentMessage.url || '',
+      mimeType: message.documentMessage.mimetype || 'application/octet-stream'
     }
   }
 
@@ -290,7 +329,8 @@ function extractMessageContent(message: Record<string, any>): {
     return {
       contentType: 'sticker',
       contentText: '',
-      mediaUrl: message.stickerMessage.url || ''
+      mediaUrl: message.stickerMessage.mediaUrl || message.stickerMessage.url || '',
+      mimeType: message.stickerMessage.mimetype || 'image/webp'
     }
   }
 
@@ -298,11 +338,12 @@ function extractMessageContent(message: Record<string, any>): {
     return {
       contentType: 'location',
       contentText: message.locationMessage.name || '',
-      mediaUrl: ''
+      mediaUrl: '',
+      mimeType: ''
     }
   }
 
-  return { contentType: 'text', contentText: '', mediaUrl: '' }
+  return { contentType: 'text', contentText: '', mediaUrl: '', mimeType: '' }
 }
 
 // ── findOrCreateContact: prioridade centros_custo_id, vincula lead ──
@@ -370,17 +411,19 @@ async function findOrCreateConversation(
   lastMessageText: string,
   leadId: string | null
 ): Promise<string> {
-  // Buscar conversa aberta existente — SEMPRE priorizar centros_custo_id
+  // REGRA: "Meu WhatsApp, meu lead" — buscar por contact_id + membro_id
+  // Se o mesmo contato fala com dois corretores diferentes, cria conversas separadas
   let query = supabase
     .from('conversations')
     .select('id')
     .eq('contact_id', contactId)
     .eq('status', 'open')
-  if (centrosCustoId) {
-    query = query.eq('centros_custo_id', centrosCustoId)
-  } else if (membroId) {
-    // Fallback legado: só quando não há centros_custo_id
+
+  if (membroId) {
     query = query.eq('membro_id', membroId)
+  } else if (centrosCustoId) {
+    // Fallback legado: quando não há membro_id (não deveria acontecer)
+    query = query.eq('centros_custo_id', centrosCustoId)
   }
   const { data: existing } = await query.maybeSingle()
 

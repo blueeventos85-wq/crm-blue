@@ -16,16 +16,39 @@ let _waMessagesCache = {}
 async function waInvokeFunction(functionName, body) {
   if (!_supabase) throw new Error('Supabase client não inicializado')
 
-  const { data, error } = await _supabase.functions.invoke(functionName, {
-    body
-  })
+  try {
+    const { data, error } = await _supabase.functions.invoke(functionName, {
+      body
+    })
 
-  if (error) {
-    console.error(`[WA] Erro na function ${functionName}:`, error.message)
-    throw new Error(error.message || `Erro ao chamar ${functionName}`)
+    if (error) {
+      // Extrair detalhes reais do erro (corpo da resposta da Edge Function)
+      let errorDetails = error.message || `Erro ao chamar ${functionName}`
+      try {
+        if (error.context && typeof error.context.json === 'function') {
+          const errBody = await error.context.json()
+          errorDetails = JSON.stringify(errBody)
+        } else if (error.context && typeof error.context.text === 'function') {
+          const errText = await error.context.text()
+          if (errText) {
+            try {
+              const parsed = JSON.parse(errText)
+              errorDetails = JSON.stringify(parsed)
+            } catch {
+              errorDetails = errText
+            }
+          }
+        }
+      } catch (_) { /* manter errorDetails original */ }
+      console.error(`[WA] Erro completo retornado:`, errorDetails)
+      return { success: false, error: errorDetails, data: null }
+    }
+
+    return data
+  } catch (err) {
+    console.error(`[WA] Exceção ao chamar ${functionName}:`, err)
+    return { success: false, error: err instanceof Error ? err.message : String(err), data: null }
   }
-
-  return data
 }
 
 /* ============================================
@@ -78,7 +101,12 @@ async function waConnect(membroId, instanceName, centrosCustoId) {
     qrcode: true
   })
 
-  if (result.success) {
+  // waInvokeFunction agora retorna { success: false, error: ... } em vez de throw
+  if (result && result.success === false) {
+    throw new Error(result.error || 'Falha ao conectar com a Evolution API')
+  }
+
+  if (result?.success) {
     _waConfigCache = null
     console.log('[WA] Conexão iniciada:', result)
   }
@@ -129,6 +157,10 @@ async function waSendText(membroId, conversationId, text, centrosCustoId, number
 
   const result = await waInvokeFunction('evolution-send', payload)
 
+  if (result && result.success === false) {
+    throw new Error(result.error || 'Erro ao enviar mensagem')
+  }
+
   return result
 }
 
@@ -140,7 +172,8 @@ async function waSendMedia(membroId, conversationId, mediaUrl, contentType = 'im
     throw new Error('membroId, conversationId e mediaUrl são obrigatórios')
   }
 
-  console.log('[WA] Enviando mídia:', contentType, 'para conversa:', conversationId)
+  const mediaSize = mediaUrl.length > 100 ? `${Math.round(mediaUrl.length / 1024)}KB` : 'small'
+  console.log('[WA] Enviando mídia:', { contentType, conversationId, number, instanceName, mediaSize })
 
   const result = await waInvokeFunction('evolution-send', {
     membroId,
@@ -152,6 +185,40 @@ async function waSendMedia(membroId, conversationId, mediaUrl, contentType = 'im
     number: number || null,
     instanceName: instanceName || null
   })
+
+  if (result && result.success === false) {
+    throw new Error(result.error || 'Erro ao enviar mídia')
+  }
+
+  return result
+}
+
+/* ============================================
+   5b. SEND VOICE NOTE: enviar áudio como PTT (voice note nativo WhatsApp)
+   ============================================ */
+async function waSendVoiceNote(membroId, conversationId, mediaUrl, centrosCustoId, number, instanceName) {
+  if (!membroId || !conversationId || !mediaUrl) {
+    throw new Error('membroId, conversationId e mediaUrl são obrigatórios')
+  }
+
+  const mediaSize = mediaUrl.length > 100 ? `${Math.round(mediaUrl.length / 1024)}KB` : 'small'
+  console.log('[WA] Enviando voice note (PTT):', { conversationId, number, instanceName, mediaSize })
+
+  const result = await waInvokeFunction('evolution-send', {
+    membroId,
+    conversationId,
+    contentText: '',
+    mediaUrl,
+    contentType: 'audio',
+    ptt: true,
+    centrosCustoId: centrosCustoId || null,
+    number: number || null,
+    instanceName: instanceName || null
+  })
+
+  if (result && result.success === false) {
+    throw new Error(result.error || 'Erro ao enviar voice note')
+  }
 
   return result
 }
@@ -367,6 +434,7 @@ window.waConnect = waConnect
 window.waDisconnect = waDisconnect
 window.waSendText = waSendText
 window.waSendMedia = waSendMedia
+window.waSendVoiceNote = waSendVoiceNote
 window.waFetchContacts = waFetchContacts
 window.waFetchConversations = waFetchConversations
 window.waFetchMessages = waFetchMessages

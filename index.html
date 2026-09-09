@@ -1269,9 +1269,14 @@
             </div>
             <div class="conv-header-right">
               <span class="conv-sync-time" id="convSyncTime"></span>
-              <select id="convCentroCustoSelect" class="conv-centro-custo-select">
-                <option value="">Carregando...</option>
-              </select>
+              <div class="filter-dropdown-wrap" id="convCompanyDropdownContainer">
+                <button type="button" class="filter-btn" id="convCompanyDropdownBtn">
+                  <i data-lucide="building-2"></i>
+                  <span id="convSelectedCompanyLabel">Carregando...</span>
+                  <i data-lucide="chevron-down"></i>
+                </button>
+                <div class="filter-dropdown" id="convCompanyDropdownMenu"></div>
+              </div>
               <button class="btn-ghost btn-sm" id="btnConvRefresh" title="Atualizar conversas"><i data-lucide="refresh-cw"></i></button>
               <button class="btn btn-primary btn-sm" id="btnConvNew"><i data-lucide="plus"></i> Nova conversa</button>
             </div>
@@ -1307,12 +1312,15 @@
                 <div class="conv-chat-header" id="convChatHeader"></div>
                 <div class="conv-chat-suggestion" id="convSuggestion" style="display:none;"></div>
                 <div class="conv-chat-messages" id="convMessages"></div>
+                <div class="conv-media-preview" id="convMediaPreview" style="display:none;"></div>
                 <div class="conv-chat-composer" id="convComposer">
+                  <input type="file" id="convFileInput" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" hidden />
                   <button class="conv-composer-btn" id="btnConvAttach" title="Anexar arquivo"><i data-lucide="paperclip"></i></button>
                   <div class="conv-composer-input-wrap">
                     <textarea id="convMessageInput" placeholder="Digite sua mensagem..." rows="1"></textarea>
                   </div>
                   <button class="conv-composer-btn" id="btnConvEmoji" title="Emoji"><i data-lucide="smile"></i></button>
+                  <button class="conv-composer-btn conv-composer-mic" id="btnConvMic" title="Gravar áudio"><i data-lucide="mic"></i></button>
                   <button class="conv-composer-send" id="convSendBtn" title="Enviar"><i data-lucide="send"></i></button>
                 </div>
               </div>

@@ -26,6 +26,7 @@ let _supabase = null;
 if (window.supabase && window.supabase.createClient) {
   _supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   window._supabase = _supabase;
+  window.__SUPABASE_ANON_KEY = SUPABASE_ANON_KEY;
   console.log('[Supabase] Cliente inicializado com sucesso');
 } else {
   console.error('[Supabase] CDN não carregou! Verifique sua conexão ou desative bloqueadores.');
@@ -34,26 +35,18 @@ if (window.supabase && window.supabase.createClient) {
 /* ============================================
    MAPA: kanban column IDs (hardcoded no CRM)
    ============================================ */
-const KANBAN_COLUMN_IDS = [
-  'novo-lead', 'dados-ia', 'coletados-frio', 'qualificado', 'em-atendimento',
-  'geladeira', 'stand-by', 'diagnostico-gratis', 'reuniao-agendada',
-  'reuniao-realizada', 'contrato-enviado', 'contrato-fechado',
-  'cobranca-enviada', 'pagamento-recebido', 'servico-executado', 'pos-vendas'
-];
-
-const DEFAULT_CADENCE_ID = KANBAN_COLUMN_IDS[0]; // 'novo-lead'
-
 /* ============================================
    MAPAS GLOBAIS (preenchidos no boot)
    ============================================ */
-let _cadenciaUuidToCol = {};   // UUID → column ID
-let _cadenciaColToUuid = {};   // column ID → UUID
+let _cadenciaUuidToCol = {};   // UUID → UUID (identidade, mantido para compat)
+let _cadenciaColToUuid = {};   // UUID → UUID (identidade)
 let _servicosByName = {};      // nome → { id, nome }
 let _servicosById = {};        // id → { id, nome }
 
 /* ============================================
    HELPER: buscar cadências do Supabase
-   Retorna mapa: { UUID → kanban column ID }
+   Retorna mapa: { UUID → UUID } (identidade)
+   Colunas do Kanban são 100% dinâmicas — sem slug.
    ============================================ */
 async function fetchCadenciasMap() {
   if (!_supabase) return {};
@@ -72,104 +65,18 @@ async function fetchCadenciasMap() {
     return {};
   }
 
+  // Mapa direto UUID → UUID (cada cadência é sua própria coluna)
   const map = {};
-
-  function singularize(s) {
-    if (s.endsWith('oes')) return s.slice(0, -3) + 'ao';
-    if (s.endsWith('ges') || s.endsWith('ches') || s.endsWith('xes') || s.endsWith('zes')) return s.slice(0, -2);
-    if (s.endsWith('s') && s.length > 4) return s.slice(0, -1);
-    return s;
-  }
-
   data.forEach(row => {
-    const uuid = row.id;
-    const label = (row.nome || '').toLowerCase().trim();
-    const normalized = label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '-');
-    const normSingular = singularize(normalized);
-
-    let matched = false;
-
-    // 1. Exact match: label or normalized against column IDs
-    for (const cid of KANBAN_COLUMN_IDS) {
-      if (label === cid || normalized === cid || normSingular === cid) {
-        map[uuid] = cid;
-        matched = true;
-        break;
-      }
-    }
-
-    // 2. Starts-with match
-    if (!matched) {
-      for (const cid of KANBAN_COLUMN_IDS) {
-        const normNext = normSingular.charAt(cid.length);
-        if (normSingular.startsWith(cid) && (normNext === '-' || normNext === '' || normNext === undefined)) {
-          map[uuid] = cid;
-          matched = true;
-          break;
-        }
-      }
-    }
-
-    // 3. Reverse: column ID includes the normalized cadência name
-    if (!matched) {
-      for (const cid of KANBAN_COLUMN_IDS) {
-        if (cid.includes(normSingular) || normSingular.includes(cid)) {
-          map[uuid] = cid;
-          matched = true;
-          break;
-        }
-        const slugNorm = label.replace(/\s+/g, '-');
-        if (cid.includes(slugNorm) || slugNorm.includes(cid)) {
-          map[uuid] = cid;
-          matched = true;
-          break;
-        }
-      }
-    }
-
-    // 4. Word-level matching
-    if (!matched) {
-      const labelWords = normSingular.split('-').filter(w => w.length > 3);
-      for (const cid of KANBAN_COLUMN_IDS) {
-        const cidWords = cid.split('-').filter(w => w.length > 3);
-        const overlap = labelWords.filter(w => cidWords.some(cw => cw.includes(w) || w.includes(cw)));
-        if (overlap.length >= Math.min(labelWords.length, cidWords.length) && overlap.length > 0) {
-          map[uuid] = cid;
-          matched = true;
-          break;
-        }
-      }
-    }
-
-    if (!matched) {
-      console.warn(`[Supabase] Cadência "${label || uuid}" não mapeada para nenhuma coluna do Kanban`);
-    }
+    map[row.id] = row.id;
   });
 
-  console.log('[Supabase] Mapa cadência (DB):', map);
-
   _cadenciaUuidToCol = map;
-  _cadenciaColToUuid = {};
-  Object.entries(map).forEach(([uuid, colId]) => { _cadenciaColToUuid[colId] = uuid; });
+  _cadenciaColToUuid = { ...map };
 
-  // Se mapaCadencias (hardcoded em app.js) estiver disponível, usá-lo como fonte primária
-  // para col→UUID. O mapa do DB pode ter falhas de fuzzy matching.
-  if (typeof window.mapaCadencias !== 'undefined' && window.mapaCadencias) {
-    Object.entries(window.mapaCadencias).forEach(([colId, uuid]) => {
-      if (uuid) {
-        if (!_cadenciaColToUuid[colId]) {
-          console.log(`[Supabase]补充 col→UUID via mapaCadencias: ${colId} → ${uuid}`);
-        }
-        _cadenciaColToUuid[colId] = uuid;
-        _cadenciaUuidToCol[uuid] = colId;
-      }
-    });
-  }
-
-  // Expor no window para que app.js acesse o mesmo objeto
   window._cadenciaColToUuid = _cadenciaColToUuid;
   window._cadenciaUuidToCol = _cadenciaUuidToCol;
-  console.log('[Supabase] Coluna→UUID (final):', _cadenciaColToUuid);
+  console.log('[Supabase] Cadências carregadas (UUID→UUID):', Object.keys(map).length);
   return map;
 }
 
@@ -229,7 +136,7 @@ async function validateForeignKeys(payload) {
 async function fetchLeadsSupabase(filterMemberId) {
   if (!_supabase) return [];
 
-  const cadenciaMap = await fetchCadenciasMap();
+  await fetchCadenciasMap();
 
   let data = null;
   let error = null;
@@ -280,7 +187,7 @@ async function fetchLeadsSupabase(filterMemberId) {
   }
 
   return data.map(row => {
-    const status = (row.cadencia_id && cadenciaMap[row.cadencia_id]) || DEFAULT_CADENCE_ID;
+    const status = row.cadencia_id || null;
     const created = row.created_at ? new Date(row.created_at) : new Date();
     const nowStr = created.toLocaleString('pt-BR');
     const today = created.toLocaleDateString('pt-BR');
