@@ -15859,6 +15859,10 @@ async function contratoGeneratePDF(id) {
     // Footer positioned at bottom-right of page
     const rodape = p.querySelector('.contrato-rodape');
     if (rodape) {
+      // Migrate footer if it's inside .contrato-pagina__conteudo (old HTML format)
+      if (rodape.parentElement && rodape.parentElement.classList.contains('contrato-pagina__conteudo')) {
+        p.appendChild(rodape);
+      }
       rodape.style.cssText = `
         position: absolute !important;
         right: 68px !important;
@@ -15983,10 +15987,11 @@ async function contratoGeneratePDF(id) {
     console.log('[PDF] Páginas exportadas:', pages.length);
 
     // ---- 7. Upload to private bucket ----
+    const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
     const storagePath = `${contrato.centro_custo_id || 'geral'}/${filename}`;
     const { error: uploadErr } = await _supabase.storage
       .from('contratos')
-      .upload(storagePath, pdfBlob, { contentType: 'application/pdf', upsert: true });
+      .upload(storagePath, pdfFile, { contentType: 'application/pdf', upsert: true });
 
     if (uploadErr) {
       console.error('[Contratos] Erro ao subir PDF:', uploadErr);
