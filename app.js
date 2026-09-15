@@ -14931,10 +14931,10 @@ function _contratoHeader() {
   </header>`;
 }
 
-function _contratoFooter(pageNum) {
+function _contratoFooter(pageNum, totalPages = 4) {
   return `
   <div class="contrato-rodape">
-    <span>${pageNum}</span>
+    <span>${pageNum} / ${totalPages}</span>
   </div>`;
 }
 
@@ -15037,8 +15037,8 @@ function buildPDFContent(data) {
         2.2. A CONTRATADA deverá dispor de todos os equipamentos e profissionais necessários para a realização dos serviços contratados.
       </p>
 
-      ${_contratoFooter(1)}
     </div>
+    ${_contratoFooter(1)}
   </div>`;
 
   /* ==================== PÁGINA 2 ==================== */
@@ -15073,8 +15073,8 @@ function buildPDFContent(data) {
         3.5. A CONTRATANTE deverá garantir acesso seguro e adequado ao local do evento para a equipe da CONTRATADA.
       </p>
 
-      ${_contratoFooter(2)}
     </div>
+    ${_contratoFooter(2)}
   </div>`;
 
   /* ==================== PÁGINA 3 ==================== */
@@ -15116,8 +15116,8 @@ function buildPDFContent(data) {
         5.3. Em caso de cancelamento por parte da CONTRATANTE com mais de 30 (trinta) dias de antecedência do evento, será devolvido o valor total pago. Caso o cancelamento ocorra com menos de 30 (trinta) dias, o valor total do contrato será devido integralmente.
       </p>
 
-      ${_contratoFooter(3)}
     </div>
+    ${_contratoFooter(3)}
   </div>`;
 
   /* ==================== PÁGINA 4 ==================== */
@@ -15173,8 +15173,8 @@ function buildPDFContent(data) {
         </div>
       </div>
 
-      ${_contratoFooter(4)}
     </div>
+    ${_contratoFooter(4)}
   </div>`;
 
   return `<div class="contrato-documento">${page1}${page2}${page3}${page4}</div>`;
@@ -15845,6 +15845,19 @@ async function contratoGeneratePDF(id) {
       conteudo.style.cssText = `
         position: relative !important;
         z-index: 1 !important;
+      `;
+    }
+
+    // Footer positioned at bottom-right of page
+    const rodape = p.querySelector('.contrato-rodape');
+    if (rodape) {
+      rodape.style.cssText = `
+        position: absolute !important;
+        right: 68px !important;
+        bottom: 38px !important;
+        z-index: 2 !important;
+        font-size: 9.5pt !important;
+        color: #111111 !important;
       `;
     }
   });

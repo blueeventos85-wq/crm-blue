@@ -9572,6 +9572,7 @@ textarea:focus-visible,
   justify-content: space-between;
   align-items: flex-start;
   min-height: 25mm;
+  margin-bottom: 8mm;
   font-size: 9.5pt;
   line-height: 1.3;
 }
@@ -9680,13 +9681,16 @@ textarea:focus-visible,
 }
 
 /* =============================================
-   Rodapé
+   Rodapé (posicionado dentro de .contrato-pagina,
+   fora de .contrato-pagina__conteudo)
    ============================================= */
 .contrato-rodape {
   position: absolute;
   right: 18mm;
   bottom: 10mm;
+  z-index: 2;
   font-size: 9.5pt;
+  color: #111111;
 }
 
 /* =============================================
