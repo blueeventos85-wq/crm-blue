@@ -15914,6 +15914,11 @@ async function contratoGeneratePDF(id) {
 
   try {
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+    pdf.setProperties({
+      title: filename,
+      author: 'Agência Blue PRO',
+      creator: 'jsPDF + html2canvas'
+    });
     const A4_W_MM = 210;
     const A4_H_MM = 297;
 
@@ -15926,15 +15931,18 @@ async function contratoGeneratePDF(id) {
       page.style.visibility = 'visible';
       page.style.opacity = '1';
 
+      const A4_SCALE = 2;
       const canvas = await h2c(page, {
-        scale: 2,
+        scale: A4_SCALE,
         useCORS: true,
         backgroundColor: '#ffffff',
-        logging: true,
+        logging: false,
         scrollX: 0,
         scrollY: 0,
-        width: page.scrollWidth || A4_W_PX,
-        height: page.scrollHeight || 1123
+        width: A4_W_PX,
+        height: 1123,
+        windowWidth: A4_W_PX,
+        windowHeight: 1123
       });
 
       if (!canvas || !canvas.width || !canvas.height) {
@@ -15954,19 +15962,20 @@ async function contratoGeneratePDF(id) {
 
       console.log('[PDF] Página', i + 1, '— conteúdo visual confirmado');
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const imgData = canvas.toDataURL('image/png');
 
       if (i > 0) pdf.addPage('a4', 'portrait');
 
-      pdf.addImage(imgData, 'JPEG', 0, 0, A4_W_MM, A4_H_MM, undefined, 'FAST');
+      pdf.addImage(imgData, 'PNG', 0, 0, A4_W_MM, A4_H_MM);
     }
 
     // ---- 6. Validate blob ----
     const pdfBlob = pdf.output('blob');
 
-    if (!pdfBlob || pdfBlob.size < 30000) {
+    const headerSlice = await pdfBlob.slice(0, 5).text();
+    if (!pdfBlob || pdfBlob.size < 30000 || !headerSlice.startsWith('%PDF')) {
       document.body.removeChild(exportRoot);
-      toast(`PDF inválido ou sem conteúdo visual. Tamanho: ${pdfBlob?.size ?? 0} bytes.`, 'error');
+      toast(`PDF gerado é inválido. Tamanho: ${pdfBlob?.size ?? 0} bytes.`, 'error');
       return;
     }
 
