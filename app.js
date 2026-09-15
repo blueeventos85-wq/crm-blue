@@ -15777,10 +15777,14 @@ async function contratoGeneratePDF(id) {
   const watermarkPreload = new Image();
   watermarkPreload.src = watermarkUrl;
 
-  await new Promise((resolve, reject) => {
+  let watermarkOk = true;
+  await new Promise((resolve) => {
     watermarkPreload.onload = resolve;
-    watermarkPreload.onerror = () =>
-      reject(new Error('Não foi possível carregar a marca-d\'água do contrato.'));
+    watermarkPreload.onerror = () => {
+      console.warn('[PDF] Marca-d\'água não pôde ser carregada. Gerando PDF sem marca-d\'água.');
+      watermarkOk = false;
+      resolve();
+    };
   });
 
   // ---- 3. Create dedicated off-screen export container ----
@@ -15826,17 +15830,21 @@ async function contratoGeneratePDF(id) {
     // Watermark layer
     const wm = p.querySelector('.contrato-marca-dagua');
     if (wm) {
-      wm.style.cssText = `
-        position: absolute !important;
-        inset: 0 !important;
-        z-index: 0 !important;
-        pointer-events: none !important;
-        background-image: url('${watermarkUrl}') !important;
-        background-repeat: no-repeat !important;
-        background-position: center center !important;
-        background-size: 100% auto !important;
-        opacity: 0.15 !important;
-      `;
+      if (watermarkOk) {
+        wm.style.cssText = `
+          position: absolute !important;
+          inset: 0 !important;
+          z-index: 0 !important;
+          pointer-events: none !important;
+          background-image: url('${watermarkUrl}') !important;
+          background-repeat: no-repeat !important;
+          background-position: center center !important;
+          background-size: 100% auto !important;
+          opacity: 0.15 !important;
+        `;
+      } else {
+        wm.style.display = 'none !important';
+      }
     }
 
     // Content layer above watermark
