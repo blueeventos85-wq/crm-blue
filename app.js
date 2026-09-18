@@ -14638,12 +14638,21 @@ let _contratosData = [];
 let _contratosLeadsList = [];
 let _contratosInited = false;
 let _currentContratoData = null; // contrato em edição
+let _contratoSaving = false; // debounce:防止 duplo clique
 
 // Modal close / dirty state
 let _contratoFormSnapshot = null;
 let _contratoPreviousFocus = null;
 
 /* ---- Helpers ----- */
+function _friendlyContratoError(err) {
+  if (!err) return 'desconhecido';
+  if (err.code === '23505') return 'número de contrato duplicado. Aguarde um instante e tente novamente.';
+  if (err.code === '23503') return 'referência inválida (lead ou empresa).';
+  if (err.code === '23514') return 'dados fora do formato esperado.';
+  if (err.message) return err.message;
+  return 'erro inesperado. Tente novamente.';
+}
 function fmtDateBR(dateStr) {
   if (!dateStr) return '';
   try {
@@ -14829,11 +14838,12 @@ async function loadContratos(filters = {}) {
   return list;
 }
 
-/* ---- Next sequence number ----- */
-async function nextContratoSeq() {
-  if (!_supabase) return 1;
-  const { count } = await _supabase.from('contratos').select('*', { count: 'exact', head: true });
-  return (count || 0) + 1;
+/* ---- Create contrato atomically via RPC (number + insert in one transaction) ----- */
+async function createContratoViaRPC(payload) {
+  if (!_supabase) throw new Error('Supabase não disponível');
+  const { data, error } = await _supabase.rpc('create_contrato_with_number', { p_data: payload });
+  if (error) throw error;
+  return data;
 }
 
 /* ---- Render table ----- */
@@ -15659,50 +15669,55 @@ function _confirmContratoDiscard() {
 /* ---- Save (insert/update) contrato ----- */
 async function saveContrato(status = 'rascunho') {
   if (!_supabase) return null;
-  const formData = collectContratoFormData();
-  const existingId = document.getElementById('contratoId')?.value || '';
-  const dataHoje = new Date().toISOString().split('T')[0];
+  if (_contratoSaving) return null;
+  _contratoSaving = true;
 
-  const htmlContent = buildPDFContent({ ...formData, data_emissao: dataHoje });
+  try {
+    const formData = collectContratoFormData();
+    const existingId = document.getElementById('contratoId')?.value || '';
+    const dataHoje = new Date().toISOString().split('T')[0];
 
-  const payload = {
-    ...formData,
-    status,
-    conteudo_contrato: htmlContent,
-    updated_at: new Date().toISOString()
-  };
+    const htmlContent = buildPDFContent({ ...formData, data_emissao: dataHoje });
 
-  if (existingId) {
-    const { data, error } = await _supabase.from('contratos').update(payload).eq('id', existingId).select().single();
-    if (error) {
-      console.error('[Contratos] Erro ao salvar:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code,
-        payload
-      });
-      toast('Erro ao salvar contrato: ' + error.message, 'error');
-      return null;
+    const payload = {
+      ...formData,
+      status,
+      conteudo_contrato: htmlContent,
+      updated_at: new Date().toISOString()
+    };
+
+    if (existingId) {
+      const { data, error } = await _supabase.from('contratos').update(payload).eq('id', existingId).select().single();
+      if (error) {
+        console.error('[Contratos] Erro ao salvar:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+          payload
+        });
+        toast('Erro ao salvar contrato: ' + _friendlyContratoError(error), 'error');
+        return null;
+      }
+      return data;
+    } else {
+      const result = await createContratoViaRPC(payload);
+      if (!result) {
+        toast('Erro ao criar contrato.', 'error');
+        return null;
+      }
+      return result;
     }
-    return data;
-  } else {
-    const seq = await nextContratoSeq();
-    payload.numero_contrato = gerarNumeroContrato(seq);
-    payload.created_at = new Date().toISOString();
-    const { data, error } = await _supabase.from('contratos').insert([payload]).select().single();
-    if (error) {
-      console.error('[Contratos] Erro ao criar:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code,
-        payload
-      });
-      toast('Erro ao criar contrato: ' + error.message, 'error');
-      return null;
+  } catch (err) {
+    console.error('[Contratos] Erro ao salvar:', err);
+    if (err.code === '23505') {
+      toast('Já existe um contrato com este número. Atualizando número automaticamente…', 'error');
+    } else {
+      toast('Erro ao salvar contrato: ' + _friendlyContratoError(err), 'error');
     }
-    return data;
+    return null;
+  } finally {
+    _contratoSaving = false;
   }
 }
 
@@ -16360,46 +16375,60 @@ async function refreshContratosTable() {
 /* ---- Save as draft shortcut ----- */
 async function salvarContratoComoRascunho() {
   if (!_supabase) return null;
-  const formData = collectContratoFormData();
-  const existingId = document.getElementById('contratoId')?.value || '';
+  if (_contratoSaving) return null;
+  _contratoSaving = true;
 
-  const payload = {
-    ...formData,
-    status: 'rascunho',
-    membro_id: currentUser?.id || null,
-    owner_id: currentUser?.id || null,
-    centro_custo_id: currentUser?.centro_custo_ids?.[0] || null,
-    updated_at: new Date().toISOString()
-  };
+  try {
+    const formData = collectContratoFormData();
+    const existingId = document.getElementById('contratoId')?.value || '';
 
-  if (existingId) {
-    payload.id = existingId;
-  } else {
-    const seq = await nextContratoSeq();
-    payload.numero_contrato = gerarNumeroContrato(seq);
-    payload.created_at = new Date().toISOString();
-  }
+    const payload = {
+      ...formData,
+      status: 'rascunho',
+      membro_id: currentUser?.id || null,
+      owner_id: currentUser?.id || null,
+      centro_custo_id: currentUser?.centro_custo_ids?.[0] || null,
+      updated_at: new Date().toISOString()
+    };
 
-  const { data, error } = await _supabase
-    .from('contratos')
-    .upsert(payload, { onConflict: 'id' })
-    .select()
-    .single();
+    let data;
 
-  if (error) {
-    console.error('[Contratos] Erro ao salvar rascunho:', error.message, error.code);
-    toast('Não foi possível salvar o rascunho: ' + error.message, 'error');
+    if (existingId) {
+      const { data: updated, error } = await _supabase
+        .from('contratos')
+        .update(payload)
+        .eq('id', existingId)
+        .select()
+        .single();
+      if (error) throw error;
+      data = updated;
+    } else {
+      data = await createContratoViaRPC(payload);
+      if (!data) {
+        toast('Erro ao criar rascunho.', 'error');
+        return null;
+      }
+    }
+
+    if (!existingId && data) {
+      const idEl = document.getElementById('contratoId');
+      if (idEl) idEl.value = data.id;
+    }
+
+    toast('Rascunho salvo com sucesso.', 'success');
+    await refreshContratosTable();
+    return data;
+  } catch (err) {
+    console.error('[Contratos] Erro ao salvar rascunho:', err.message || err);
+    if (err.code === '23505') {
+      toast('Erro: número de contrato duplicado. Tente novamente.', 'error');
+    } else {
+      toast('Não foi possível salvar o rascunho: ' + _friendlyContratoError(err), 'error');
+    }
     return null;
+  } finally {
+    _contratoSaving = false;
   }
-
-  if (!existingId && data) {
-    const idEl = document.getElementById('contratoId');
-    if (idEl) idEl.value = data.id;
-  }
-
-  toast('Rascunho salvo com sucesso.', 'success');
-  await refreshContratosTable();
-  return data;
 }
 
 /* ---- Generic closeModal helper (used by Contratos module) ----- */
