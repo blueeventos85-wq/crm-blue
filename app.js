@@ -147,6 +147,7 @@ async function initAuth() {
       currentUser.centro_custo_id = member.centro_custo_id || null;
       currentUser.centro_custo_ids = member._centro_custo_ids || [];
       currentUser.foto_url = member.foto_url || null;
+      currentUser.perfil = member.cargo || 'Atendente';
     } else {
       // Don't overwrite currentUser.id if already set — loadUserPermissions will resolve it
       if (!currentUser.id) {
@@ -188,6 +189,7 @@ async function initAuth() {
         currentUser.centro_custo_id = member.centro_custo_id || null;
         currentUser.centro_custo_ids = member._centro_custo_ids || [];
         currentUser.foto_url = member.foto_url || null;
+        currentUser.perfil = member.cargo || 'Atendente';
       } else if (!currentUser.id) {
         currentUser.nome = session.user.user_metadata?.nome || session.user.email?.split('@')[0] || 'Usuário';
         console.warn('[Auth] loadMemberFromAuth failed in INITIAL_SESSION, loadUserPermissions will attempt resolution');
@@ -214,6 +216,7 @@ async function initAuth() {
       currentUser.centro_custo_id = member.centro_custo_id || null;
       currentUser.centro_custo_ids = member._centro_custo_ids || [];
       currentUser.foto_url = member.foto_url || null;
+      currentUser.perfil = member.cargo || 'Atendente';
     } else if (!currentUser.id) {
       currentUser.nome = session.user.user_metadata?.nome || session.user.email?.split('@')[0] || 'Usuário';
       console.warn('[Auth] loadMemberFromAuth failed in onAuthStateChange, loadUserPermissions will attempt resolution');
@@ -1268,7 +1271,16 @@ async function handlePermMatrixSave() {
 
   } catch (err) {
     console.error('[Admin] Erro ao salvar matriz de permissões:', err);
-    toast('Erro ao salvar permissões: ' + err.message, 'error');
+    const msg = err.message || '';
+    if (msg.includes('row-level security') || msg.includes('violates row-level security') || msg.includes('permission denied')) {
+      toast('Não foi possível salvar as permissões. Verifique se você possui acesso de administrador.', 'error');
+    } else if (msg.includes('perfis_permissoes')) {
+      toast('Erro ao salvar permissões do perfil: ' + msg, 'error');
+    } else if (msg.includes('membros_permissoes')) {
+      toast('Erro ao atualizar permissões do membro: ' + msg, 'error');
+    } else {
+      toast('Erro ao salvar permissões: ' + msg, 'error');
+    }
   } finally {
     saveBtn.disabled = false;
     saveBtn.innerHTML = '<i data-lucide="save"></i> Salvar Permissões Globais';
