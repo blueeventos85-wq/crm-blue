@@ -3135,23 +3135,25 @@ async function loadUserPermissions() {
     }
     // Try by auth_user_id
     const { data: byAuth } = await _supabase.from('membros')
-      .select('id, nome, email, foto_url').eq('auth_user_id', authUser.id).maybeSingle();
+      .select('id, nome, email, cargo, foto_url').eq('auth_user_id', authUser.id).maybeSingle();
     if (byAuth) {
       currentUser.id = byAuth.id;
       currentUser.nome = currentUser.nome || byAuth.nome;
       currentUser.foto_url = byAuth.foto_url || null;
-      console.log('[Perm] Resolved member by auth_user_id:', byAuth.id);
+      currentUser.perfil = byAuth.cargo || 'Atendente';
+      console.log('[Perm] Resolved member by auth_user_id:', byAuth.id, 'cargo:', byAuth.cargo);
     } else {
       // Try by email
       const { data: byEmail } = await _supabase.from('membros')
-        .select('id, nome, email, foto_url').eq('email', authUser.email).maybeSingle();
+        .select('id, nome, email, cargo, foto_url').eq('email', authUser.email).maybeSingle();
       if (byEmail) {
         currentUser.id = byEmail.id;
         currentUser.nome = currentUser.nome || byEmail.nome;
         currentUser.foto_url = byEmail.foto_url || null;
+        currentUser.perfil = byEmail.cargo || 'Atendente';
         // Link auth_user_id for future lookups
         await _supabase.from('membros').update({ auth_user_id: authUser.id }).eq('id', byEmail.id);
-        console.log('[Perm] Resolved member by email and linked auth_user_id:', byEmail.id);
+        console.log('[Perm] Resolved member by email and linked auth_user_id:', byEmail.id, 'cargo:', byEmail.cargo);
       } else {
         console.error('[Perm] Could not find member for auth user:', authUser.id, authUser.email);
         return null;
@@ -3173,7 +3175,7 @@ async function loadUserPermissions() {
     }
   }
 
-  // Step 2: Determine user's profile — robust fallback chain
+  // Step 2: Determine user's profile — use cargo from membros table as authoritative source
   const validProfiles = ['Administrador', 'Atendente', 'Marketing', 'Pre Vendas', 'Membro'];
   let perfil = currentUser.perfil;
   if (!perfil || !validProfiles.includes(perfil)) {
@@ -3181,6 +3183,9 @@ async function loadUserPermissions() {
     perfil = 'Membro';
   }
   currentUser.perfil = perfil;
+
+  // Store the authoritative perfil from membros.cargo to prevent override from membros_permissoes
+  const authoritativePerfil = perfil;
 
   // Step 3: Load profile-level permissions from perfis_permissoes (fallback: PERFIL_DEFAULTS)
   let profilePerms = { ...(PERFIL_DEFAULTS[perfil] || PERFIL_DEFAULTS['Membro']) };
@@ -3219,11 +3224,12 @@ async function loadUserPermissions() {
   Object.entries(_profileToPermKey).forEach(([profileKey, permKey]) => {
     merged[permKey] = profilePerms[profileKey] === true;
   });
-  merged.perfil = perfil;
+  // Use authoritative perfil from membros.cargo — never override with membros_permissoes.perfil
+  merged.perfil = authoritativePerfil;
 
   // Step 6: Overlay individual overrides from membros_permissoes
   if (memberPerm) {
-    merged.perfil = memberPerm.perfil || perfil;
+    // Keep authoritative perfil; do NOT override with memberPerm.perfil
     merged.id = memberPerm.id;
     merged.membro_id = memberPerm.membro_id;
     merged.created_at = memberPerm.created_at;
@@ -3247,7 +3253,7 @@ async function loadUserPermissions() {
     try {
       const insertPayload = {
         membro_id: currentUser.id,
-        perfil: perfil,
+        perfil: authoritativePerfil,
         permissions: profilePerms
       };
       _sidebarPermKeys.forEach(k => { insertPayload[k] = merged[k] === true; });
@@ -8619,20 +8625,29 @@ function computeReminders(leads) {
 }
 
 function computeHonorarios(leads) {
-  const honLeads = leads.filter(l => (l.status || '') !== null);
+  // Find "Contrato Fechado" cadência UUID (case-insensitive match on nome)
+  const contratoFechadoCadencia = getDbCadencias().find(c =>
+    c.nome && c.nome.toLowerCase() === 'contrato fechado'
+  );
+  const contratoFechadoId = contratoFechadoCadencia ? contratoFechadoCadencia.id : null;
+
+  // Only consider leads in "Contrato Fechado" stage for faturamento
+  const honLeads = contratoFechadoId
+    ? leads.filter(l => l.status === contratoFechadoId)
+    : [];
+
   const total = honLeads.reduce((s, l) => s + (l.honorarios || 0), 0);
-  const byCadence = getVisibleCadences(currentCrmEmpresaFilter)
-    .map(c => {
-      const ls = honLeads.filter(l => l.status === c.id);
-      return { id: c.id, label: c.label, value: ls.reduce((s, l) => s + (l.honorarios || 0), 0), count: ls.length };
-    })
-    .filter(x => x.value > 0)
-    .sort((a, b) => b.value - a.value);
+
+  const byCadence = contratoFechadoId
+    ? [{ id: contratoFechadoId, label: 'Contrato Fechado', value: total, count: honLeads.length }]
+    : [];
+
   const byTemp = ['quente', 'morno', 'frio']
     .map(t => {
       const ls = honLeads.filter(l => l.thermal === t);
       return { id: t, label: t[0].toUpperCase() + t.slice(1), value: ls.reduce((s, l) => s + (l.honorarios || 0), 0), count: ls.length };
     });
+
   return { total, byCadence, byTemp, count: honLeads.length, avg: honLeads.length ? total / honLeads.length : 0 };
 }
 
