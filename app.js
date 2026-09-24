@@ -12419,7 +12419,7 @@ async function loadConversasChats() {
     console.log('[Conversas] Query:', { ccId, membroId });
     const result = await _supabase
       .from('conversations')
-      .select('id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at')
+      .select('id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at, group_name, group_jid')
       .eq('centros_custo_id', ccId)
       .eq('membro_id', membroId)
       .order('last_message_at', { ascending: false, nullsFirst: false });
@@ -12441,7 +12441,7 @@ async function loadConversasChats() {
     if (contactIds.length > 0) {
       const { data: contactsData, error: contactsErr } = await _supabase
         .from('contacts')
-        .select('id, phone, name, profile_pic_url')
+        .select('id, phone, name, profile_pic_url, is_group, group_jid')
         .in('id', contactIds);
       if (contactsErr) console.error('[Conversas] Erro ao buscar contatos:', contactsErr.message, contactsErr.code);
       (contactsData || []).forEach(c => { contactsMap[c.id] = c; });
@@ -12474,14 +12474,16 @@ async function loadConversasChats() {
     conversasState.allChats = (convData || []).map(c => {
       const contact = contactsMap[c.contact_id] || {};
       const lead = leadsMap[c.lead_id] || null;
+      const isGroup = contact.is_group === true;
+      const groupName = c.group_name || contact.name || '';
       let parsedNotes = [];
       if (lead?.observacoes) {
         try { parsedNotes = JSON.parse(lead.observacoes); } catch { parsedNotes = []; }
       }
       return {
         id: c.id,
-        contact_name: lead?.nome || contact.name || '',
-        contact_phone: lead?.telefone || contact.phone || '',
+        contact_name: isGroup ? groupName : (lead?.nome || contact.name || ''),
+        contact_phone: isGroup ? (c.group_jid || contact.group_jid || contact.phone || '') : (lead?.telefone || contact.phone || ''),
         contact_email: lead?.email || '',
         contact_location: '',
         status: c.status,
@@ -12495,6 +12497,9 @@ async function loadConversasChats() {
         tags: [],
         notes: parsedNotes,
         unread_count: c.unread_count || 0,
+        is_group: isGroup,
+        group_jid: c.group_jid || contact.group_jid || '',
+        group_name: isGroup ? groupName : '',
         _conversationId: c.id,
         _contactId: c.contact_id,
         _centroCustoId: c.centros_custo_id || null,
@@ -12535,6 +12540,7 @@ function _convApplyFilter() {
     const uid = getCurrentUserId();
     list = list.filter(c => c.assigned_to === uid);
   } else if (f === 'hot') list = list.filter(c => c.temperature === 'quente');
+  else if (f === 'groups') list = list.filter(c => c.is_group === true);
   else if (f === 'unidentified') list = list.filter(c => !c.contact_name || c.contact_name === c.contact_phone);
 
   conversasState.chats = list;
@@ -12554,11 +12560,13 @@ function _renderConvChatList() {
   list.innerHTML = chats.map(chat => {
     const active = chat.id === conversasState.selectedChatId ? ' active' : '';
     const unread = (chat.unread_count || 0) > 0 ? ' unread' : '';
+    const isGroup = chat.is_group === true;
     const initials = _convInitials(chat.contact_name, chat.contact_phone);
     const time = _convTimeAgo(chat.last_message_at);
     const thermo = chat.temperature || 'frio';
     const thermoTag = thermo === 'quente' ? '<span class="conv-tag conv-tag--quente">Quente</span>' :
                       thermo === 'morno' ? '<span class="conv-tag conv-tag--morno">Morno</span>' : '';
+    const groupTag = isGroup ? '<span class="conv-tag conv-tag--group" style="background:var(--primary);color:white;">Grupo</span>' : '';
     const prioTag = chat.priority ? '<span class="conv-tag conv-tag--priority">!</span>' : '';
     const unreadBadge = (chat.unread_count || 0) > 0
       ? `<span class="conv-card-unread-badge">${chat.unread_count}</span>` : '';
@@ -12566,10 +12574,10 @@ function _renderConvChatList() {
 
     return `
       <div class="conv-chat-card${active}${unread}" data-chat-id="${chat.id}">
-        <div class="conv-card-avatar">${initials}${(chat.unread_count || 0) > 0 ? dotHtml : ''}</div>
+        <div class="conv-card-avatar">${isGroup ? '<i data-lucide="users" style="width:24px;height:24px;"></i>' : initials}${(chat.unread_count || 0) > 0 ? dotHtml : ''}</div>
         <div class="conv-card-body">
           <div class="conv-card-top">
-            <span class="conv-card-name">${_convHtmlEscape(chat.contact_name || chat.contact_phone || 'Desconhecido')}</span>
+            <span class="conv-card-name">${_convHtmlEscape(chat.contact_name || chat.contact_phone || 'Desconhecido')}${groupTag}</span>
             <span class="conv-card-time">${time}</span>
           </div>
           <div class="conv-card-bottom">
@@ -12591,9 +12599,11 @@ function _convUpdateStats() {
   const unread = el => el && (el.textContent = all.filter(c => (c.unread_count || 0) > 0).length);
   const hot = el => el && (el.textContent = all.filter(c => c.temperature === 'quente').length);
   const online = el => el && (el.textContent = all.filter(c => c.status === 'open').length);
+  const groups = el => el && (el.textContent = all.filter(c => c.is_group === true).length);
   unread($('#convStatUnread'));
   hot($('#convStatHot'));
   online($('#convStatOnline'));
+  groups($('#convStatGroups'));
   const uid = getCurrentUserId();
   const unassigned = all.filter(c => !c.assigned_to).length;
   const el = $('#convUnidentifiedCount');
@@ -12659,7 +12669,8 @@ function _renderConvFilterChips() {
     { key: 'pending', label: 'Pendentes' },
     { key: 'closed', label: 'Fechadas' },
     { key: 'mine', label: 'Minhas' },
-    { key: 'hot', label: 'Quentes' }
+    { key: 'hot', label: 'Quentes' },
+    { key: 'groups', label: 'Grupos' }
   ];
   container.innerHTML = chips.map(c =>
     `<button class="conv-chip${conversasState.filter === c.key ? ' active' : ''}" data-filter="${c.key}">${c.label}</button>`
@@ -12729,19 +12740,26 @@ function _renderConvChatHeader(chat) {
   if (!header) return;
   const statusLabel = _CONV_STATUS_LABELS[chat.status] || chat.status;
   const statusClass = chat.status === 'open' ? 'conv-connection-dot--connected' : '';
+  const isGroup = chat.is_group === true;
+  const displayName = chat.contact_name || chat.contact_phone || 'Desconhecido';
+  const displayPhone = isGroup ? (chat.group_jid || 'Grupo WhatsApp') : (chat.contact_phone || 'Sem telefone');
+  
   header.innerHTML = `
-    <div class="conv-chat-header-avatar">${_convInitials(chat.contact_name, chat.contact_phone)}</div>
+    <div class="conv-chat-header-avatar">${isGroup ? '<i data-lucide="users" style="width:24px;height:24px;"></i>' : _convInitials(chat.contact_name, chat.contact_phone)}</div>
     <div class="conv-chat-header-info">
-      <div class="conv-chat-header-name">${_convHtmlEscape(chat.contact_name || chat.contact_phone || 'Desconhecido')}</div>
+      <div class="conv-chat-header-name">
+        ${_convHtmlEscape(displayName)}
+        ${isGroup ? '<span class="conv-group-badge" style="margin-left:8px;padding:2px 6px;font-size:10px;background:var(--primary);color:white;border-radius:4px;">Grupo</span>' : ''}
+      </div>
       <div class="conv-chat-header-meta">
         <span class="conv-connection-dot ${statusClass}" style="width:6px;height:6px;display:inline-block;border-radius:50%;"></span>
         <span>${statusLabel}</span>
         <span>&middot;</span>
-        <span>${chat.contact_phone ? '+' + chat.contact_phone : 'Sem telefone'}</span>
+        <span>${_convHtmlEscape(displayPhone)}</span>
       </div>
     </div>
     <div class="conv-chat-header-actions">
-      <button title="Telefone" onclick="window.open('https://wa.me/${chat.contact_phone || ''}','_blank')"><i data-lucide="phone"></i></button>
+      ${!isGroup && chat.contact_phone ? `<button title="Telefone" onclick="window.open('https://wa.me/${chat.contact_phone}','_blank')"><i data-lucide="phone"></i></button>` : ''}
       <button title="Arquivar" onclick="convArchiveChat('${chat.id}')"><i data-lucide="archive"></i></button>
       <button title="Mais opções"><i data-lucide="more-vertical"></i></button>
     </div>`;

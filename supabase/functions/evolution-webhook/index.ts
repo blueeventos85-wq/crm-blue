@@ -35,14 +35,8 @@ serve(async (req) => {
       const msgTimestamp = msgData.messageTimestamp
       const msgId = key.id || ''
 
-      // Ignorar mensagens de grupo
-      if (remoteJid.includes('@g.us')) {
-        console.log('[webhook] Ignorando mensagem de grupo:', remoteJid)
-        return new Response(JSON.stringify({ ok: true, skipped: true }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
-      }
+      // Detectar se é grupo
+      const isGroup = remoteJid.includes('@g.us')
 
       // Extrair conteúdo da mensagem
       const message = msgData.message || {}
@@ -55,9 +49,6 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       }
-
-      // Limpar phone do remoteJid
-      const phone = remoteJid.replace(/@.*$/, '')
 
       // Buscar instância para obter o membro_id e centros_custo_id
       const { data: configs, error: configError } = await supabase
@@ -93,11 +84,30 @@ serve(async (req) => {
         })
       }
 
-      // 1. Buscar ou criar contato (prioridade: centros_custo_id) — NÃO cria lead automaticamente
-      const contactId = await findOrCreateContact(supabase, membroId, centrosCustoId, phone, pushName, null)
+      let contactId: string
+      let phone: string
+      let contactName: string
+
+      if (isGroup) {
+        // === GRUPO ===
+        // Para grupos, usar o remoteJid como group_jid
+        // O "phone" será o group_jid para fins de identificação única
+        phone = remoteJid
+        // Nome do grupo: pushName (nome do grupo) ou extrair do subject se disponível
+        contactName = pushName || remoteJid
+        // Buscar ou criar contato de grupo
+        contactId = await findOrCreateGroupContact(supabase, membroId, centrosCustoId, remoteJid, contactName)
+      } else {
+        // === CONTATO INDIVIDUAL ===
+        // Limpar phone do remoteJid
+        phone = remoteJid.replace(/@.*$/, '')
+        contactName = pushName || phone
+        // Buscar ou criar contato individual
+        contactId = await findOrCreateContact(supabase, membroId, centrosCustoId, phone, contactName, null)
+      }
 
       // 2. Buscar ou criar conversa (prioridade: centros_custo_id) — sem lead_id inicial
-      const conversationId = await findOrCreateConversation(supabase, membroId, centrosCustoId, contactId, contentText, null)
+      const conversationId = await findOrCreateConversation(supabase, membroId, centrosCustoId, contactId, contentText, null, isGroup, remoteJid)
 
       // leadId permanece null — lead só será criado via botão "Sincronizar como Lead" no frontend
       const leadId = null
@@ -133,7 +143,7 @@ serve(async (req) => {
         })
       }
 
-      console.log('[webhook] Mensagem salva:', { conversationId, phone, fromMe, contentType, leadId })
+      console.log('[webhook] Mensagem salva:', { conversationId, phone, fromMe, contentType, leadId, isGroup })
 
       // Atualizar conversa: last_message, last_message_at, unread_count
       const lastMessageSummary = contentText
@@ -167,7 +177,7 @@ serve(async (req) => {
         console.error('[webhook] Erro ao atualizar conversa:', convUpdateError)
       }
 
-      return new Response(JSON.stringify({ ok: true, conversationId, leadId }), {
+      return new Response(JSON.stringify({ ok: true, conversationId, leadId, isGroup }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
@@ -356,7 +366,8 @@ async function findOrCreateContact(
   leadId: string | null
 ): Promise<string> {
   // Buscar contato existente — SEMPRE priorizar centros_custo_id
-  let query = supabase.from('contacts').select('id').eq('phone', phone)
+  // Para contatos individuais: phone não deve ser um group_jid (@g.us)
+  let query = supabase.from('contacts').select('id').eq('phone', phone).eq('is_group', false)
   if (centrosCustoId) {
     query = query.eq('centros_custo_id', centrosCustoId)
   } else if (membroId) {
@@ -377,10 +388,11 @@ async function findOrCreateContact(
     return existing.id
   }
 
-  // Criar novo contato
+  // Criar novo contato individual
   const insertPayload: Record<string, any> = {
     phone,
     name: pushName || phone,
+    is_group: false,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   }
@@ -402,6 +414,62 @@ async function findOrCreateContact(
   return newContact.id
 }
 
+// ── findOrCreateGroupContact: cria/busca contato para grupo WhatsApp ──
+async function findOrCreateGroupContact(
+  supabase: any,
+  membroId: string | null,
+  centrosCustoId: string | null,
+  groupJid: string,
+  groupName: string
+): Promise<string> {
+  // Buscar grupo existente pelo group_jid
+  let query = supabase.from('contacts').select('id').eq('group_jid', groupJid).eq('is_group', true)
+  if (centrosCustoId) {
+    query = query.eq('centros_custo_id', centrosCustoId)
+  } else if (membroId) {
+    query = query.eq('membro_id', membroId)
+  }
+  const { data: existing } = await query.maybeSingle()
+
+  if (existing) {
+    // Atualizar nome do grupo se mudou
+    if (groupName && groupName !== existing.name) {
+      await supabase
+        .from('contacts')
+        .update({ name: groupName, updated_at: new Date().toISOString() })
+        .eq('id', existing.id)
+    }
+    return existing.id
+  }
+
+  // Criar novo contato de grupo
+  // Phone pode ser o groupJid para compatibilidade, mas is_group=true indica que é grupo
+  const insertPayload: Record<string, any> = {
+    phone: groupJid,
+    name: groupName || groupJid,
+    is_group: true,
+    group_jid: groupJid,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }
+  if (centrosCustoId) insertPayload.centros_custo_id = centrosCustoId
+  if (membroId) insertPayload.membro_id = membroId
+
+  const { data: newContact, error: contactError } = await supabase
+    .from('contacts')
+    .insert([insertPayload])
+    .select('id')
+    .maybeSingle()
+
+  if (contactError) {
+    console.error('[webhook] Erro ao criar contato de grupo:', contactError)
+    throw new Error('Failed to create group contact: ' + contactError.message)
+  }
+
+  console.log('[webhook] Grupo criado:', { groupJid, groupName, contactId: newContact.id })
+  return newContact.id
+}
+
 // ── findOrCreateConversation: prioridade centros_custo_id, vincula lead ──
 async function findOrCreateConversation(
   supabase: any,
@@ -409,7 +477,9 @@ async function findOrCreateConversation(
   centrosCustoId: string | null,
   contactId: string,
   lastMessageText: string,
-  leadId: string | null
+  leadId: string | null,
+  isGroup: boolean = false,
+  groupJid: string | null = null
 ): Promise<string> {
   // REGRA: "Meu WhatsApp, meu lead" — buscar por contact_id + membro_id
   // Se o mesmo contato fala com dois corretores diferentes, cria conversas separadas
@@ -435,6 +505,13 @@ async function findOrCreateConversation(
         .update({ lead_id: leadId, updated_at: new Date().toISOString() })
         .eq('id', existing.id)
     }
+    // Atualizar group_jid e group_name se for grupo e não estiverem definidos
+    if (isGroup && (groupJid || lastMessageText)) {
+      const updates: Record<string, any> = { updated_at: new Date().toISOString() }
+      if (groupJid) updates.group_jid = groupJid
+      if (lastMessageText && !existing.group_name) updates.group_name = lastMessageText
+      await supabase.from('conversations').update(updates).eq('id', existing.id)
+    }
     return existing.id
   }
 
@@ -451,6 +528,10 @@ async function findOrCreateConversation(
   if (centrosCustoId) insertPayload.centros_custo_id = centrosCustoId
   if (membroId) insertPayload.membro_id = membroId
   if (leadId) insertPayload.lead_id = leadId
+  if (isGroup) {
+    insertPayload.group_jid = groupJid
+    insertPayload.group_name = lastMessageText || ''
+  }
 
   const { data: newConv, error: convError } = await supabase
     .from('conversations')
