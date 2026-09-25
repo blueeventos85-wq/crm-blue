@@ -2174,12 +2174,32 @@ function initCadenciaManagement() {
       document.getElementById('cadenciaCorInput').value = swatch.dataset.color;
     });
   }
+
+  // Clear inline error on input
+  const nomeInput = document.getElementById('cadenciaNomeInput');
+  const errorEl = document.getElementById('cadenciaNomeError');
+  if (nomeInput && errorEl) {
+    nomeInput.addEventListener('input', () => {
+      nomeInput.classList.remove('invalid');
+      errorEl.textContent = '';
+      errorEl.style.display = 'none';
+    });
+  }
 }
 
 function resetCadenciaForm() {
   document.getElementById('cadenciaId').value = '';
   document.getElementById('cadenciaNomeInput').value = '';
   document.getElementById('cadenciaCorInput').value = '#3B82F6';
+  
+  // Clear validation error
+  const nomeInput = document.getElementById('cadenciaNomeInput');
+  const errorEl = document.getElementById('cadenciaNomeError');
+  if (nomeInput) nomeInput.classList.remove('invalid');
+  if (errorEl) {
+    errorEl.textContent = '';
+    errorEl.style.display = 'none';
+  }
   
   const colorPicker = document.getElementById('cadenciaColorPicker');
   if (colorPicker) {
@@ -2292,12 +2312,26 @@ function closeCadenciaDeleteModal() {
 }
 
 async function handleCadenciaSave() {
-  const nome = document.getElementById('cadenciaNomeInput')?.value?.trim();
+  const nomeInput = document.getElementById('cadenciaNomeInput');
+  const nome = nomeInput?.value?.trim();
   const cor = document.getElementById('cadenciaCorInput')?.value;
+  const errorEl = document.getElementById('cadenciaNomeError');
 
   if (!nome) {
+    if (nomeInput) nomeInput.classList.add('invalid');
+    if (errorEl) {
+      errorEl.textContent = 'O nome da cadência é obrigatório';
+      errorEl.style.display = 'block';
+    }
     toast('Preencha o nome da cadência', 'error');
     return;
+  }
+
+  // Clear any previous error
+  if (nomeInput) nomeInput.classList.remove('invalid');
+  if (errorEl) {
+    errorEl.textContent = '';
+    errorEl.style.display = 'none';
   }
 
   // Collect visibility settings from checkboxes

@@ -1898,6 +1898,7 @@
                   <div class="form-group full">
                     <label>Nome da Cadência <span class="req">*</span></label>
                     <input type="text" id="cadenciaNomeInput" placeholder="Ex: Qualificado" required />
+                    <p class="form-error" id="cadenciaNomeError" style="display:none;"></p>
                   </div>
                   <div class="form-group full">
                     <label>Cor <span class="req">*</span></label>
@@ -1920,8 +1921,6 @@
                   </div>
                 </div>
               </div>
-            </div>
-
               <!-- Visibilidade por Perfil -->
               <div class="admin-form-section">
                 <h3 class="admin-form-section-title">Visibilidade por Perfil</h3>
@@ -1930,7 +1929,6 @@
                   <!-- preenchido via JS -->
                 </div>
               </div>
-
             </div>
             <div class="modal-foot admin-member-foot">
               <p class="admin-foot-note">A cadência será salva no Supabase e aparecerá no CRM.</p>
