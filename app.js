@@ -9559,7 +9559,9 @@ function openCalEventModal(isoDate, meetingId) {
       $('#calEventTimeStart').value = m.time || '09:00';
       $('#calEventTimeEnd').value = m.timeEnd || '';
       $('#calEventTemperature').value = m.temperature || '';
-      $('#calEventHon').value = m.honorarios ? m.honorarios.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '';
+      // Campo "Valor de Faturamento" oculto no modal — só preenche se existir no DOM
+      const honFillEl = $('#calEventHon');
+      if (honFillEl) honFillEl.value = m.honorarios ? m.honorarios.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '';
       $('#calEventNotes').value = m.notes || '';
       // Color
       const color = m.color || '#2F80ED';
@@ -10098,8 +10100,15 @@ function saveCalEvent() {
   const serviceIds = serviceChips.map(c => c.dataset.svcId).filter(Boolean);
 
   let honorarios = 0;
-  const honStr = $('#calEventHon').value.replace(/\D/g, '');
-  if (honStr) honorarios = parseInt(honStr, 10) / 100;
+  const honEl = $('#calEventHon');
+  if (honEl) {
+    const honStr = honEl.value.replace(/\D/g, '');
+    if (honStr) honorarios = parseInt(honStr, 10) / 100;
+  } else {
+    // Campo oculto no modal — preserva o valor já existente do evento (não zera no banco)
+    const currentEv = calEventEditId ? meetings.find(m => String(m.id) === String(calEventEditId)) : null;
+    honorarios = currentEv ? (currentEv.honorarios || 0) : 0;
+  }
 
   const duration = $('#calEventDuration').value || '';
 
