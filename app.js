@@ -4185,19 +4185,17 @@ function removeClientService(clientName, svcName) {
   if (idx === -1) return;
   client.services.splice(idx, 1);
   renderClients();
-  toast(`Serviço removido — <button class="toast-undo" data-undo-svc="${svcName}" data-undo-client="${clientName}">Desfazer</button>`);
-  setTimeout(() => {
-    document.querySelectorAll('.toast-undo').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const c = clientsData.find(cl => cl.name === btn.dataset.undoClient);
-        if (c && !c.services.includes(btn.dataset.undoSvc)) {
-          c.services.push(btn.dataset.undoSvc);
-          renderClients();
-          toast('Serviço restaurado');
-        }
-      });
-    });
-  }, 50);
+  toast('Serviço removido', 'success', {
+    label: 'Desfazer',
+    onClick: () => {
+      const c = clientsData.find(cl => cl.name === clientName);
+      if (c && !c.services.includes(svcName)) {
+        c.services.push(svcName);
+        renderClients();
+        toast('Serviço restaurado');
+      }
+    }
+  });
 }
 
 function removeLeadService(leadId, svcName) {
@@ -4209,23 +4207,21 @@ function removeLeadService(leadId, svcName) {
   allSvc.splice(idx, 1);
   lead.servicos = allSvc;
   renderAll();
-  toast(`Serviço removido — <button class="toast-undo" data-undo-svc="${svcName}" data-undo-lead="${leadId}">Desfazer</button>`);
-  setTimeout(() => {
-    document.querySelectorAll('.toast-undo').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const l = leads.find(ld => String(ld.id) === String(btn.dataset.undoLead));
-        if (l) {
-          const svc = normalizeServices(l.servicos);
-          if (!svc.includes(btn.dataset.undoSvc)) {
-            svc.push(btn.dataset.undoSvc);
-            l.servicos = svc;
-            renderAll();
-            toast('Serviço restaurado');
-          }
+  toast('Serviço removido', 'success', {
+    label: 'Desfazer',
+    onClick: () => {
+      const l = leads.find(ld => String(ld.id) === String(leadId));
+      if (l) {
+        const svc = normalizeServices(l.servicos);
+        if (!svc.includes(svcName)) {
+          svc.push(svcName);
+          l.servicos = svc;
+          renderAll();
+          toast('Serviço restaurado');
         }
-      });
-    });
-  }, 50);
+      }
+    }
+  });
 }
 
 let _clientsLoaded = false;
@@ -7621,7 +7617,7 @@ function validarTelefone(v) {
 let toastTimer = null;
 let toastExitTimer = null;
 
-function toast(text, type = 'success') {
+function toast(text, type = 'success', action = null) {
     const el = document.querySelector('#toast');
     const txt = document.querySelector('#toastText');
 
@@ -7629,6 +7625,7 @@ function toast(text, type = 'success') {
 
     clearTimeout(toastTimer);
     clearTimeout(toastExitTimer);
+    el.querySelector('.toast-undo')?.remove();
 
     el.style.transition = 'none';
     el.style.opacity = '1';
@@ -7639,6 +7636,25 @@ function toast(text, type = 'success') {
 
     txt.textContent = text;
     el.dataset.type = type;
+
+    // Ação opcional (ex.: "Desfazer") — botão real montado via DOM
+    let duration = 3000;
+    if (action && typeof action.onClick === 'function') {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'toast-undo';
+        btn.textContent = action.label || 'Desfazer';
+        btn.addEventListener('click', () => {
+            clearTimeout(toastTimer);
+            clearTimeout(toastExitTimer);
+            el.querySelector('.toast-undo')?.remove();
+            el.style.display = 'none';
+            el.hidden = true;
+            action.onClick();
+        });
+        el.appendChild(btn);
+        duration = 4000;
+    }
 
     void el.offsetWidth;
 
@@ -7652,7 +7668,7 @@ function toast(text, type = 'success') {
             el.style.display = 'none';
             el.hidden = true;
         }, 700);
-    }, 3000);
+    }, duration);
 }
 
 /* ============================================
@@ -12522,14 +12538,14 @@ async function loadConversasChats() {
       .eq('centros_custo_id', ccId)
       .eq('membro_id', membroId)
       .order('last_message_at', { ascending: false, nullsFirst: false });
-    let result = await doConvQuery('id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at, group_name, group_jid, title, is_group, avatar_url, metadata');
-    // Resiliência: migrações pendentes (title/is_group/avatar_url/metadata)
+    let result = await doConvQuery('id, membro_id, contact_id, centros_custo_id, lead_id, status, is_archived, unread_count, last_message_text, last_message_at, created_at, updated_at, group_name, group_jid, title, is_group, avatar_url, metadata');
+    // Resiliência: migrações pendentes (title/is_group/avatar_url/metadata/is_archived)
     // → repetir o select removendo apenas as colunas ausentes.
-    if (result.error && /(title|is_group|avatar_url|metadata)/.test(result.error.message || '')) {
+    if (result.error && /(title|is_group|avatar_url|metadata|is_archived)/.test(result.error.message || '')) {
       const convColsMsg = result.error.message || '';
       console.warn('[Conversas] colunas de conversa indisponíveis — repetindo select reduzido:', convColsMsg.substring(0, 140));
-      let convCols = 'id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at, group_name, group_jid, title, is_group, avatar_url, metadata';
-      for (const col of ['avatar_url', 'metadata', 'title', 'is_group']) {
+      let convCols = 'id, membro_id, contact_id, centros_custo_id, lead_id, status, is_archived, unread_count, last_message_text, last_message_at, created_at, updated_at, group_name, group_jid, title, is_group, avatar_url, metadata';
+      for (const col of ['avatar_url', 'metadata', 'title', 'is_group', 'is_archived']) {
         if (new RegExp(`\\b${col}\\b`).test(convColsMsg)) convCols = convCols.replace(new RegExp(`,\\s*${col}\\b`), '');
       }
       result = await doConvQuery(convCols);
@@ -12651,6 +12667,7 @@ async function loadConversasChats() {
         contact_email: lead?.email || '',
         contact_location: '',
         status: c.status,
+        is_archived: c.is_archived === true,
         assigned_to: c.membro_id,
         lead_id: c.lead_id || null,
         last_message: c.last_message_text,
@@ -12705,22 +12722,27 @@ function _convApplyFilter() {
   }
 
   const f = conversasState.filter;
-  if (f === 'unread') list = list.filter(c => (c.unread_count || 0) > 0);
-  else if (f === 'open') list = list.filter(c => c.status === 'open');
-  else if (f === 'pending') list = list.filter(c => c.status === 'pending');
-  else if (f === 'closed') list = list.filter(c => c.status === 'closed');
-  else if (f === 'mine') {
-    const uid = getCurrentUserId();
-    list = list.filter(c => c.assigned_to === uid);
-  } else if (f === 'hot') list = list.filter(c => c.temperature === 'quente');
-  else if (f === 'groups') list = list.filter(c => c.is_group === true);
-  else if (f === 'unidentified') list = list.filter(c => {
-    if (c.is_group) return false;
-    if (!c.contact_name || c.contact_name === 'Contato sem identificação') return true;
-    const a = String(c.contact_name).replace(/\D/g, '');
-    const b = String(c.contact_phone || '').replace(/\D/g, '');
-    return a.length >= 6 && a === b;
-  });
+  // Conversas arquivadas ficam fora da lista principal (visíveis só na pasta Arquivadas)
+  if (f === 'archived') list = list.filter(c => c.is_archived === true);
+  else {
+    list = list.filter(c => c.is_archived !== true);
+    if (f === 'unread') list = list.filter(c => (c.unread_count || 0) > 0);
+    else if (f === 'open') list = list.filter(c => c.status === 'open');
+    else if (f === 'pending') list = list.filter(c => c.status === 'pending');
+    else if (f === 'closed') list = list.filter(c => c.status === 'closed');
+    else if (f === 'mine') {
+      const uid = getCurrentUserId();
+      list = list.filter(c => c.assigned_to === uid);
+    } else if (f === 'hot') list = list.filter(c => c.temperature === 'quente');
+    else if (f === 'groups') list = list.filter(c => c.is_group === true);
+    else if (f === 'unidentified') list = list.filter(c => {
+      if (c.is_group) return false;
+      if (!c.contact_name || c.contact_name === 'Contato sem identificação') return true;
+      const a = String(c.contact_name).replace(/\D/g, '');
+      const b = String(c.contact_phone || '').replace(/\D/g, '');
+      return a.length >= 6 && a === b;
+    });
+  }
 
   conversasState.chats = list;
   _renderConvChatList();
@@ -12770,12 +12792,67 @@ function _renderConvChatList() {
             <div class="conv-card-tags">${thermoTag}${prioTag}${unreadBadge}</div>
           </div>
         </div>
+        ${can('can_conversas_delete') ? `<button class="conv-card-archive-btn" type="button" title="${chat.is_archived === true ? 'Desarquivar conversa' : 'Arquivar conversa'}"><i data-lucide="${chat.is_archived === true ? 'archive-restore' : 'archive'}"></i></button>` : ''}
       </div>`;
   }).join('');
 
   list.querySelectorAll('.conv-chat-card').forEach(el => {
     el.addEventListener('click', () => _convSelectChat(el.dataset.chatId));
+    el.addEventListener('contextmenu', e => {
+      if (!can('can_conversas_delete')) return;
+      e.preventDefault();
+      _convOpenCardMenu(e, el.dataset.chatId);
+    });
+    el.querySelector('.conv-card-archive-btn')?.addEventListener('click', e => {
+      e.stopPropagation();
+      convToggleArchive(el.dataset.chatId);
+    });
   });
+}
+
+/* ---------- menu de contexto do card (clique direito) ---------- */
+let _convCardMenuBound = false;
+function _convCloseCardMenu() {
+  document.getElementById('convCardMenu')?.remove();
+}
+function _convOpenCardMenu(e, chatId) {
+  _convCloseCardMenu();
+  const chat = conversasState.allChats.find(c => c.id === chatId);
+  if (!chat) return;
+  const isArchived = chat.is_archived === true;
+
+  const menu = document.createElement('div');
+  menu.id = 'convCardMenu';
+  menu.className = 'conv-ctx-menu';
+  menu.innerHTML = `
+    <button type="button" data-menu-action="toggle">
+      <i data-lucide="${isArchived ? 'archive-restore' : 'archive'}"></i>
+      <span>${isArchived ? 'Desarquivar conversa' : 'Arquivar conversa'}</span>
+    </button>`;
+  document.body.appendChild(menu);
+  initIcons();
+
+  // Posiciona no cursor com clamp na viewport
+  const rect = menu.getBoundingClientRect();
+  const x = Math.max(8, Math.min(e.clientX, window.innerWidth - rect.width - 8));
+  const y = Math.max(8, Math.min(e.clientY, window.innerHeight - rect.height - 8));
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+
+  menu.addEventListener('click', ev => {
+    if (!ev.target.closest('[data-menu-action="toggle"]')) return;
+    _convCloseCardMenu();
+    convToggleArchive(chatId);
+  });
+
+  if (!_convCardMenuBound) {
+    _convCardMenuBound = true;
+    document.addEventListener('click', ev => {
+      if (!ev.target.closest('#convCardMenu')) _convCloseCardMenu();
+    });
+    document.addEventListener('keydown', ev => { if (ev.key === 'Escape') _convCloseCardMenu(); });
+    window.addEventListener('scroll', _convCloseCardMenu, true);
+  }
 }
 
 function _convUpdateStats() {
@@ -12793,6 +12870,8 @@ function _convUpdateStats() {
   const unassigned = all.filter(c => !c.assigned_to).length;
   const el = $('#convUnidentifiedCount');
   if (el) el.textContent = unassigned;
+  const arch = $('#convArchivedCount');
+  if (arch) arch.textContent = all.filter(c => c.is_archived === true).length;
 }
 function _convUpdateSyncTime() {
   const el = $('#convSyncTime');
@@ -12870,6 +12949,20 @@ function _renderConvFilterChips() {
       _renderConvFilterChips();
     });
   });
+  _convRenderArchivedRow();
+}
+
+/* ---------- linha "Arquivadas" (estilo WhatsApp) ---------- */
+function _convRenderArchivedRow() {
+  const el = $('#convArchivedBtn');
+  if (!el) return;
+  const active = conversasState.filter === 'archived';
+  const count = conversasState.allChats.filter(c => c.is_archived === true).length;
+  el.classList.toggle('active', active);
+  el.innerHTML = active
+    ? '<i data-lucide="arrow-left"></i><span>Voltar para todas</span>'
+    : `<i data-lucide="archive"></i><span>Arquivadas</span><span class="conv-badge conv-badge--archived">${count}</span>`;
+  initIcons();
 }
 
 /* ---------- select chat ---------- */
@@ -12958,7 +13051,7 @@ function _renderConvChatHeader(chat) {
       ${isGroup ? '<button id="btnConvGroupInfo" title="Informações do grupo e participantes" style="display:inline-flex;align-items:center;"><i data-lucide="info"></i></button>' : ''}
       <button id="btnConvEditName" title="Editar nome ${isGroup ? 'do grupo' : 'do contato'}" style="display:inline-flex;align-items:center;"><i data-lucide="edit-2"></i></button>
       ${!isGroup && chat.contact_phone ? `<button title="Telefone" onclick="window.open('https://wa.me/${chat.contact_phone}','_blank')"><i data-lucide="phone"></i></button>` : ''}
-      <button title="Arquivar" onclick="convArchiveChat('${chat.id}')"><i data-lucide="archive"></i></button>
+      ${can('can_conversas_delete') ? `<button id="btnConvArchive" title="${chat.is_archived ? 'Desarquivar conversa' : 'Arquivar conversa'}" style="display:inline-flex;align-items:center;" onclick="convToggleArchive('${chat.id}')"><i data-lucide="${chat.is_archived ? 'archive-restore' : 'archive'}"></i></button>` : ''}
       <button title="Mais opções"><i data-lucide="more-vertical"></i></button>
     </div>`;
   initIcons();
@@ -14470,17 +14563,45 @@ async function convSyncContactToLead(contactId, centrosCustoId, membroId) {
     }
   }
 }
-async function convArchiveChat(chatId) {
-  if (!confirm('Arquivar esta conversa?')) return;
-  const membroId = currentUser.id;
-  if (membroId) {
-    await _supabase.from('conversations').update({ status: 'closed', updated_at: new Date().toISOString() }).eq('id', chatId).eq('membro_id', membroId);
-  }
+const _convArchiveInFlight = new Set();
+async function convToggleArchive(chatId) {
+  if (_convArchiveInFlight.has(chatId)) return;
   const chat = conversasState.allChats.find(c => c.id === chatId);
-  if (chat) chat.status = 'closed';
-  _convUpdateStats();
+  if (!chat) return;
+  if (!can('can_conversas_delete')) { toast('Sem permissão para arquivar conversas', 'error'); return; }
+
+  const prev = chat.is_archived === true;
+  const next = !prev;
+
+  // Atualização otimista: some/volta da lista na hora
+  chat.is_archived = next;
   _convApplyFilter();
-  toast('Conversa arquivada');
+  _convUpdateStats();
+  if (chatId === conversasState.selectedChatId) _renderConvChatHeader(chat);
+
+  _convArchiveInFlight.add(chatId);
+  const { error } = await _supabase
+    .from('conversations')
+    .update({ is_archived: next, updated_at: new Date().toISOString() })
+    .eq('id', chatId)
+    .eq('membro_id', currentUser.id);
+  _convArchiveInFlight.delete(chatId);
+
+  if (error) {
+    // Rollback: coluna ausente (migração pendente) ou RLS
+    chat.is_archived = prev;
+    _convApplyFilter();
+    _convUpdateStats();
+    if (chatId === conversasState.selectedChatId) _renderConvChatHeader(chat);
+    console.error('[Conversas] Erro ao alterar arquivamento:', error);
+    toast(next ? 'Erro ao arquivar conversa' : 'Erro ao desarquivar conversa', 'error');
+    return;
+  }
+
+  toast(next ? 'Conversa arquivada' : 'Conversa devolvida às ativas', 'success', {
+    label: 'Desfazer',
+    onClick: () => convToggleArchive(chatId)
+  });
 }
 
 /* ---------- new conversation modal ---------- */
@@ -14744,7 +14865,9 @@ function _convSubscribeRealtime() {
         conversasState.allChats[idx].last_message = updated.last_message_text || '';
         conversasState.allChats[idx].last_message_at = updated.last_message_at;
         conversasState.allChats[idx].status = updated.status;
+        conversasState.allChats[idx].is_archived = updated.is_archived === true;
         _convApplyFilter();
+        _convUpdateStats();
         if (updated.id === conversasState.selectedChatId || updated.id === conversasState.allChats[idx]._conversationId) {
           _renderConvChatHeader(conversasState.allChats[idx]);
           _renderConvCrmPanel(conversasState.allChats[idx]);
@@ -15002,6 +15125,7 @@ function initConversas() {
   const leadSearch = $('#convNewLeadSearch');
   const refreshBtn = $('#btnConvRefresh');
   const unidentifiedBtn = $('#convUnidentifiedBtn');
+  const archivedBtn = $('#convArchivedBtn');
 
   if (searchInput) {
     let debounce;
@@ -15122,6 +15246,17 @@ function initConversas() {
       conversasState.filter = 'unidentified';
       _convApplyFilter();
       _renderConvFilterChips();
+    });
+  }
+
+  if (archivedBtn) {
+    archivedBtn.addEventListener('click', () => {
+      conversasState.filter = conversasState.filter === 'archived' ? 'all' : 'archived';
+      _convApplyFilter();
+      _renderConvFilterChips();
+    });
+    archivedBtn.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); archivedBtn.click(); }
     });
   }
 

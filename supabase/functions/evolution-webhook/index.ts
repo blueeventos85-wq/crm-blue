@@ -231,7 +231,9 @@ serve(async (req) => {
       const convUpdates: Record<string, any> = {
         last_message_text: lastMessageSummary,
         last_message_at: messageTimestamp,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        // Mensagem nova devolve a conversa à lista principal (padrão WhatsApp)
+        is_archived: false
       }
       if (!fromMe) {
         // Incrementar não-lidas apenas para mensagens recebidas
@@ -243,10 +245,20 @@ serve(async (req) => {
         convUpdates.unread_count = (convRow?.unread_count || 0) + 1
       }
 
-      const { error: convUpdateError } = await supabase
+      let { error: convUpdateError } = await supabase
         .from('conversations')
         .update(convUpdates)
         .eq('id', conversationId)
+      // Resiliência: migração is_archived pendente → repetir sem a coluna
+      if (convUpdateError && /is_archived/.test(convUpdateError.message || '')) {
+        console.warn('[webhook] is_archived indisponível — repetindo update sem a coluna:', convUpdateError.message)
+        const { is_archived: _omit, ...restUpdates } = convUpdates
+        const retry = await supabase
+          .from('conversations')
+          .update(restUpdates)
+          .eq('id', conversationId)
+        convUpdateError = retry.error
+      }
       if (convUpdateError) {
         console.error('[webhook] Erro ao atualizar conversa:', convUpdateError)
       }

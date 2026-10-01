@@ -8161,6 +8161,13 @@ textarea:focus-visible,
 .conv-sidebar-unidentified i{width:16px;height:16px}
 .conv-sidebar-unidentified span:first-of-type{flex:1}
 .conv-badge{background:rgba(234,179,8,0.2);color:#B45309;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700}
+/* ---- Conversas arquivadas (linha estilo WhatsApp, abaixo dos filtros) ---- */
+.conv-sidebar-archived{display:flex;align-items:center;gap:8px;margin:0 12px 8px;padding:8px 12px;border-radius:8px;background:rgba(22,91,255,0.05);border:1px solid rgba(22,91,255,0.15);color:#165BFF;font-size:12px;font-weight:500;cursor:pointer;flex-shrink:0;transition:background 0.15s;user-select:none}
+.conv-sidebar-archived:hover{background:rgba(22,91,255,0.1)}
+.conv-sidebar-archived.active{background:rgba(22,91,255,0.12);border-color:#165BFF}
+.conv-sidebar-archived i,.conv-sidebar-archived svg{width:16px;height:16px;flex-shrink:0}
+.conv-sidebar-archived span:first-of-type{flex:1}
+.conv-badge--archived{background:rgba(22,91,255,0.15);color:#165BFF}
 .conv-sidebar-list{flex:1;overflow-y:auto;padding:8px 0}
 .conv-sidebar-list::-webkit-scrollbar{width:4px}
 .conv-sidebar-list::-webkit-scrollbar-thumb{background:var(--gray-300);border-radius:4px}
@@ -8195,6 +8202,16 @@ textarea:focus-visible,
 .conv-tag--status{background:rgba(34,197,94,0.1);color:#16A34A}
 .conv-tag--followup{background:rgba(168,85,247,0.1);color:#9333EA}
 .conv-card-unread-badge{background:#3B82F6;color:#fff;min-width:18px;height:18px;border-radius:9px;font-size:10px;font-weight:700;display:grid;place-items:center;padding:0 4px;flex-shrink:0}
+
+/* ---- Arquivar no hover do card + menu de contexto (clique direito) ---- */
+.conv-card-archive-btn{position:absolute;top:6px;right:10px;width:26px;height:26px;border-radius:6px;border:1px solid var(--gray-200);background:var(--card-bg);color:var(--gray-500);display:none;place-items:center;cursor:pointer;padding:0;z-index:3;transition:all 0.15s}
+.conv-chat-card:hover .conv-card-archive-btn{display:grid}
+.conv-card-archive-btn:hover{background:rgba(22,91,255,0.1);color:#165BFF;border-color:#165BFF}
+.conv-card-archive-btn i,.conv-card-archive-btn svg{width:14px;height:14px}
+.conv-ctx-menu{position:fixed;min-width:190px;background:var(--card-bg);border:1px solid var(--gray-200);border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,0.18);padding:4px;z-index:300;animation:convMenuIn 0.12s ease-out}
+.conv-ctx-menu button{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:none;background:transparent;border-radius:6px;font-size:13px;color:var(--gray-700);cursor:pointer;text-align:left;transition:background 0.12s}
+.conv-ctx-menu button:hover{background:var(--gray-100)}
+.conv-ctx-menu button i,.conv-ctx-menu button svg{width:15px;height:15px;flex-shrink:0}
 
 /* ---- Painel central: chat ---- */
 .conv-chat{display:flex;flex-direction:column;background:var(--card-bg);overflow:hidden}
@@ -8471,6 +8488,15 @@ textarea:focus-visible,
 .theme-dark .conv-chip:hover{background:rgba(255,255,255,0.06);color:#CBD5E1}
 .theme-dark .conv-chip-count{background:rgba(255,255,255,0.1)}
 .theme-dark .conv-sidebar-unidentified{color:#FACC15}
+.theme-dark .conv-sidebar-archived{background:rgba(22,91,255,0.12);border-color:rgba(22,91,255,0.3);color:#93B4FF}
+.theme-dark .conv-sidebar-archived:hover{background:rgba(22,91,255,0.2)}
+.theme-dark .conv-sidebar-archived.active{background:rgba(22,91,255,0.25);border-color:#3B82F6}
+.theme-dark .conv-badge--archived{background:rgba(22,91,255,0.25);color:#93B4FF}
+.theme-dark .conv-card-archive-btn{background:#1E293B;border-color:#334155;color:#94A3B8}
+.theme-dark .conv-card-archive-btn:hover{background:rgba(22,91,255,0.2);color:#93B4FF;border-color:#3B82F6}
+.theme-dark .conv-ctx-menu{background:#1E293B;border-color:#334155;box-shadow:0 8px 24px rgba(0,0,0,0.45)}
+.theme-dark .conv-ctx-menu button{color:#CBD5E1}
+.theme-dark .conv-ctx-menu button:hover{background:rgba(255,255,255,0.08)}
 .theme-dark .conv-sidebar-list::-webkit-scrollbar-thumb{background:#334155}
 .theme-dark .conv-chat-card{border-color:#1E293B}
 .theme-dark .conv-chat-card:hover{background:rgba(255,255,255,0.04)}
