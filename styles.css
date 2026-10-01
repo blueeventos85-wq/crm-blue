@@ -8134,6 +8134,12 @@ textarea:focus-visible,
 .conv-centro-custo-select:focus{border-color:var(--primary-blue)}
 .conv-sync-time{font-size:11px;color:var(--gray-400)}
 
+/* ---- Spinner do botão de sincronizar contatos/grupos ---- */
+#btnConvRefresh.is-loading{opacity:.7;pointer-events:none}
+#btnConvRefresh.is-loading svg,
+#btnConvRefresh.is-loading i{animation:convRefreshSpin .9s linear infinite}
+@keyframes convRefreshSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+
 /* ---- Layout 3 painéis ---- */
 .conv-layout{display:grid;grid-template-columns:340px 1fr 300px;flex:1;gap:0;background:var(--bg-page);overflow:hidden}
 
@@ -8166,6 +8172,14 @@ textarea:focus-visible,
 .conv-chat-card.unread{background:rgba(22,91,255,0.04)}
 .conv-card-avatar{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#1E3A5F,#165BFF);color:#fff;display:grid;place-items:center;font-size:14px;font-weight:700;flex-shrink:0;position:relative}
 .conv-card-unread-dot{position:absolute;top:0;right:0;width:10px;height:10px;border-radius:50%;background:#3B82F6;border:2px solid var(--card-bg)}
+
+/* ---- Avatares WhatsApp (foto de perfil de contato/grupo) ---- */
+.conv-avatar-img{width:44px;height:44px;border-radius:50%;object-fit:cover;display:block}
+.conv-card-avatar .conv-avatar-img,
+.conv-chat-header-avatar .conv-avatar-img,
+#groupInfoAvatar .conv-avatar-img{position:absolute;inset:0;width:100%;height:100%;z-index:1;background:#e5e7eb}
+.conv-avatar-fallback{width:100%;height:100%;display:grid;place-items:center;border-radius:50%}
+.conv-card-avatar .conv-card-unread-dot{z-index:2}
 .conv-card-body{flex:1;min-width:0}
 .conv-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .conv-card-name{font-size:13px;font-weight:600;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -8190,7 +8204,18 @@ textarea:focus-visible,
 .conv-chat-empty p{font-size:13px;color:var(--gray-400);margin:0}
 .conv-chat-content{display:flex;flex-direction:column;height:100%}
 .conv-chat-header{padding:12px 20px;background:var(--card-bg);border-bottom:1px solid var(--gray-200);display:flex;align-items:center;gap:12px;flex-shrink:0}
-.conv-chat-header-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#1E3A5F,#165BFF);color:#fff;display:grid;place-items:center;font-size:13px;font-weight:700;flex-shrink:0}
+.conv-chat-header-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#1E3A5F,#165BFF);color:#fff;display:grid;place-items:center;font-size:13px;font-weight:700;flex-shrink:0;position:relative;overflow:hidden}
+
+/* ---- Modal: informações do grupo / participantes ---- */
+#groupInfoModal .modal-body{max-height:62vh;overflow-y:auto}
+.group-member-list{list-style:none;margin:0;padding:0}
+.group-member-row{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--gray-200,#eee)}
+.group-member-row:last-child{border-bottom:none}
+.group-member-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#1E3A5F,#165BFF);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700;flex-shrink:0;position:relative;overflow:hidden}
+.group-member-avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1}
+.group-member-fallback{width:100%;height:100%;display:grid;place-items:center}
+.group-member-name{flex:1;min-width:0;font-size:13px;font-weight:500;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv-admin-tag{padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;background:rgba(22,163,74,.12);color:#16A34A;flex-shrink:0}
 .conv-chat-header-info{flex:1;min-width:0}
 .conv-chat-header-name{font-size:14px;font-weight:600;color:var(--gray-800)}
 .conv-chat-header-meta{font-size:11px;color:var(--muted-text);display:flex;align-items:center;gap:8px}
@@ -8266,6 +8291,62 @@ textarea:focus-visible,
 .conv-media-doc:hover{background:var(--gray-100)}
 .conv-media-doc i{width:16px;height:16px;flex-shrink:0}
 .conv-media-caption{font-size:13px;line-height:1.4}
+
+/* ---- Menu de opções da mensagem (hover) ---- */
+.conv-msg-menu-btn{position:absolute;top:2px;right:2px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(255,255,255,0.12);color:inherit;cursor:pointer;display:none;place-items:center;padding:0;opacity:0.75;transition:opacity 0.15s,background 0.15s;z-index:2}
+.conv-msg.lead .conv-msg-menu-btn{background:rgba(15,23,42,0.08);color:var(--gray-500)}
+.conv-msg:hover .conv-msg-menu-btn{display:grid}
+.conv-msg-menu-btn:hover{opacity:1;background:rgba(255,255,255,0.25)}
+.conv-msg.lead .conv-msg-menu-btn:hover{background:rgba(15,23,42,0.16)}
+.conv-msg-menu-btn i,.conv-msg-menu-btn svg{width:14px;height:14px}
+.conv-msg-menu{position:absolute;top:26px;right:2px;min-width:160px;background:var(--card-bg);border:1px solid var(--gray-200);border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,0.18);padding:4px;z-index:30;display:none;animation:convMenuIn 0.12s ease-out}
+.conv-msg-menu.open{display:block}
+@keyframes convMenuIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.conv-msg-menu button{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:none;background:transparent;border-radius:6px;font-size:13px;color:var(--gray-700);cursor:pointer;text-align:left;transition:background 0.12s}
+.conv-msg-menu button:hover{background:var(--gray-100)}
+.conv-msg-menu button i,.conv-msg-menu button svg{width:15px;height:15px;flex-shrink:0}
+.conv-msg-menu button.danger{color:#E14C4C}
+.conv-msg-menu button.danger:hover{background:#FDECEC}
+
+/* ---- Mensagem apagada ---- */
+.conv-msg-deleted{display:flex;align-items:center;gap:6px;font-style:italic;opacity:0.75;font-size:13px;color:inherit}
+.conv-msg-sender-name{
+  font-size:12.5px;
+  font-weight:600;
+  color:#00a884; /* verde WhatsApp (autor do balão em grupos) */
+  margin-bottom:2px;
+  line-height:1.2;
+  cursor:default;
+}
+.conv-msg-deleted em{font-style:italic}
+
+/* ---- Drag & drop no chat ---- */
+.conv-chat-messages.dragover{outline:2px dashed var(--primary-blue);outline-offset:-8px;background:rgba(59,130,246,0.06)}
+
+/* ---- Editor de imagem fullscreen ---- */
+.conv-image-editor{position:fixed;inset:0;background:rgba(8,12,20,0.96);z-index:280;display:none;flex-direction:column}
+.conv-image-editor.open{display:flex}
+.conv-image-editor-top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;background:rgba(15,23,42,0.9);border-bottom:1px solid rgba(148,163,184,0.15);flex-shrink:0;flex-wrap:wrap}
+.conv-image-editor-icon{width:38px;height:38px;border-radius:50%;border:none;background:rgba(255,255,255,0.08);color:#E2E8F0;cursor:pointer;display:grid;place-items:center;transition:background 0.15s}
+.conv-image-editor-icon:hover{background:rgba(255,255,255,0.18)}
+.conv-image-editor-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.conv-image-editor-tool{height:34px;padding:0 12px;border-radius:18px;border:1px solid rgba(148,163,184,0.3);background:rgba(255,255,255,0.06);color:#E2E8F0;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;transition:background 0.15s,border-color 0.15s}
+.conv-image-editor-tool:hover{background:rgba(255,255,255,0.16);border-color:rgba(148,163,184,0.55)}
+.conv-image-editor-tool i,.conv-image-editor-tool svg{width:16px;height:16px}
+.conv-image-editor-angle{display:flex;align-items:center;gap:8px;color:#94A3B8;font-size:12px;min-width:220px}
+.conv-image-editor-angle i,.conv-image-editor-angle svg{width:15px;height:15px;flex-shrink:0}
+.conv-image-editor-angle input[type=range]{width:150px;accent-color:var(--primary-blue);cursor:pointer}
+.conv-image-editor-angle span{min-width:36px;text-align:right;font-variant-numeric:tabular-nums}
+.conv-image-editor-stage{flex:1;min-height:0;padding:16px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.conv-image-editor-stage img{max-width:100%;max-height:100%;display:block}
+.conv-image-editor-bottom{display:flex;align-items:flex-end;gap:12px;padding:14px 16px;background:rgba(15,23,42,0.9);border-top:1px solid rgba(148,163,184,0.15);flex-shrink:0}
+.conv-image-editor-caption{flex:1;background:rgba(255,255,255,0.07);border:1px solid rgba(148,163,184,0.25);border-radius:10px;padding:10px 14px;color:#F1F5F9;font-size:13px;font-family:inherit;resize:none;outline:none;max-height:96px;line-height:1.4}
+.conv-image-editor-caption::placeholder{color:#64748B}
+.conv-image-editor-caption:focus{border-color:var(--primary-blue)}
+.conv-image-editor-send{width:44px;height:44px;border-radius:50%;border:none;background:#22C55E;color:#fff;cursor:pointer;display:grid;place-items:center;flex-shrink:0;transition:background 0.15s,transform 0.1s}
+.conv-image-editor-send:hover{background:#16A34A}
+.conv-image-editor-send:active{transform:scale(0.94)}
+.conv-image-editor-send i,.conv-image-editor-send svg{width:19px;height:19px}
 
 /* ---- Painel direito: CRM ---- */
 .conv-crm-panel{background:var(--card-bg);border-left:1px solid var(--gray-200);display:flex;flex-direction:column;overflow-y:auto}
@@ -8382,6 +8463,13 @@ textarea:focus-visible,
 .theme-dark .conv-msg.lead{background:#1E293B;color:#E2E8F0;border-color:#334155}
 .theme-dark .conv-typing-indicator{background:#1E293B;color:#64748B;border-color:#334155}
 .theme-dark .conv-typing-dot{background:#64748B}
+.theme-dark .conv-msg-menu{background:#1E293B;border-color:#334155;box-shadow:0 8px 24px rgba(0,0,0,0.45)}
+.theme-dark .conv-msg-menu button{color:#CBD5E1}
+.theme-dark .conv-msg-menu button:hover{background:rgba(255,255,255,0.08)}
+.theme-dark .conv-msg-menu button.danger{color:#F87171}
+.theme-dark .conv-msg-menu button.danger:hover{background:rgba(248,113,113,0.12)}
+.theme-dark .conv-msg-menu-btn{background:rgba(255,255,255,0.1);color:#94A3B8}
+.theme-dark .conv-image-editor{background:rgba(3,7,15,0.97)}
 .theme-dark .conv-chat-composer{background:#0F172A;border-color:#1E293B}
 .theme-dark .conv-composer-btn{color:#64748B}
 .theme-dark .conv-composer-btn:hover{background:rgba(255,255,255,0.08);color:#E2E8F0}

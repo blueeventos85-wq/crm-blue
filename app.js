@@ -12383,6 +12383,7 @@ const conversasState = {
   centrosCustoList: [],
   waStatus: 'disconnected',
   instanceName: null,
+  avatarsByPhone: {}, // dígitos → URL da foto de perfil (WhatsApp)
   _loadAbortController: null
 };
 
@@ -12409,6 +12410,69 @@ function _convInitials(name, phone) {
 }
 
 /* ---------- load chats ---------- */
+/* ---------- formatação de telefone para títulos ---------- */
+function _convFormatPhone(raw) {
+  let d = String(raw || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d.length >= 12 && d.length <= 13 && d.startsWith('55')) d = d.slice(2); // remove DDI BR
+  if (d.length === 10 || d.length === 11) {
+    const ddd = d.slice(0, 2);
+    const rest = d.slice(2);
+    const mid = d.length === 11 ? 5 : 4;
+    return `(${ddd}) ${rest.slice(0, mid)}-${rest.slice(mid)}`;
+  }
+  return '+' + d;
+}
+
+/* ---------- telefone internacional (+55 ...) para rótulo de remetente ---------- */
+function _convFormatPhoneIntl(raw) {
+  let d = String(raw || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d.length >= 12 && d.length <= 13 && d.startsWith('55')) {
+    const local = _convFormatPhone(d.slice(2)); // (85) 9999-9999
+    if (local && !local.startsWith('+')) return `+55 ${local}`;
+    return local || `+${d}`;
+  }
+  const local = _convFormatPhone(d);
+  if (!local) return `+${d}`;
+  return local.startsWith('+') ? local : `+55 ${local}`;
+}
+
+/* ---------- lookup: número → nome salvo em contacts ---------- */
+function _convLookupContactName(digits) {
+  if (!digits) return '';
+  const map = conversasState.contactsByPhone || {};
+  if (map[digits]) return map[digits];
+  if (digits.startsWith('55') && map[digits.slice(2)]) return map[digits.slice(2)];
+  if (!digits.startsWith('55') && map['55' + digits]) return map['55' + digits];
+  return '';
+}
+function _convLookupContactAvatar(digits) {
+  if (!digits) return '';
+  const map = conversasState.avatarsByPhone || {};
+  if (map[digits]) return map[digits];
+  if (digits.startsWith('55') && map[digits.slice(2)]) return map[digits.slice(2)];
+  if (!digits.startsWith('55') && map['55' + digits]) return map['55' + digits];
+  return '';
+}
+
+/* ---------- resolução do número/remoteJid para envio ---------- */
+function _convResolveSendNumber(chat) {
+  const raw = String(chat?.contact_phone || '').trim();
+  const groupJid = String(chat?.group_jid || '').trim();
+  const isGroup = chat?.is_group === true || !!groupJid || raw.includes('@g.us');
+
+  if (isGroup) {
+    // Grupo: enviar o JID completo (ex: 120363xxx@g.us) — SEM máscara numérica
+    let jid = groupJid || raw;
+    if (jid && !jid.includes('@')) jid = `${jid}@g.us`;
+    return jid || null;
+  }
+
+  const cleanPhone = raw.replace(/\D/g, '');
+  return cleanPhone ? (cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`) : null;
+}
+
 async function loadConversasChats() {
   const list = $('#convChatList');
   if (!list) return;
@@ -12451,12 +12515,24 @@ async function loadConversasChats() {
     // Buscar conversas: VISIBILIDADE ESTRTA — apenas conversas do próprio membro
     let convData, convError;
     console.log('[Conversas] Query:', { ccId, membroId });
-    const result = await _supabase
+    const doConvQuery = (cols) => _supabase
       .from('conversations')
-      .select('id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at, group_name, group_jid')
+      .select(cols)
       .eq('centros_custo_id', ccId)
       .eq('membro_id', membroId)
       .order('last_message_at', { ascending: false, nullsFirst: false });
+    let result = await doConvQuery('id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at, group_name, group_jid, title, is_group, avatar_url, metadata');
+    // Resiliência: migrações pendentes (title/is_group/avatar_url/metadata)
+    // → repetir o select removendo apenas as colunas ausentes.
+    if (result.error && /(title|is_group|avatar_url|metadata)/.test(result.error.message || '')) {
+      const convColsMsg = result.error.message || '';
+      console.warn('[Conversas] colunas de conversa indisponíveis — repetindo select reduzido:', convColsMsg.substring(0, 140));
+      let convCols = 'id, membro_id, contact_id, centros_custo_id, lead_id, status, unread_count, last_message_text, last_message_at, created_at, updated_at, group_name, group_jid, title, is_group, avatar_url, metadata';
+      for (const col of ['avatar_url', 'metadata', 'title', 'is_group']) {
+        if (new RegExp(`\\b${col}\\b`).test(convColsMsg)) convCols = convCols.replace(new RegExp(`,\\s*${col}\\b`), '');
+      }
+      result = await doConvQuery(convCols);
+    }
     convData = result.data;
     convError = result.error;
 
@@ -12471,14 +12547,46 @@ async function loadConversasChats() {
     // Buscar contatos separadamente
     const contactIds = [...new Set((convData || []).map(c => c.contact_id).filter(id => id && typeof id === 'string' && id.length === 36))];
     let contactsMap = {};
+    conversasState.contactsByPhone = {}; // dígitos → nome salvo (rótulo de remetente em grupos)
 
     if (contactIds.length > 0) {
-      const { data: contactsData, error: contactsErr } = await _supabase
+      let contactCols = 'id, phone, name, push_name, avatar_url, profile_pic_url, is_group, group_jid';
+      let { data: contactsData, error: contactsErr } = await _supabase
         .from('contacts')
-        .select('id, phone, name, profile_pic_url, is_group, group_jid')
+        .select(contactCols)
         .in('id', contactIds);
+      // Resiliência: migrações de push_name/avatar_url pendentes →
+      // repetir a query sem as colunas ausentes (nunca perder os nomes).
+      if (contactsErr && /(push_name|avatar_url)/.test(contactsErr.message || '')) {
+        const contactErrMsg = contactsErr.message || '';
+        if (/\bpush_name\b/.test(contactErrMsg)) contactCols = contactCols.replace(/,\s*push_name\b/, '');
+        if (/\bavatar_url\b/.test(contactErrMsg)) contactCols = contactCols.replace(/,\s*avatar_url\b/, '');
+        console.warn('[Conversas] colunas de contato indisponíveis — repetindo select reduzido:', contactErrMsg.substring(0, 140));
+        const retry = await _supabase
+          .from('contacts')
+          .select(contactCols)
+          .in('id', contactIds);
+        contactsData = retry.data;
+        contactsErr = retry.error;
+      }
       if (contactsErr) console.error('[Conversas] Erro ao buscar contatos:', contactsErr.message, contactsErr.code);
-      (contactsData || []).forEach(c => { contactsMap[c.id] = c; });
+      (contactsData || []).forEach(c => {
+        contactsMap[c.id] = c;
+        const digits = String(c.phone || '').replace(/\D/g, '');
+        const nm = String(c.name || '').trim();
+        if (digits && nm && !/^\d{6,}$/.test(nm)) {
+          // indexar nos dois formatos (com e sem DDI 55) para o lookup do remetente
+          conversasState.contactsByPhone[digits] = nm;
+          if (digits.startsWith('55')) conversasState.contactsByPhone[digits.slice(2)] = nm;
+          else conversasState.contactsByPhone['55' + digits] = nm;
+        }
+        const av = String(c.avatar_url || c.profile_pic_url || '').trim();
+        if (digits && /^https?:\/\//i.test(av)) {
+          conversasState.avatarsByPhone[digits] = av;
+          if (digits.startsWith('55')) conversasState.avatarsByPhone[digits.slice(2)] = av;
+          else conversasState.avatarsByPhone['55' + digits] = av;
+        }
+      });
     }
 
     if (signal.aborted) return;
@@ -12505,18 +12613,39 @@ async function loadConversasChats() {
     if (signal.aborted) return;
 
     // Mapear para formato compativel com a UI
+    const operatorName = (currentUser?.nome || '').trim();
+    const _t = v => (v == null ? '' : String(v).trim()); // trim à prova de null/undefined
+    const isGenericConvName = (n, digits) => {
+      const s = _t(n);
+      if (!s) return true;
+      if (digits && s === digits) return true;               // só o telefone
+      if (/^\d{6,}$/.test(s)) return true;                    // só dígitos
+      if (operatorName && s.toLowerCase() === operatorName.toLowerCase()) return true; // nome do atendente (poluição fromMe)
+      return false;
+    };
     conversasState.allChats = (convData || []).map(c => {
       const contact = contactsMap[c.contact_id] || {};
       const lead = leadsMap[c.lead_id] || null;
-      const isGroup = contact.is_group === true;
-      const groupName = c.group_name || contact.name || '';
+      const isGroup = contact.is_group === true || c.is_group === true || !!c.group_jid || !!contact.group_jid || String(contact.phone || '').includes('@g.us');
+      const phoneDigits = String(contact.phone || '').replace(/\D/g, '');
+      // GRUPO: group_name || title || name do contato-grupo || 'Grupo sem nome'.
+      // NUNCA usar o preview da última mensagem (last_message_text) como título.
+      let groupName = _t(c.group_name) || _t(c.title) || _t(contact.name);
+      if (groupName && groupName === _t(c.last_message_text)) groupName = ''; // legado: group_name poluído com o texto da mensagem
+      // INDIVIDUAL: contact.name || contact.push_name || telefone formatado.
+      // Cadeia à prova de nulos/vazios — o título NUNCA renderiza em branco.
+      const individualTitle = (!isGenericConvName(contact.name, phoneDigits) && _t(contact.name))
+        || (!isGenericConvName(contact.push_name, phoneDigits) && _t(contact.push_name))
+        || _convFormatPhone(phoneDigits)
+        || 'Contato sem identificação';
+      const contactName = isGroup ? (groupName || 'Grupo sem nome') : individualTitle;
       let parsedNotes = [];
       if (lead?.observacoes) {
         try { parsedNotes = JSON.parse(lead.observacoes); } catch { parsedNotes = []; }
       }
       return {
         id: c.id,
-        contact_name: isGroup ? groupName : (lead?.nome || contact.name || ''),
+        contact_name: contactName,
         contact_phone: isGroup ? (c.group_jid || contact.group_jid || contact.phone || '') : (lead?.telefone || contact.phone || ''),
         contact_email: lead?.email || '',
         contact_location: '',
@@ -12534,6 +12663,15 @@ async function loadConversasChats() {
         is_group: isGroup,
         group_jid: c.group_jid || contact.group_jid || '',
         group_name: isGroup ? groupName : '',
+        avatar_url: isGroup
+          ? (_t(c.avatar_url) || _t(contact.avatar_url) || _t(contact.profile_pic_url) || '')
+          : (_t(contact.avatar_url) || _t(contact.profile_pic_url) || ''),
+        group_participants: (() => {
+          if (!isGroup) return [];
+          let meta = c.metadata;
+          if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { meta = null; } }
+          return Array.isArray(meta?.participants) ? meta.participants : [];
+        })(),
         _conversationId: c.id,
         _contactId: c.contact_id,
         _centroCustoId: c.centros_custo_id || null,
@@ -12575,7 +12713,13 @@ function _convApplyFilter() {
     list = list.filter(c => c.assigned_to === uid);
   } else if (f === 'hot') list = list.filter(c => c.temperature === 'quente');
   else if (f === 'groups') list = list.filter(c => c.is_group === true);
-  else if (f === 'unidentified') list = list.filter(c => !c.contact_name || c.contact_name === c.contact_phone);
+  else if (f === 'unidentified') list = list.filter(c => {
+    if (c.is_group) return false;
+    if (!c.contact_name || c.contact_name === 'Contato sem identificação') return true;
+    const a = String(c.contact_name).replace(/\D/g, '');
+    const b = String(c.contact_phone || '').replace(/\D/g, '');
+    return a.length >= 6 && a === b;
+  });
 
   conversasState.chats = list;
   _renderConvChatList();
@@ -12605,10 +12749,16 @@ function _renderConvChatList() {
     const unreadBadge = (chat.unread_count || 0) > 0
       ? `<span class="conv-card-unread-badge">${chat.unread_count}</span>` : '';
     const dotHtml = `<span class="conv-card-unread-dot"></span>`;
+    // Avatar real do WhatsApp com fallback elegante (iniciais / ícone de grupo)
+    const avatarUrl = chat.avatar_url || '';
+    const avatarInner = avatarUrl
+      ? `<img src="${_convHtmlEscape(avatarUrl)}" class="conv-avatar-img" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';">` +
+        `<div class="conv-avatar-fallback" style="display:none;">${isGroup ? '<i data-lucide="users" style="width:24px;height:24px;"></i>' : initials}</div>`
+      : (isGroup ? '<i data-lucide="users" style="width:24px;height:24px;"></i>' : initials);
 
     return `
       <div class="conv-chat-card${active}${unread}" data-chat-id="${chat.id}">
-        <div class="conv-card-avatar">${isGroup ? '<i data-lucide="users" style="width:24px;height:24px;"></i>' : initials}${(chat.unread_count || 0) > 0 ? dotHtml : ''}</div>
+        <div class="conv-card-avatar">${avatarInner}${(chat.unread_count || 0) > 0 ? dotHtml : ''}</div>
         <div class="conv-card-body">
           <div class="conv-card-top">
             <span class="conv-card-name">${_convHtmlEscape(chat.contact_name || chat.contact_phone || 'Desconhecido')}${groupTag}</span>
@@ -12741,7 +12891,7 @@ async function _convSelectChat(chatId) {
       if (leadData) {
         chat._leadData = leadData;
         chat.temperature = leadData.temperatura || 'frio';
-        chat.contact_name = leadData.nome || chat.contact_name;
+        // Título NUNCA vem do lead — prioridade: contact.name || push_name || telefone
         chat.contact_phone = leadData.telefone || chat.contact_phone;
         chat.contact_email = leadData.email || '';
         if (leadData.observacoes) {
@@ -12777,9 +12927,14 @@ function _renderConvChatHeader(chat) {
   const isGroup = chat.is_group === true;
   const displayName = chat.contact_name || chat.contact_phone || 'Desconhecido';
   const displayPhone = isGroup ? (chat.group_jid || 'Grupo WhatsApp') : (chat.contact_phone || 'Sem telefone');
-  
+  // Avatar real do WhatsApp no cabeçalho (fallback: ícone de grupo / iniciais)
+  const headerAvatarInner = chat.avatar_url
+    ? `<img src="${_convHtmlEscape(chat.avatar_url)}" class="conv-avatar-img" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';">` +
+      `<div class="conv-avatar-fallback" style="display:none;">${isGroup ? '<i data-lucide="users" style="width:24px;height:24px;"></i>' : _convInitials(chat.contact_name, chat.contact_phone)}</div>`
+    : (isGroup ? '<i data-lucide="users" style="width:24px;height:24px;"></i>' : _convInitials(chat.contact_name, chat.contact_phone));
+
   header.innerHTML = `
-    <div class="conv-chat-header-avatar">${isGroup ? '<i data-lucide="users" style="width:24px;height:24px;"></i>' : _convInitials(chat.contact_name, chat.contact_phone)}</div>
+    <div class="conv-chat-header-avatar">${headerAvatarInner}</div>
     <div class="conv-chat-header-info">
       <div class="conv-chat-header-name">
         ${_convHtmlEscape(displayName)}
@@ -12793,11 +12948,166 @@ function _renderConvChatHeader(chat) {
       </div>
     </div>
     <div class="conv-chat-header-actions">
+      ${isGroup ? '<button id="btnConvGroupInfo" title="Informações do grupo e participantes" style="display:inline-flex;align-items:center;"><i data-lucide="info"></i></button>' : ''}
+      <button id="btnConvEditName" title="Editar nome ${isGroup ? 'do grupo' : 'do contato'}" style="display:inline-flex;align-items:center;"><i data-lucide="edit-2"></i></button>
       ${!isGroup && chat.contact_phone ? `<button title="Telefone" onclick="window.open('https://wa.me/${chat.contact_phone}','_blank')"><i data-lucide="phone"></i></button>` : ''}
       <button title="Arquivar" onclick="convArchiveChat('${chat.id}')"><i data-lucide="archive"></i></button>
       <button title="Mais opções"><i data-lucide="more-vertical"></i></button>
     </div>`;
   initIcons();
+  header.querySelector('#btnConvEditName')?.addEventListener('click', convEditContactName);
+  header.querySelector('#btnConvGroupInfo')?.addEventListener('click', _convOpenGroupInfoModal);
+}
+
+/* ---------- informações do grupo / lista de participantes ---------- */
+function _convOpenGroupInfoModal() {
+  const chat = conversasState.allChats.find(c => c.id === conversasState.selectedChatId);
+  if (!chat || !chat.is_group) return;
+
+  // Foto grande do grupo (fallback: ícone de grupo)
+  const avatarEl = $('#groupInfoAvatar');
+  if (avatarEl) {
+    if (chat.avatar_url) {
+      avatarEl.style.background = 'none';
+      avatarEl.innerHTML =
+        `<img src="${_convHtmlEscape(chat.avatar_url)}" class="conv-avatar-img" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';">` +
+        `<div class="conv-avatar-fallback" style="display:none;">${_convHtmlEscape(_convInitials(chat.contact_name, ''))}</div>`;
+    } else {
+      avatarEl.style.background = 'linear-gradient(135deg,#1E3A5F,#165BFF)';
+      avatarEl.style.color = '#fff';
+      avatarEl.innerHTML = '<i data-lucide="users"></i>';
+    }
+  }
+
+  const titleEl = $('#groupInfoTitle');
+  if (titleEl) titleEl.textContent = chat.contact_name || 'Grupo sem nome';
+
+  const parts = Array.isArray(chat.group_participants) ? chat.group_participants : [];
+  const metaEl = $('#groupInfoMeta');
+  if (metaEl) {
+    const count = parts.length ? `${parts.length} participante${parts.length > 1 ? 's' : ''}` : 'participantes não sincronizados';
+    metaEl.textContent = `${chat.group_jid || ''} · ${count}`;
+  }
+
+  // Lista de participantes: foto (ou iniciais) + nome/número + tag Admin
+  const listEl = $('#groupInfoParticipants');
+  if (listEl) {
+    if (!parts.length) {
+      listEl.innerHTML = '<div class="conv-empty-state" style="padding:28px 8px;"><p>Participantes não sincronizados.<br>Clique no botão 🔄 para sincronizar contatos e grupos.</p></div>';
+    } else {
+      listEl.innerHTML = '<ul class="group-member-list">' + parts.map(p => {
+        const digits = String(p.jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+        const name = _convLookupContactName(digits);
+        const avatar = _convLookupContactAvatar(digits);
+        const label = name || _convFormatPhoneIntl(digits) || _convFormatPhone(digits) || 'Participante';
+        const ini = _convHtmlEscape(_convInitials(label, digits));
+        const adminTag = p.admin ? '<span class="conv-admin-tag">Admin</span>' : '';
+        const memberAvatar = avatar
+          ? `<img src="${_convHtmlEscape(avatar)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';"><div class="group-member-fallback" style="display:none;">${ini}</div>`
+          : ini;
+        return `<li class="group-member-row">` +
+          `<div class="group-member-avatar">${memberAvatar}</div>` +
+          `<span class="group-member-name">${_convHtmlEscape(label)}</span>` +
+          `${adminTag}</li>`;
+      }).join('') + '</ul>';
+    }
+  }
+
+  $('#groupInfoOverlay')?.classList.add('open');
+  $('#groupInfoModal')?.classList.add('open');
+  initIcons();
+}
+
+function _convCloseGroupInfoModal() {
+  $('#groupInfoOverlay')?.classList.remove('open');
+  $('#groupInfoModal')?.classList.remove('open');
+}
+
+/* ---------- edição manual do nome do contato/grupo ---------- */
+function convEditContactName() {
+  const chat = conversasState.allChats.find(c => c.id === conversasState.selectedChatId);
+  if (!chat) return;
+
+  conversasState._editingChatId = chat.id;
+  const isGroup = chat.is_group === true;
+  const placeholderFallbacks = ['Contato sem identificação', 'Grupo sem nome', 'Desconhecido'];
+  const currentName = String(chat.contact_name || '').trim();
+  const initial = placeholderFallbacks.includes(currentName) ? '' : currentName;
+
+  const label = $('#editNameLabel');
+  if (label) label.innerHTML = `${isGroup ? 'Nome do Grupo' : 'Nome do Contato'} <span class="req">*</span>`;
+  const meta = $('#editNameMeta');
+  if (meta) meta.textContent = isGroup
+    ? (chat.group_jid || 'Grupo WhatsApp')
+    : (chat.contact_phone || '');
+  const input = $('#editNameInput');
+  if (input) { input.value = initial; }
+
+  $('#editNameOverlay')?.classList.add('open');
+  $('#editNameModal')?.classList.add('open');
+  setTimeout(() => { const i = $('#editNameInput'); if (i) { i.focus(); i.select(); } }, 60);
+}
+
+function _convCloseEditNameModal() {
+  $('#editNameOverlay')?.classList.remove('open');
+  $('#editNameModal')?.classList.remove('open');
+  conversasState._editingChatId = null;
+}
+
+async function _convSaveContactName() {
+  const chat = conversasState.allChats.find(c => c.id === (conversasState._editingChatId || conversasState.selectedChatId));
+  if (!chat) { _convCloseEditNameModal(); return; }
+
+  const input = $('#editNameInput');
+  const newName = String(input?.value || '').trim();
+  if (!newName) { toast('Informe o nome.', 'error'); input?.focus(); return; }
+
+  const isGroup = chat.is_group === true;
+  const contactId = chat._contactId;
+  const convId = chat._conversationId || chat.id;
+  const now = new Date().toISOString();
+
+  try {
+    // 1. UPDATE contacts SET name = novoNome WHERE id = contactId
+    if (contactId) {
+      const { error } = await _supabase
+        .from('contacts')
+        .update({ name: newName, updated_at: now })
+        .eq('id', contactId);
+      if (error) throw new Error(error.message);
+    }
+
+    // Grupo: título da lista vem de conversations.group_name (e title) — manter em sincronia
+    if (isGroup && convId) {
+      let { error } = await _supabase
+        .from('conversations')
+        .update({ group_name: newName, title: newName, updated_at: now })
+        .eq('id', convId);
+      if (error && /title/.test(error.message || '')) {
+        // Resiliência: migração de title pendente → repetir sem a coluna
+        ({ error } = await _supabase
+          .from('conversations')
+          .update({ group_name: newName, updated_at: now })
+          .eq('id', convId));
+      }
+      if (error) console.error('[Conversas] Erro ao atualizar group_name:', error.message);
+    }
+
+    // 2. Estado local (sem reload/F5)
+    chat.contact_name = newName;
+    if (isGroup) chat.group_name = newName;
+
+    // 3. Re-render imediato: topo do chat + card na lista + painel CRM
+    _renderConvChatHeader(chat);
+    _convApplyFilter();
+    if (conversasState.selectedChatId === chat.id) _renderConvCrmPanel(chat);
+
+    _convCloseEditNameModal();
+    toast(isGroup ? 'Nome do grupo atualizado!' : 'Nome do contato atualizado!', 'success');
+  } catch (err) {
+    console.error('[Conversas] Erro ao editar nome:', err);
+    toast('Erro ao salvar nome: ' + (err.message || 'Tente novamente'), 'error');
+  }
 }
 
 /* ---------- suggestion ---------- */
@@ -12824,7 +13134,7 @@ async function _convLoadMessages(chatId) {
   try {
     const { data, error } = await _supabase
       .from('messages')
-      .select('id, conversation_id, membro_id, sender_type, content_type, content_text, media_url, mime_type, message_id, status, created_at')
+      .select('id, conversation_id, membro_id, sender_type, sender_jid, sender_name, sender_phone, content_type, content_text, media_url, mime_type, message_id, status, is_deleted, created_at')
       .eq('conversation_id', chatId)
       .order('created_at', { ascending: true });
     if (error) {
@@ -12940,6 +13250,10 @@ function _renderConvMessages() {
 
   let html = '';
   let lastDate = '';
+  const _t2 = v => (v == null ? '' : String(v).trim());
+  // Conversa ativa é grupo? (para identificar o remetente no balão)
+  const _activeChat = conversasState.allChats.find(c => c.id === conversasState.selectedChatId);
+  const _isGroupChat = _activeChat?.is_group === true || !!_activeChat?.group_jid;
   msgs.forEach(msg => {
     try {
     const d = new Date(msg.created_at).toLocaleDateString('pt-BR');
@@ -12953,7 +13267,27 @@ function _renderConvMessages() {
                        msg.status === 'delivered' ? '<span class="conv-msg-status">&#10003;&#10003;</span>' :
                        '<span class="conv-msg-status">&#10003;</span>';
 
+    // Grupo + mensagem recebida: autor no topo do balão (estilo WhatsApp Web)
+    let senderHtml = '';
+    if (_isGroupChat && type === 'lead') {
+      // Cadeia: 1) sender_name  2) contato salvo com o número  3) sender_phone formatado
+      //         4) dígitos do sender_jid formatados  — nunca "Participante" se há número
+      const name = _t2(msg.sender_name);
+      const jidDigits = String(msg.sender_jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+      const phoneDigits = _t2(msg.sender_phone).replace(/\D/g, '') || jidDigits;
+      const savedName = _convLookupContactName(phoneDigits);
+      const senderLabel = (name && name !== 'Participante' ? name : '')
+        || savedName
+        || (phoneDigits ? _convFormatPhoneIntl(phoneDigits) : '')
+        || (jidDigits ? _convFormatPhoneIntl(jidDigits) : '')
+        || 'Participante';
+      senderHtml = `<div class="conv-msg-sender-name" style="font-size:12.5px;font-weight:600;color:#00a884;margin-bottom:2px;">${_convHtmlEscape(senderLabel)}</div>`;
+    }
+
     let contentHtml = '';
+    if (msg.is_deleted) {
+      contentHtml = '<div class="conv-msg-deleted">🚫 <em>Mensagem apagada</em></div>';
+    } else {
     try {
       if (msg.content_type === 'image' && (msg.media_url || msg.message_id)) {
         const proxyUrl = _convResolveMediaUrl(msg.media_url, 'image', msg.message_id, msg.mime_type);
@@ -12982,13 +13316,22 @@ function _renderConvMessages() {
       console.error('[Conversas] Erro ao renderizar mídia:', mediaErr, msg);
       contentHtml = msg.content_text ? _convHtmlEscape(msg.content_text) : `<em>[Mensagem vazia]</em>`;
     }
+    }
+
+    const canDeleteMsg = !msg.is_deleted && can('can_conversas_delete_msg');
+    const menuHtml = canDeleteMsg ? `
+        <button class="conv-msg-menu-btn" title="Opções da mensagem"><i data-lucide="chevron-down"></i></button>
+        <div class="conv-msg-menu">
+          <button class="danger" data-action="msg-delete"><i data-lucide="trash-2"></i> Apagar</button>
+        </div>` : '';
 
     html += `
-      <div class="conv-msg ${type}">
-        <div class="conv-msg-content">${contentHtml}</div>
+      <div class="conv-msg ${type}" data-msg-id="${msg.id}">
+        ${menuHtml}
+        <div class="conv-msg-content">${senderHtml}${contentHtml}</div>
         <div class="conv-msg-meta">
           <span class="conv-msg-time">${time}</span>
-          ${type === 'agent' ? statusIcon : ''}
+          ${type === 'agent' && !msg.is_deleted ? statusIcon : ''}
         </div>
       </div>`;
     } catch (msgErr) {
@@ -13041,6 +13384,114 @@ async function _resolveAllMedia(container) {
   }
 }
 
+/* ---------- menu de opções da mensagem + exclusão ---------- */
+function _convCloseMsgMenus() {
+  document.querySelectorAll('.conv-msg-menu.open').forEach(m => m.classList.remove('open'));
+}
+
+function _convInitMsgMenuDelegation() {
+  const container = $('#convMessages');
+  if (!container || container._msgMenuDelegate) return;
+  container._msgMenuDelegate = true;
+
+  container.addEventListener('click', (e) => {
+    const menuBtn = e.target.closest('.conv-msg-menu-btn');
+    if (menuBtn) {
+      e.stopPropagation();
+      const menu = menuBtn.parentElement?.querySelector('.conv-msg-menu');
+      const wasOpen = menu?.classList.contains('open');
+      _convCloseMsgMenus();
+      if (menu && !wasOpen) menu.classList.add('open');
+      return;
+    }
+    const delBtn = e.target.closest('[data-action="msg-delete"]');
+    if (delBtn) {
+      e.stopPropagation();
+      const msgEl = delBtn.closest('.conv-msg');
+      _convCloseMsgMenus();
+      if (msgEl) _convOpenDeleteModal(msgEl.dataset.msgId);
+      return;
+    }
+    _convCloseMsgMenus();
+  });
+}
+
+function _convOpenDeleteModal(msgId) {
+  const msg = conversasState.messages.find(m => m.id === msgId);
+  if (!msg) return;
+
+  if (!can('can_conversas_delete_msg')) {
+    toast('Você não tem permissão para apagar mensagens.', 'error');
+    return;
+  }
+
+  conversasState.pendingDeleteMsgId = msgId;
+  const isOwn = msg.sender_type === 'member';
+
+  const meta = $('#msgDeleteMeta');
+  if (meta) meta.textContent = isOwn ? 'Mensagem enviada por você' : 'Mensagem recebida do contato';
+
+  const actions = $('#msgDeleteActions');
+  if (actions) {
+    actions.innerHTML = `
+      ${isOwn ? '<button class="btn-primary" style="background:#E14C4C" data-delete-scope="all"><i data-lucide="trash-2"></i> Apagar para todos</button>' : ''}
+      <button class="btn-ghost" style="color:#E14C4C" data-delete-scope="me"><i data-lucide="trash-2"></i> Apagar para mim</button>
+      <button class="btn-ghost" data-delete-scope="cancel">Cancelar</button>
+    `;
+  }
+
+  $('#msgDeleteOverlay')?.classList.add('open');
+  $('#msgDeleteModal')?.classList.add('open');
+  initIcons();
+}
+
+function _convCloseDeleteModal() {
+  conversasState.pendingDeleteMsgId = null;
+  $('#msgDeleteOverlay')?.classList.remove('open');
+  $('#msgDeleteModal')?.classList.remove('open');
+}
+
+async function _convDeleteMessage(scope, btn) {
+  const msgId = conversasState.pendingDeleteMsgId;
+  const convId = conversasState.allChats.find(c => c.id === conversasState.selectedChatId)?._conversationId || conversasState.selectedChatId;
+  if (!msgId || !convId) { _convCloseDeleteModal(); return; }
+
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+
+  try {
+    await waDeleteMessage(convId, msgId, scope);
+
+    conversasState.messages = conversasState.messages.filter(m => m.id !== msgId);
+    _renderConvMessages();
+    _convCloseDeleteModal();
+    toast(scope === 'all' ? 'Mensagem apagada para todos' : 'Mensagem apagada');
+  } catch (err) {
+    console.error('[Conversas] Erro ao apagar mensagem:', err);
+    const raw = String(err.message || err);
+    let parsed = null;
+    try { parsed = JSON.parse(raw); } catch (_) { /* não é JSON */ }
+
+    let friendly;
+    if (parsed?.error === 'revoke_unsupported' || raw.includes('revoke_unsupported')) {
+      friendly = 'A Meta Cloud API não suporta "apagar para todos". Use "Apagar para mim".';
+    } else if (parsed?.error && String(parsed.error).startsWith('Nenhuma rota')) {
+      const detail = parsed.evolutionBody ? ` Body: ${String(parsed.evolutionBody).replace(/\s+/g, ' ').trim().slice(0, 140)}` : '';
+      const rotas = Array.isArray(parsed.triedRoutes) ? parsed.triedRoutes.join(' | ') : '';
+      friendly = `${parsed.error}. Tentativas: ${rotas}${detail}`;
+    } else if (parsed?.evolutionBody || parsed?.details) {
+      const detail = String(parsed.evolutionBody || parsed.details).replace(/\s+/g, ' ').trim().slice(0, 220);
+      const st = parsed.evolutionStatus ? ` (HTTP ${parsed.evolutionStatus})` : '';
+      const rota = parsed.evolutionRoute ? ` [${parsed.evolutionMethod || ''} ${parsed.evolutionRoute}]` : '';
+      friendly = `Não foi possível apagar para todos${st}${rota}: ${detail}`;
+    } else {
+      friendly = 'Erro ao apagar mensagem: ' + String(parsed?.error || raw).slice(0, 240);
+    }
+    console.error('[Conversas] Detalhe exclusão:', { raw, parsed });
+    toast(friendly, 'error');
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+  }
+}
+
 /* ---------- send message ---------- */
 async function _convSendMessage() {
   if (conversasState.waStatus !== 'connected') {
@@ -13089,9 +13540,8 @@ async function _convSendMessage() {
         instanceName = waCfg?.provider_config?.instanceName || null;
       } catch (e) { /* fallback: Edge Function busca */ }
     }
-    const cleanPhone = (chat.contact_phone || '').replace(/\D/g, '');
-    const number = cleanPhone ? (cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`) : null;
-    console.log('[WA] _convSendMessage:', { number, instanceName, ccId });
+    const number = _convResolveSendNumber(chat);
+    console.log('[WA] _convSendMessage:', { number, instanceName, ccId, isGroup: chat.is_group === true || !!chat.group_jid });
 
     if (!ccId || !instanceName) {
       toast('Selecione uma empresa no filtro superior para enviar mensagens nesta conversa.', 'error');
@@ -13185,8 +13635,222 @@ function _convClearMediaPreview() {
   if (previewEl) { previewEl.innerHTML = ''; previewEl.style.display = 'none'; }
 }
 
+/* ---------- arquivo recebido (anexo/colar/arrastar) ---------- */
+function _convProcessIncomingFile(file) {
+  if (!file) return;
+
+  if (file.size > 16 * 1024 * 1024) {
+    toast('Arquivo muito grande. Máximo 16MB.', 'error');
+    return;
+  }
+
+  const isImage = (file.type || '').startsWith('image/');
+  _convFileToBase64(file).then(dataUrl => {
+    if (isImage) _convOpenImageEditor(file, dataUrl);
+    else _convShowMediaPreview(file, dataUrl);
+  }).catch(err => {
+    console.error('[Conversas] Erro ao ler arquivo:', err);
+    toast('Erro ao ler arquivo', 'error');
+  });
+}
+
+/* ---------- editor de imagem fullscreen (crop/rotate/legenda) ---------- */
+conversasState.editorCropper = null;
+conversasState.editorFile = null;
+conversasState.editorDataUrl = null;
+conversasState.editorOriginalDataUrl = null;
+
+function _convEditorCropperOptions() {
+  return {
+    viewMode: 1,
+    autoCropArea: 1,
+    responsive: true,
+    restore: false,
+    guides: true,
+    center: true,
+    movable: true,
+    zoomable: true,
+    rotatable: true,
+    scalable: false,
+    checkOrientation: true
+  };
+}
+
+function _convEditorDestroyCropper() {
+  if (conversasState.editorCropper) {
+    try { conversasState.editorCropper.destroy(); } catch (_) { /* ignore */ }
+    conversasState.editorCropper = null;
+  }
+}
+
+function _convEditorMountImage(dataUrl) {
+  const stage = $('#convImageEditorStage');
+  if (!stage) return false;
+  stage.innerHTML = '';
+  const img = document.createElement('img');
+  img.src = dataUrl;
+  img.alt = 'Pré-visualização';
+  stage.appendChild(img);
+  conversasState.editorDataUrl = dataUrl;
+  conversasState.editorCropper = new Cropper(img, _convEditorCropperOptions());
+  return true;
+}
+
+function _convEditorSetAngle(deg) {
+  const angleEl = $('#convEditorAngle');
+  const angleVal = $('#convEditorAngleValue');
+  if (angleEl) angleEl.value = String(deg);
+  if (angleVal) angleVal.textContent = `${deg}°`;
+}
+
+function _convOpenImageEditor(file, dataUrl) {
+  const overlay = $('#convImageEditorOverlay');
+  const stage = $('#convImageEditorStage');
+  if (!overlay || !stage || typeof Cropper === 'undefined') {
+    console.warn('[Editor] Overlay/Cropper indisponível, usando preview simples');
+    _convShowMediaPreview(file, dataUrl);
+    return;
+  }
+
+  conversasState.editorFile = file;
+  conversasState.editorOriginalDataUrl = dataUrl;
+
+  const captionEl = $('#convEditorCaption');
+  if (captionEl) captionEl.value = '';
+  _convEditorSetAngle(0);
+
+  overlay.classList.add('open');
+  initIcons();
+
+  _convEditorDestroyCropper();
+  _convEditorMountImage(dataUrl);
+}
+
+function _convCloseImageEditor() {
+  const overlay = $('#convImageEditorOverlay');
+  const stage = $('#convImageEditorStage');
+  _convEditorDestroyCropper();
+  if (stage) stage.innerHTML = '';
+  if (overlay) overlay.classList.remove('open');
+  conversasState.editorFile = null;
+  conversasState.editorDataUrl = null;
+  conversasState.editorOriginalDataUrl = null;
+}
+
+function _convEditorRotate() {
+  if (!conversasState.editorCropper) return;
+  conversasState.editorCropper.rotate(90);
+}
+
+function _convEditorCropDone() {
+  const cropper = conversasState.editorCropper;
+  if (!cropper) return;
+  try {
+    const canvas = cropper.getCroppedCanvas({
+      maxWidth: 4096,
+      maxHeight: 4096,
+      fillColor: '#fff',
+      imageSmoothingEnabled: true,
+      imageSmoothingQuality: 'high'
+    });
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    _convEditorDestroyCropper();
+    if (!_convEditorMountImage(dataUrl)) {
+      toast('Erro ao aplicar recorte', 'error');
+      return;
+    }
+    _convEditorSetAngle(0);
+    toast('Recorte aplicado');
+  } catch (err) {
+    console.error('[Editor] Erro ao aplicar recorte:', err);
+    toast('Erro ao aplicar recorte', 'error');
+  }
+}
+
+function _convEditorCropReset() {
+  const original = conversasState.editorOriginalDataUrl;
+  if (!original) {
+    conversasState.editorCropper?.reset();
+    return;
+  }
+  _convEditorDestroyCropper();
+  _convEditorMountImage(original);
+  _convEditorSetAngle(0);
+}
+
+async function _convEditorSend() {
+  const cropper = conversasState.editorCropper;
+  const file = conversasState.editorFile;
+  if (!file || !cropper) return;
+
+  const btn = $('#btnConvEditorSend');
+  if (btn) btn.disabled = true;
+
+  try {
+    const canvas = cropper.getCroppedCanvas({
+      maxWidth: 4096,
+      maxHeight: 4096,
+      fillColor: '#fff',
+      imageSmoothingEnabled: true,
+      imageSmoothingQuality: 'high'
+    });
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+    const editedFile = blob ? new File([blob], file.name || 'imagem.jpg', { type: 'image/jpeg' }) : file;
+    const caption = ($('#convEditorCaption')?.value || '').trim();
+
+    conversasState.pendingMedia = { file: editedFile, dataUrl, type: 'image' };
+    _convCloseImageEditor();
+    await _convSendPendingMedia(caption);
+  } catch (err) {
+    console.error('[Editor] Erro ao processar imagem:', err);
+    toast('Erro ao processar imagem: ' + (err.message || 'Tente novamente'), 'error');
+    if (btn) btn.disabled = false;
+  }
+}
+
+/* ---------- paste (Ctrl+V) e drag & drop ---------- */
+function _convHandlePaste(e) {
+  if (activePage !== 'conversas' || !conversasState.selectedChatId) return;
+  if ($('#convImageEditorOverlay')?.classList.contains('open')) return;
+
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type && item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (file) {
+        e.preventDefault();
+        _convProcessIncomingFile(file);
+        return;
+      }
+    }
+  }
+}
+
+function _convInitDragDrop() {
+  const container = $('#convMessages');
+  if (!container || container._convDropDelegate) return;
+  container._convDropDelegate = true;
+
+  container.addEventListener('dragover', e => {
+    if (!conversasState.selectedChatId) return;
+    e.preventDefault();
+    container.classList.add('dragover');
+  });
+  container.addEventListener('dragleave', e => {
+    if (e.target === container) container.classList.remove('dragover');
+  });
+  container.addEventListener('drop', e => {
+    container.classList.remove('dragover');
+    if (!conversasState.selectedChatId) return;
+    e.preventDefault();
+    _convProcessIncomingFile(e.dataTransfer?.files?.[0]);
+  });
+}
+
 /* ---------- media: send pending media ---------- */
-async function _convSendPendingMedia() {
+async function _convSendPendingMedia(captionOverride) {
   const media = conversasState.pendingMedia;
   if (!media) return;
 
@@ -13220,8 +13884,7 @@ async function _convSendPendingMedia() {
         instanceName = waCfg?.provider_config?.instanceName || null;
       } catch (e) { /* fallback */ }
     }
-    const cleanPhone = (chat.contact_phone || '').replace(/\D/g, '');
-    const number = cleanPhone ? (cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`) : null;
+    const number = _convResolveSendNumber(chat);
 
     if (!ccId || !instanceName) {
       toast('Selecione uma empresa no filtro superior para enviar mídia.', 'error');
@@ -13230,8 +13893,8 @@ async function _convSendPendingMedia() {
 
     const convId = chat._conversationId || conversasState.selectedChatId;
     const input = $('#convMessageInput');
-    const caption = input ? input.value.trim() : '';
-    if (input) { input.value = ''; input.style.height = 'auto'; }
+    const caption = typeof captionOverride === 'string' ? captionOverride : (input ? input.value.trim() : '');
+    if (input && typeof captionOverride !== 'string') { input.value = ''; input.style.height = 'auto'; }
 
     // Enviar conforme tipo
     if (media.type === 'audio' && media._isVoiceNote) {
@@ -13264,18 +13927,7 @@ function _convHandleFileSelect(e) {
   if (!file) return;
   // Reset input para poder selecionar o mesmo arquivo novamente
   e.target.value = '';
-
-  if (file.size > 16 * 1024 * 1024) {
-    toast('Arquivo muito grande. Máximo 16MB.', 'error');
-    return;
-  }
-
-  _convFileToBase64(file).then(dataUrl => {
-    _convShowMediaPreview(file, dataUrl);
-  }).catch(err => {
-    console.error('[Conversas] Erro ao ler arquivo:', err);
-    toast('Erro ao ler arquivo', 'error');
-  });
+  _convProcessIncomingFile(file);
 }
 
 /* ---------- media: audio recording ---------- */
@@ -13821,6 +14473,30 @@ function _convSubscribeRealtime() {
     .on('postgres_changes', {
       event: 'UPDATE',
       schema: 'public',
+      table: 'messages'
+    }, payload => {
+      const upd = payload.new || {};
+      const selectedConvId = conversasState.allChats.find(c => c.id === conversasState.selectedChatId)?._conversationId;
+      if (upd.conversation_id !== selectedConvId) return;
+      const idx = conversasState.messages.findIndex(m => m.id === upd.id);
+      if (idx < 0) return;
+      conversasState.messages[idx] = { ...conversasState.messages[idx], ...upd };
+      _renderConvMessages();
+    })
+    .on('postgres_changes', {
+      event: 'DELETE',
+      schema: 'public',
+      table: 'messages'
+    }, payload => {
+      const oldId = (payload.old_record || payload.old || {}).id;
+      if (!oldId) return;
+      const before = conversasState.messages.length;
+      conversasState.messages = conversasState.messages.filter(m => m.id !== oldId);
+      if (conversasState.messages.length !== before) _renderConvMessages();
+    })
+    .on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
       table: 'conversations'
     }, payload => {
       const updated = payload.new;
@@ -14045,6 +14721,43 @@ async function _loadConvMembers() {
 }
 
 /* ---------- init ---------- */
+/* ---------- sincronizar contatos/grupos via Evolution API ---------- */
+async function _convSyncContactsAndReload() {
+  const btn = $('#btnConvRefresh');
+  if (conversasState._syncing) return;
+  if (!conversasState.selectedCentroCustoId) {
+    toast('Selecione uma empresa para sincronizar contatos e grupos.', 'error');
+    return;
+  }
+
+  conversasState._syncing = true;
+  btn?.classList.add('is-loading');
+  btn?.setAttribute('disabled', 'disabled');
+
+  try {
+    const res = await waSyncContacts(conversasState.selectedCentroCustoId);
+    if (res && res.success === false) throw new Error(res.error || 'Falha na sincronização');
+
+    await loadConversasChats();
+
+    const g = res?.groupsCount ?? 0;
+    const c = res?.contactsCount ?? 0;
+    if (res?.partialError) {
+      toast(`Sincronização parcial (grupos: ${g}, contatos: ${c}). ${res.partialError}`, 'error');
+    } else {
+      toast(`Contatos e grupos sincronizados com sucesso! (grupos: ${g}, contatos: ${c})`, 'success');
+    }
+  } catch (err) {
+    console.error('[Conversas] Erro ao sincronizar contatos e grupos:', err);
+    const detail = err?.triedRoutes?.length ? ` Rotas tentadas: ${err.triedRoutes.join(' | ')}` : '';
+    toast('Não foi possível sincronizar: ' + String(err?.message || err).slice(0, 200) + detail, 'error');
+  } finally {
+    conversasState._syncing = false;
+    btn?.classList.remove('is-loading');
+    btn?.removeAttribute('disabled');
+  }
+}
+
 function initConversas() {
   const searchInput = $('#convSearchInput');
   const sendBtn = $('#convSendBtn');
@@ -14088,7 +14801,83 @@ function initConversas() {
   const newCancelBtn = document.getElementById('btnConvNewCancel');
   if (newCancelBtn) newCancelBtn.addEventListener('click', _convCloseNewModal);
   if (leadSearch) leadSearch.addEventListener('input', _convLeadSearch);
-  if (refreshBtn) refreshBtn.addEventListener('click', loadConversasChats);
+  if (refreshBtn) refreshBtn.addEventListener('click', _convSyncContactsAndReload);
+
+  // Menu de opções da mensagem (delegação) + drag & drop
+  _convInitMsgMenuDelegation();
+  _convInitDragDrop();
+
+  // Modal de exclusão de mensagem
+  const msgDeleteCloseBtn = $('#btnMsgDeleteClose');
+  const msgDeleteOverlay = $('#msgDeleteOverlay');
+  const msgDeleteActions = $('#msgDeleteActions');
+  if (msgDeleteCloseBtn) msgDeleteCloseBtn.addEventListener('click', _convCloseDeleteModal);
+  if (msgDeleteOverlay) msgDeleteOverlay.addEventListener('click', _convCloseDeleteModal);
+  if (msgDeleteActions) {
+    msgDeleteActions.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-delete-scope]');
+      if (!btn) return;
+      const scope = btn.dataset.deleteScope;
+      if (scope === 'cancel') { _convCloseDeleteModal(); return; }
+      _convDeleteMessage(scope, btn);
+    });
+  }
+
+  // Editor de imagem fullscreen
+  const editorCancelBtn = $('#btnConvEditorCancel');
+  const editorRotateBtn = $('#btnConvEditorRotate');
+  const editorCropDoneBtn = $('#btnConvEditorCropDone');
+  const editorCropResetBtn = $('#btnConvEditorCropReset');
+  const editorSendBtn = $('#btnConvEditorSend');
+  const editorAngle = $('#convEditorAngle');
+  if (editorCancelBtn) editorCancelBtn.addEventListener('click', _convCloseImageEditor);
+  if (editorRotateBtn) editorRotateBtn.addEventListener('click', _convEditorRotate);
+  if (editorCropDoneBtn) editorCropDoneBtn.addEventListener('click', _convEditorCropDone);
+  if (editorCropResetBtn) editorCropResetBtn.addEventListener('click', _convEditorCropReset);
+  if (editorSendBtn) editorSendBtn.addEventListener('click', _convEditorSend);
+  if (editorAngle) {
+    editorAngle.addEventListener('input', (e) => {
+      const deg = Number(e.target.value);
+      _convEditorSetAngle(deg);
+      if (conversasState.editorCropper) conversasState.editorCropper.rotateTo(deg);
+    });
+  }
+
+  // Modal: editar nome do contato/grupo
+  const btnEditNameClose = $('#btnEditNameClose');
+  const btnEditNameCancel = $('#btnEditNameCancel');
+  const btnEditNameSave = $('#btnEditNameSave');
+  const editNameOverlay = $('#editNameOverlay');
+  const editNameInput = $('#editNameInput');
+  if (btnEditNameClose) btnEditNameClose.addEventListener('click', _convCloseEditNameModal);
+  if (btnEditNameCancel) btnEditNameCancel.addEventListener('click', _convCloseEditNameModal);
+  if (editNameOverlay) editNameOverlay.addEventListener('click', _convCloseEditNameModal);
+  if (btnEditNameSave) btnEditNameSave.addEventListener('click', _convSaveContactName);
+  if (editNameInput) editNameInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); _convSaveContactName(); }
+  });
+
+  // Modal: informações do grupo / participantes
+  const btnGroupInfoClose = $('#btnGroupInfoClose');
+  const groupInfoOverlay = $('#groupInfoOverlay');
+  if (btnGroupInfoClose) btnGroupInfoClose.addEventListener('click', _convCloseGroupInfoModal);
+  if (groupInfoOverlay) groupInfoOverlay.addEventListener('click', _convCloseGroupInfoModal);
+
+  // Paste (Ctrl+V) — bind único
+  if (!window.__convPasteBound) {
+    window.__convPasteBound = true;
+    document.addEventListener('paste', _convHandlePaste);
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if ($('#convImageEditorOverlay')?.classList.contains('open')) { _convCloseImageEditor(); return; }
+      if ($('#editNameModal')?.classList.contains('open')) { _convCloseEditNameModal(); return; }
+      if ($('#groupInfoModal')?.classList.contains('open')) { _convCloseGroupInfoModal(); return; }
+      if ($('#msgDeleteModal')?.classList.contains('open')) { _convCloseDeleteModal(); return; }
+      _convCloseMsgMenus();
+    });
+    document.addEventListener('click', _convCloseMsgMenus);
+  }
+
   if (unidentifiedBtn) {
     unidentifiedBtn.addEventListener('click', () => {
       conversasState.filter = 'unidentified';

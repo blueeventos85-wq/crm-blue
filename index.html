@@ -15,8 +15,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -1276,7 +1278,7 @@
                 </button>
                 <div class="filter-dropdown" id="convCompanyDropdownMenu"></div>
               </div>
-              <button class="btn-ghost btn-sm" id="btnConvRefresh" title="Atualizar conversas"><i data-lucide="refresh-cw"></i></button>
+              <button class="btn-ghost btn-sm" id="btnConvRefresh" title="Sincronizar contatos e grupos"><i data-lucide="refresh-cw"></i></button>
               <button class="btn btn-primary btn-sm" id="btnConvNew"><i data-lucide="plus"></i> Nova conversa</button>
             </div>
           </div>
@@ -1381,6 +1383,96 @@
               <button class="btn-ghost" id="btnConvNewCancel">Cancelar</button>
               <button class="btn btn-primary" id="btnConvNewConfirm"><i data-lucide="send"></i> Iniciar conversa</button>
             </div>
+          </div>
+        </div>
+
+        <!-- Modal: Apagar Mensagem -->
+        <div class="modal-overlay" id="msgDeleteOverlay"></div>
+        <div class="modal modal-sm" id="msgDeleteModal" role="dialog" aria-labelledby="msgDeleteTitle">
+          <div class="modal-head">
+            <div class="modal-head-left">
+              <div class="modal-avatar" style="background:#FDECEC;color:#E14C4C"><i data-lucide="trash-2"></i></div>
+              <div>
+                <h2 id="msgDeleteTitle">Apagar mensagem</h2>
+                <p class="modal-meta" id="msgDeleteMeta">Escolha uma opção</p>
+              </div>
+            </div>
+            <button class="icon-btn small" id="btnMsgDeleteClose" title="Fechar"><i data-lucide="x"></i></button>
+          </div>
+          <div class="modal-body">
+            <p id="msgDeleteText">Tem certeza que deseja apagar esta mensagem?</p>
+          </div>
+          <div class="modal-foot admin-member-foot">
+            <div></div>
+            <div class="modal-foot-actions" id="msgDeleteActions"></div>
+          </div>
+        </div>
+
+        <!-- Modal: Editar nome do contato / grupo -->
+        <div class="modal-overlay" id="editNameOverlay"></div>
+        <div class="modal modal-sm" id="editNameModal" role="dialog" aria-labelledby="editNameTitle">
+          <div class="modal-head">
+            <div class="modal-head-left">
+              <div class="modal-avatar" style="background:#E8F4FD;color:#0284C7"><i data-lucide="edit-2"></i></div>
+              <div>
+                <h2 id="editNameTitle">Editar nome</h2>
+                <p class="modal-meta" id="editNameMeta">Ajuste como este contato aparece</p>
+              </div>
+            </div>
+            <button class="icon-btn small" id="btnEditNameClose" title="Fechar"><i data-lucide="x"></i></button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label id="editNameLabel">Nome do Contato <span class="req">*</span></label>
+              <input type="text" id="editNameInput" class="form-control" maxlength="80" placeholder="Digite o nome..." autocomplete="off" />
+            </div>
+          </div>
+          <div class="modal-foot">
+            <div></div>
+            <div class="modal-foot-actions">
+              <button class="btn-ghost" id="btnEditNameCancel">Cancelar</button>
+              <button class="btn btn-primary" id="btnEditNameSave"><i data-lucide="check"></i> Salvar</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal: Informações do grupo / lista de participantes -->
+        <div class="modal-overlay" id="groupInfoOverlay"></div>
+        <div class="modal" id="groupInfoModal" role="dialog" aria-labelledby="groupInfoTitle">
+          <div class="modal-head">
+            <div class="modal-head-left">
+              <div class="modal-avatar" id="groupInfoAvatar" style="background:linear-gradient(135deg,#1E3A5F,#165BFF);color:#fff;overflow:hidden;position:relative;"></div>
+              <div>
+                <h2 id="groupInfoTitle">Grupo</h2>
+                <p class="modal-meta" id="groupInfoMeta"></p>
+              </div>
+            </div>
+            <button class="icon-btn small" id="btnGroupInfoClose" title="Fechar"><i data-lucide="x"></i></button>
+          </div>
+          <div class="modal-body">
+            <div id="groupInfoParticipants"></div>
+          </div>
+        </div>
+
+        <!-- Editor de imagem fullscreen (pré-visualização antes do envio) -->
+        <div class="conv-image-editor" id="convImageEditorOverlay" role="dialog" aria-label="Editar imagem">
+          <div class="conv-image-editor-top">
+            <button class="conv-image-editor-icon" id="btnConvEditorCancel" title="Cancelar"><i data-lucide="x"></i></button>
+            <div class="conv-image-editor-tools">
+              <button class="conv-image-editor-tool" id="btnConvEditorRotate" title="Girar 90°"><i data-lucide="rotate-cw"></i></button>
+              <button class="conv-image-editor-tool conv-image-editor-tool-text" id="btnConvEditorCropDone" title="Concluir recorte">Concluir recorte</button>
+              <button class="conv-image-editor-tool conv-image-editor-tool-text" id="btnConvEditorCropReset" title="Resetar">Resetar</button>
+            </div>
+            <div class="conv-image-editor-angle">
+              <i data-lucide="rotate-ccw"></i>
+              <input type="range" id="convEditorAngle" min="0" max="360" value="0" step="1" title="Rotação 0–360°" />
+              <span id="convEditorAngleValue">0°</span>
+            </div>
+          </div>
+          <div class="conv-image-editor-stage" id="convImageEditorStage"></div>
+          <div class="conv-image-editor-bottom">
+            <textarea id="convEditorCaption" class="conv-image-editor-caption" placeholder="Adicionar legenda..." rows="1"></textarea>
+            <button class="conv-image-editor-send" id="btnConvEditorSend" title="Enviar"><i data-lucide="send"></i></button>
           </div>
         </div>
 

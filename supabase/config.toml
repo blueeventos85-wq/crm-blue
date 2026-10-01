@@ -1,2 +1,5 @@
 [project]
 id = "wozwysgubvqxczyjrmtn"
+
+[functions.meta-webhook]
+verify_jwt = false

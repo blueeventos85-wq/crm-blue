@@ -74,7 +74,7 @@ serve(async (req) => {
     // 1. Buscar conversa
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
-      .select('id, contact_id, centros_custo_id')
+      .select('id, contact_id, centros_custo_id, group_jid, group_name')
       .eq('id', conversationId)
       .maybeSingle()
 
@@ -95,7 +95,7 @@ serve(async (req) => {
     // 2. Buscar contato
     const { data: contact, error: contactError } = await supabase
       .from('contacts')
-      .select('id, phone')
+      .select('id, phone, is_group, group_jid')
       .eq('id', conversation.contact_id)
       .maybeSingle()
 
@@ -103,17 +103,46 @@ serve(async (req) => {
       console.error('[send] Erro ao buscar contato:', contactError)
     }
 
-    const rawPhone = payloadNumber || contact?.phone || ''
-    const phone = rawPhone.replace(/\D/g, '')
-    if (!phone) {
-      console.error('[send] Telefone não encontrado. payloadNumber:', payloadNumber, 'contact.phone:', contact?.phone)
-      return new Response(JSON.stringify({ error: 'Telefone do contato não encontrado' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
+    // 2b. Grupo (JID @g.us) NÃO passa pela sanitização numérica 55+DDD —
+    // o JID completo é enviado direto para a Evolution API.
+    const isGroupJid = (s: string) => /@g\.us\b/i.test(s)
+    const rawNumber = String(payloadNumber || '').trim()
+    const rawContactPhone = String(contact?.phone || '').trim()
+    const isGroup =
+      contact?.is_group === true ||
+      !!conversation.group_jid ||
+      isGroupJid(rawNumber) ||
+      isGroupJid(rawContactPhone)
+
+    let phone: string
+    if (isGroup) {
+      let jid =
+        (isGroupJid(rawNumber) ? rawNumber : '') ||
+        String(conversation.group_jid || '').trim() ||
+        String(contact?.group_jid || '').trim() ||
+        (isGroupJid(rawContactPhone) ? rawContactPhone : '')
+      if (jid && !jid.includes('@')) jid = `${jid}@g.us`
+      if (!jid) {
+        console.error('[send] group_jid não encontrado. conversation:', conversation, 'contact:', contact)
+        return new Response(JSON.stringify({ error: 'group_jid não encontrado para esta conversa de grupo' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+      phone = jid
+      console.log('[send] Grupo detectado — remoteJid:', phone, '| group_name:', conversation.group_name)
+    } else {
+      phone = (rawNumber || rawContactPhone).replace(/\D/g, '')
+      if (!phone) {
+        console.error('[send] Telefone não encontrado. payloadNumber:', payloadNumber, 'contact.phone:', contact?.phone)
+        return new Response(JSON.stringify({ error: 'Telefone do contato não encontrado' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
     }
 
-    console.log('[send] Telefone:', phone)
+    console.log('[send] Destinatário:', phone, isGroup ? '(grupo)' : '(individual)')
 
     // 3. Buscar config WhatsApp
     const effectiveCCId = centrosCustoId || conversation.centros_custo_id
@@ -154,25 +183,28 @@ serve(async (req) => {
     }
 
     console.log('[send] instanceName:', instanceName)
+    // Instâncias podem conter espaços/caracteres especiais (ex: "crm Pedro") —
+    // codificar garante URL válida sem depender do auto-encode do fetch.
+    const encInstance = encodeURIComponent(instanceName)
 
     // 4. Montar payload para Evolution API
     let apiUrlEndpoint = ''
     let payload: Record<string, any> = {}
 
     if (contentType === 'text' || !mediaUrl) {
-      apiUrlEndpoint = `${apiUrl}/message/sendText/${instanceName}`
+      apiUrlEndpoint = `${apiUrl}/message/sendText/${encInstance}`
       payload = {
         number: phone,
         text: contentText || ''
       }
     } else if (contentType === 'audio' || ptt) {
-      apiUrlEndpoint = `${apiUrl}/message/sendWhatsAppAudio/${instanceName}`
+      apiUrlEndpoint = `${apiUrl}/message/sendWhatsAppAudio/${encInstance}`
       payload = {
         number: phone,
         audio: cleanBase64(mediaUrl)
       }
     } else if (contentType === 'image') {
-      apiUrlEndpoint = `${apiUrl}/message/sendMedia/${instanceName}`
+      apiUrlEndpoint = `${apiUrl}/message/sendMedia/${encInstance}`
       payload = {
         number: phone,
         mediatype: 'image',
@@ -181,7 +213,7 @@ serve(async (req) => {
         caption: contentText || ''
       }
     } else if (contentType === 'video') {
-      apiUrlEndpoint = `${apiUrl}/message/sendMedia/${instanceName}`
+      apiUrlEndpoint = `${apiUrl}/message/sendMedia/${encInstance}`
       payload = {
         number: phone,
         mediatype: 'video',
@@ -190,7 +222,7 @@ serve(async (req) => {
         caption: contentText || ''
       }
     } else if (contentType === 'document') {
-      apiUrlEndpoint = `${apiUrl}/message/sendMedia/${instanceName}`
+      apiUrlEndpoint = `${apiUrl}/message/sendMedia/${encInstance}`
       payload = {
         number: phone,
         mediatype: 'document',
@@ -199,7 +231,7 @@ serve(async (req) => {
         fileName: fileName || contentText || 'documento'
       }
     } else {
-      apiUrlEndpoint = `${apiUrl}/message/sendText/${instanceName}`
+      apiUrlEndpoint = `${apiUrl}/message/sendText/${encInstance}`
       payload = {
         number: phone,
         text: contentText || ''
@@ -238,7 +270,7 @@ serve(async (req) => {
     // Fallback: se sendWhatsAppAudio retornou 404, tentar via sendMedia
     if (!sendResponse.ok && sendResponse.status === 404 && (contentType === 'audio' || ptt)) {
       console.log('[send] sendWhatsAppAudio retornou 404, tentando fallback via sendMedia')
-      apiUrlEndpoint = `${apiUrl}/message/sendMedia/${instanceName}`
+      apiUrlEndpoint = `${apiUrl}/message/sendMedia/${encInstance}`
       payload = {
         number: phone,
         mediatype: 'audio',

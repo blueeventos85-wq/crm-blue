@@ -224,6 +224,58 @@ async function waSendVoiceNote(membroId, conversationId, mediaUrl, centrosCustoI
 }
 
 /* ============================================
+   5c. DELETE MESSAGE: apagar mensagem (para todos ou do histórico)
+   ============================================ */
+async function waDeleteMessage(conversationId, messageId, scope = 'me') {
+  if (!conversationId || !messageId) {
+    throw new Error('conversationId e messageId são obrigatórios')
+  }
+  if (scope !== 'me' && scope !== 'all') {
+    throw new Error('scope deve ser "me" ou "all"')
+  }
+
+  console.log('[WA] Apagando mensagem:', { conversationId, messageId, scope })
+
+  const result = await waInvokeFunction('wa-delete', {
+    conversationId,
+    messageId,
+    scope
+  })
+
+  if (result && result.success === false) {
+    const err = new Error(result.error || 'Erro ao apagar mensagem')
+    err.code = result.error
+    throw err
+  }
+
+  return result
+}
+
+/* ============================================
+   5d. SYNC CONTACTS: sincronizar nomes de contatos e grupos
+   ============================================ */
+async function waSyncContacts(centrosCustoId) {
+  if (!centrosCustoId) {
+    throw new Error('centros_custoId é obrigatório para sincronizar')
+  }
+
+  console.log('[WA] Sincronizando contatos e grupos:', centrosCustoId)
+
+  const result = await waInvokeFunction('wa-sync-contacts', {
+    centros_custo_id: centrosCustoId
+  })
+
+  if (result && result.success === false) {
+    const err = new Error(result.error || 'Erro ao sincronizar contatos e grupos')
+    err.code = result.error
+    err.triedRoutes = result.triedRoutes || null
+    throw err
+  }
+
+  return result
+}
+
+/* ============================================
    6. CONTACTS: buscar contatos
    ============================================ */
 async function waFetchContacts(membroId, centrosCustoId) {
@@ -435,6 +487,8 @@ window.waDisconnect = waDisconnect
 window.waSendText = waSendText
 window.waSendMedia = waSendMedia
 window.waSendVoiceNote = waSendVoiceNote
+window.waDeleteMessage = waDeleteMessage
+window.waSyncContacts = waSyncContacts
 window.waFetchContacts = waFetchContacts
 window.waFetchConversations = waFetchConversations
 window.waFetchMessages = waFetchMessages

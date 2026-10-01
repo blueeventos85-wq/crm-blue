@@ -40,6 +40,32 @@ serve(async (req) => {
 
       // Extrair conteúdo da mensagem
       const message = msgData.message || {}
+
+      // ── protocolMessage (REVOKE): "apagado para todos" embutido em messages.upsert ──
+      // A Evolution às vezes envia a revogação aqui em vez do evento messages.delete.
+      // Marca a mensagem ORIGINAL como apagada e NÃO cria bolha nova no chat.
+      const proto = message.protocolMessage
+      if (proto && (proto.type === 'REVOKE' || proto.type === 0)) {
+        const revokeId = String(proto.key?.id || '')
+        if (revokeId) {
+          const { error: revokeErr } = await supabase
+            .from('messages')
+            .update({ is_deleted: true, content_text: null, media_url: null })
+            .eq('message_id', revokeId)
+          if (revokeErr) {
+            console.error('[webhook] Erro ao processar protocolMessage (REVOKE):', revokeErr)
+          } else {
+            console.log('[webhook] protocolMessage REVOKE aplicado em:', revokeId)
+          }
+        } else {
+          console.log('[webhook] protocolMessage REVOKE sem key.id — ignorado')
+        }
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
       const { contentType, contentText, mediaUrl, mimeType } = extractMessageContent(message)
 
       if (!contentText && !mediaUrl && !remoteJid) {
@@ -93,17 +119,33 @@ serve(async (req) => {
         // Para grupos, usar o remoteJid como group_jid
         // O "phone" será o group_jid para fins de identificação única
         phone = remoteJid
-        // Nome do grupo: pushName (nome do grupo) ou extrair do subject se disponível
-        contactName = pushName || remoteJid
+        // IMPORTANTE: NÃO usar pushName aqui — em mensagens de grupo o pushName é
+        // o nome de QUEM enviou a mensagem (ex: operador), não o nome do grupo.
+        // O nome real do grupo é preenchido por `groups.update` ou `wa-sync-contacts`.
+        contactName = ''
         // Buscar ou criar contato de grupo
         contactId = await findOrCreateGroupContact(supabase, membroId, centrosCustoId, remoteJid, contactName)
       } else {
         // === CONTATO INDIVIDUAL ===
         // Limpar phone do remoteJid
         phone = remoteJid.replace(/@.*$/, '')
-        contactName = pushName || phone
+        // Em mensagens enviadas (fromMe) o pushName é o próprio operador (ex: "Pedro
+        // Henrique") — jamais sobrescrever o nome do contato com ele.
+        contactName = fromMe ? '' : (pushName || '')
         // Buscar ou criar contato individual
         contactId = await findOrCreateContact(supabase, membroId, centrosCustoId, phone, contactName, null)
+      }
+
+      // Avatar do contato: quando o payload de mensagem traz a foto de perfil
+      const incomingAvatar = String(msgData.profilePictureUrl || msgData.avatarUrl || '')
+      if (!isGroup && /^https?:\/\//i.test(incomingAvatar)) {
+        const { error: avErr } = await supabase
+          .from('contacts')
+          .update({ avatar_url: incomingAvatar, updated_at: new Date().toISOString() })
+          .eq('id', contactId)
+        if (avErr && !/avatar_url/.test(avErr.message || '')) {
+          console.error('[webhook] Erro ao salvar avatar do contato:', avErr)
+        }
       }
 
       // 2. Buscar ou criar conversa (prioridade: centros_custo_id) — sem lead_id inicial
@@ -118,6 +160,17 @@ serve(async (req) => {
         ? new Date(typeof msgTimestamp === 'number' ? msgTimestamp * 1000 : msgTimestamp).toISOString()
         : new Date().toISOString()
 
+      // Identificação do remetente em mensagens de GRUPO (recebidas):
+      // participant = JID de quem enviou (ex: 558599999999@s.whatsapp.net)
+      const participantJid = (isGroup && !fromMe)
+        ? String(key.participant || msgData.participant || '')
+        : ''
+      const senderName = participantJid ? (pushName || '') : '' // pushName do remetente || null
+      const senderPhone = participantJid
+        ? participantJid.split('@')[0].split(':')[0].replace(/\D/g, '')
+        : ''
+      const senderJid = participantJid || null
+
       const msgPayload: Record<string, any> = {
         conversation_id: conversationId,
         membro_id: membroId,
@@ -128,12 +181,24 @@ serve(async (req) => {
         mime_type: mimeType || null,
         message_id: msgId,
         status: 'delivered',
+        sender_jid: senderJid,
+        sender_name: senderName || null,
+        sender_phone: senderPhone || null,
         created_at: messageTimestamp
       }
 
-      const { error: msgError } = await supabase
+      let { error: msgError } = await supabase
         .from('messages')
         .insert([msgPayload])
+
+      // Resiliência: migrações de sender_* ainda não aplicadas → não perder a mensagem
+      if (msgError && /sender_/.test(msgError.message || '')) {
+        console.warn('[webhook] Colunas sender_* indisponíveis — inserindo sem elas:', msgError.message)
+        delete msgPayload.sender_jid
+        delete msgPayload.sender_name
+        delete msgPayload.sender_phone
+        ;({ error: msgError } = await supabase.from('messages').insert([msgPayload]))
+      }
 
       if (msgError) {
         console.error('[webhook] Erro ao inserir mensagem:', msgError)
@@ -267,6 +332,178 @@ serve(async (req) => {
       })
     }
 
+    // ── messages.delete / MESSAGES_DELETE: mensagem apagada pelo contato ──
+    if (event === 'messages.delete' || event === 'MESSAGES_DELETE') {
+      try {
+        const raw = body.data
+        const items: any[] = Array.isArray(raw) ? raw
+          : Array.isArray(raw?.date) ? raw.date
+          : raw && typeof raw === 'object' ? [raw]
+          : []
+
+        const ids: string[] = []
+        for (const it of items) {
+          const id = it?.key?.id || it?.id || it?.messageId || it?.message?.key?.id
+          if (id) ids.push(String(id))
+        }
+
+        if (ids.length) {
+          const { error: delError } = await supabase
+            .from('messages')
+            .update({ is_deleted: true, content_text: null, media_url: null })
+            .in('message_id', ids)
+
+          if (delError) {
+            console.error('[webhook] Erro ao marcar mensagem como apagada:', delError)
+          } else {
+            console.log('[webhook] Mensagens marcadas como apagadas:', ids)
+          }
+        } else {
+          console.log('[webhook] messages.delete sem ids reconhecíveis:', String(JSON.stringify(raw) || '').substring(0, 300))
+        }
+      } catch (delErr) {
+        console.error('[webhook] Erro ao processar messages.delete:', delErr)
+      }
+
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // ── groups.update / GROUPS_UPDATE: renomeação de grupo WhatsApp ──
+    if (
+      event === 'groups.update' || event === 'GROUPS_UPDATE' ||
+      event === 'groups.upsert' || event === 'GROUPS_UPSERT' ||
+      event === 'group-update' || event === 'GROUP_UPDATE'
+    ) {
+      let updatedContacts = 0
+      let updatedConversations = 0
+      try {
+        const raw = body.data
+        const items: any[] = Array.isArray(raw) ? raw
+          : raw && typeof raw === 'object' ? [raw]
+          : []
+
+        for (const g of items) {
+          const rawId = g?.id || g?.jid || g?.remoteJid || ''
+          const jid = String(rawId).includes('@g.us')
+            ? String(rawId)
+            : rawId ? `${rawId}@g.us` : ''
+          if (!jid) continue
+          const subject = String(g?.subject || g?.title || g?.name || '').trim()
+          const pic: string | null =
+            g?.pictureUrl || g?.imgUrl || g?.profilePicUrl || g?.picture || g?.avatar || null
+          if (!subject && !pic) continue
+
+          const now = new Date().toISOString()
+
+          const { data: groupContacts, error: gcErr } = await supabase
+            .from('contacts')
+            .select('id')
+            .eq('group_jid', jid)
+            .eq('is_group', true)
+          if (gcErr) {
+            console.error('[webhook] Erro ao buscar contatos do grupo:', gcErr)
+          }
+          const contactUpdate: Record<string, any> = { updated_at: now }
+          if (subject) contactUpdate.name = subject
+          if (pic) contactUpdate.avatar_url = pic
+          for (const row of groupContacts || []) {
+            let { error: uErr } = await supabase
+              .from('contacts')
+              .update(contactUpdate)
+              .eq('id', row.id)
+            // Resiliência: migração de avatar_url pendente
+            if (uErr && /avatar_url/.test(uErr.message || '')) {
+              delete contactUpdate.avatar_url
+              ;({ error: uErr } = await supabase
+                .from('contacts')
+                .update(contactUpdate)
+                .eq('id', row.id))
+            }
+            if (uErr) console.error('[webhook] Erro ao atualizar nome do grupo:', uErr)
+            else updatedContacts++
+          }
+
+          const convUpdate: Record<string, any> = { updated_at: now }
+          if (subject) { convUpdate.group_name = subject; convUpdate.title = subject }
+          if (pic) convUpdate.avatar_url = pic
+          let { error: convErr } = await supabase
+            .from('conversations')
+            .update(convUpdate)
+            .eq('group_jid', jid)
+          // Resiliência: migração de avatar_url pendente → repetir sem a coluna
+          if (convErr && /avatar_url/.test(convErr.message || '')) {
+            delete convUpdate.avatar_url
+            ;({ error: convErr } = await supabase
+              .from('conversations')
+              .update(convUpdate)
+              .eq('group_jid', jid))
+          }
+          // Resiliência: migração de title pendente → repetir sem a coluna
+          if (convErr && /title/.test(convErr.message || '')) {
+            delete convUpdate.title
+            ;({ error: convErr } = await supabase
+              .from('conversations')
+              .update(convUpdate)
+              .eq('group_jid', jid))
+          }
+          if (convErr) console.error('[webhook] Erro ao atualizar group_name:', convErr)
+          else updatedConversations++
+
+          console.log('[webhook] groups.update:', { jid, subject, hasPic: !!pic, updatedContacts, updatedConversations })
+        }
+      } catch (grpErr) {
+        console.error('[webhook] Erro ao processar groups.update:', grpErr)
+      }
+
+      return new Response(JSON.stringify({ ok: true, updatedContacts, updatedConversations }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // ── contacts.update / CONTACTS_UPDATE: foto de perfil alterada ──
+    // Salva profilePictureUrl direto em contacts.avatar_url.
+    if (event === 'contacts.update' || event === 'CONTACTS_UPDATE') {
+      let updatedAvatars = 0
+      try {
+        const raw = body.data
+        const items: any[] = Array.isArray(raw) ? raw
+          : raw && typeof raw === 'object' ? [raw]
+          : []
+        const now = new Date().toISOString()
+        for (const it of items) {
+          const jid = String(it?.id || it?.jid || it?.remoteJid || '')
+          const url = it?.profilePictureUrl || it?.avatarUrl || it?.pictureUrl || null
+          if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) continue
+          const digits = jid.split('@')[0].split(':')[0].replace(/\D/g, '')
+          if (!digits) continue
+          const { error } = await supabase
+            .from('contacts')
+            .update({ avatar_url: url, updated_at: now })
+            .eq('phone', digits)
+            .eq('is_group', false)
+          if (error) {
+            if (/avatar_url/.test(error.message || '')) {
+              console.log('[webhook] avatar_url indisponível (migração pendente):', error.message)
+              break
+            }
+            console.error('[webhook] Erro ao salvar avatar do contato:', error)
+          } else updatedAvatars++
+        }
+        console.log('[webhook] contacts.update: avatares salvos:', updatedAvatars)
+      } catch (cuErr) {
+        console.error('[webhook] Erro ao processar contacts.update:', cuErr)
+      }
+
+      return new Response(JSON.stringify({ ok: true, updatedAvatars }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     // ── Evento não reconhecido ──
     console.log('[webhook] Evento ignorado:', event)
     return new Response(JSON.stringify({ ok: true, event }), {
@@ -367,23 +604,37 @@ async function findOrCreateContact(
 ): Promise<string> {
   // Buscar contato existente — SEMPRE priorizar centros_custo_id
   // Para contatos individuais: phone não deve ser um group_jid (@g.us)
-  let query = supabase.from('contacts').select('id').eq('phone', phone).eq('is_group', false)
+  let query = supabase.from('contacts').select('id, name').eq('phone', phone).eq('is_group', false)
   if (centrosCustoId) {
     query = query.eq('centros_custo_id', centrosCustoId)
   } else if (membroId) {
     // Fallback legado: só quando não há centros_custo_id
     query = query.eq('membro_id', membroId)
   }
+  query = query.limit(1)
   const { data: existing } = await query.maybeSingle()
 
   if (existing) {
     // Atualizar nome e vincular lead se necessário
     const updates: Record<string, any> = {}
-    if (pushName) updates.name = pushName
+    if (pushName) {
+      // Sempre guardar o pushName original (coluna push_name)
+      updates.push_name = pushName
+      // Só sobrescrever `name` se ele estiver vazio, for apenas o telefone
+      // ou um valor genérico — nunca um nome já curado no CRM.
+      const currentName = String(existing.name || '').trim()
+      const isGeneric = !currentName || currentName === phone || /^\d+$/.test(currentName)
+      if (isGeneric) updates.name = pushName
+    }
     if (leadId && !existing.lead_id) updates.lead_id = leadId
     if (Object.keys(updates).length > 0) {
       updates.updated_at = new Date().toISOString()
-      await supabase.from('contacts').update(updates).eq('id', existing.id)
+      const { error: upErr } = await supabase.from('contacts').update(updates).eq('id', existing.id)
+      // Resiliência: migração de push_name pendente → repetir sem a coluna
+      if (upErr && /push_name/.test(upErr.message || '')) {
+        delete updates.push_name
+        await supabase.from('contacts').update(updates).eq('id', existing.id)
+      }
     }
     return existing.id
   }
@@ -392,6 +643,7 @@ async function findOrCreateContact(
   const insertPayload: Record<string, any> = {
     phone,
     name: pushName || phone,
+    push_name: pushName || '',
     is_group: false,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -400,11 +652,21 @@ async function findOrCreateContact(
   if (membroId) insertPayload.membro_id = membroId
   if (leadId) insertPayload.lead_id = leadId
 
-  const { data: newContact, error: contactError } = await supabase
+  let { data: newContact, error: contactError } = await supabase
     .from('contacts')
     .insert([insertPayload])
     .select('id')
     .maybeSingle()
+
+  // Resiliência: migração de push_name pendente → inserir sem a coluna
+  if (contactError && /push_name/.test(contactError.message || '')) {
+    delete insertPayload.push_name
+    ;({ data: newContact, error: contactError } = await supabase
+      .from('contacts')
+      .insert([insertPayload])
+      .select('id')
+      .maybeSingle())
+  }
 
   if (contactError) {
     console.error('[webhook] Erro ao criar contato:', contactError)
@@ -432,7 +694,8 @@ async function findOrCreateGroupContact(
   const { data: existing } = await query.maybeSingle()
 
   if (existing) {
-    // Atualizar nome do grupo se mudou
+    // Atualizar nome do grupo apenas quando temos o subject real
+    // (nunca vem de pushName de mensagem — ver chamada em messages.upsert)
     if (groupName && groupName !== existing.name) {
       await supabase
         .from('contacts')
@@ -442,11 +705,11 @@ async function findOrCreateGroupContact(
     return existing.id
   }
 
-  // Criar novo contato de grupo
-  // Phone pode ser o groupJid para compatibilidade, mas is_group=true indica que é grupo
+  // Criar novo contato de grupo — sem nome ainda (group_jid identifica).
+  // O nome real chega via groups.update ou wa-sync-contacts.
   const insertPayload: Record<string, any> = {
     phone: groupJid,
-    name: groupName || groupJid,
+    name: groupName || '',
     is_group: true,
     group_jid: groupJid,
     created_at: new Date().toISOString(),
@@ -505,12 +768,29 @@ async function findOrCreateConversation(
         .update({ lead_id: leadId, updated_at: new Date().toISOString() })
         .eq('id', existing.id)
     }
-    // Atualizar group_jid e group_name se for grupo e não estiverem definidos
-    if (isGroup && (groupJid || lastMessageText)) {
-      const updates: Record<string, any> = { updated_at: new Date().toISOString() }
-      if (groupJid) updates.group_jid = groupJid
-      if (lastMessageText && !existing.group_name) updates.group_name = lastMessageText
-      await supabase.from('conversations').update(updates).eq('id', existing.id)
+    // Atualizar group_jid da conversa se for grupo.
+    // NUNCA gravar lastMessageText em group_name — o texto da última mensagem
+    // aparecia como título da conversa no CRM. O nome real do grupo vem de
+    // groups.update / wa-sync-contacts.
+    if (isGroup && groupJid) {
+      const grpUpdate: Record<string, any> = {
+        group_jid: groupJid,
+        is_group: true,
+        remote_jid: groupJid,
+        updated_at: new Date().toISOString(),
+      }
+      let { error: grpErr } = await supabase
+        .from('conversations')
+        .update(grpUpdate)
+        .eq('id', existing.id)
+      // Resiliência: migração de is_group/remote_jid pendente → repetir só com group_jid
+      if (grpErr && /(is_group|remote_jid)/.test(grpErr.message || '')) {
+        ;({ error: grpErr } = await supabase
+          .from('conversations')
+          .update({ group_jid: groupJid, updated_at: new Date().toISOString() })
+          .eq('id', existing.id))
+      }
+      if (grpErr) console.error('[webhook] Erro ao atualizar grupo da conversa:', grpErr.message)
     }
     return existing.id
   }
@@ -530,14 +810,28 @@ async function findOrCreateConversation(
   if (leadId) insertPayload.lead_id = leadId
   if (isGroup) {
     insertPayload.group_jid = groupJid
-    insertPayload.group_name = lastMessageText || ''
+    insertPayload.group_name = ''
+    insertPayload.is_group = true
+    insertPayload.remote_jid = groupJid
   }
 
-  const { data: newConv, error: convError } = await supabase
-    .from('conversations')
-    .insert([insertPayload])
-    .select('id')
-    .maybeSingle()
+  // Insert resiliente: remove colunas opcionais ausentes (migração pendente)
+  const optionalConvCols = ['is_group', 'remote_jid', 'title']
+  let newConv: any = null
+  let convError: any = null
+  for (let i = 0; i <= optionalConvCols.length; i++) {
+    const res = await supabase
+      .from('conversations')
+      .insert([insertPayload])
+      .select('id')
+      .maybeSingle()
+    newConv = res.data
+    convError = res.error
+    if (!convError) break
+    const missing = optionalConvCols.find(col => new RegExp(`\\b${col}\\b`).test(convError.message || ''))
+    if (missing) { delete insertPayload[missing]; continue }
+    break
+  }
 
   if (convError) {
     console.error('[webhook] Erro ao criar conversa:', convError)
