@@ -171,6 +171,9 @@ serve(async (req) => {
         : ''
       const senderJid = participantJid || null
 
+      // Vínculo de resposta encadeada (quoted reply) — contextInfo da mensagem
+      const { quotedMessageId, quotedContent, quotedSender } = extractQuotedInfo(message)
+
       const msgPayload: Record<string, any> = {
         conversation_id: conversationId,
         membro_id: membroId,
@@ -184,6 +187,9 @@ serve(async (req) => {
         sender_jid: senderJid,
         sender_name: senderName || null,
         sender_phone: senderPhone || null,
+        quoted_message_id: quotedMessageId || null,
+        quoted_content: quotedContent || null,
+        quoted_sender: quotedSender || null,
         created_at: messageTimestamp
       }
 
@@ -191,12 +197,15 @@ serve(async (req) => {
         .from('messages')
         .insert([msgPayload])
 
-      // Resiliência: migrações de sender_* ainda não aplicadas → não perder a mensagem
-      if (msgError && /sender_/.test(msgError.message || '')) {
-        console.warn('[webhook] Colunas sender_* indisponíveis — inserindo sem elas:', msgError.message)
-        delete msgPayload.sender_jid
-        delete msgPayload.sender_name
-        delete msgPayload.sender_phone
+      // Resiliência: colunas novas (sender_* / quoted_*) ainda não migradas
+      // → remove a coluna citada pelo erro e tenta de novo, sem perder a mensagem.
+      let guard = 0
+      while (msgError && guard < 8) {
+        guard++
+        const missing = /(sender_jid|sender_name|sender_phone|sender_avatar_url|quoted_message_id|quoted_content|quoted_sender)/.exec(msgError.message || '')
+        if (!missing) break
+        console.warn('[webhook] Coluna opcional indisponível — inserindo sem ela:', missing[1])
+        delete msgPayload[missing[1]]
         ;({ error: msgError } = await supabase.from('messages').insert([msgPayload]))
       }
 
@@ -591,6 +600,62 @@ function extractMessageContent(message: Record<string, any>): {
   }
 
   return { contentType: 'text', contentText: '', mediaUrl: '', mimeType: '' }
+}
+
+// ── extractQuotedInfo: extrai vínculo de resposta encadeada (quoted reply) ──
+// O WhatsApp entrega o contexto em `contextInfo` dentro do tipo da mensagem
+// (extendedTextMessage, imageMessage, videoMessage, audioMessage, documentMessage,
+// stickerMessage) — com stanzaId, participant e quotedMessage.
+function extractQuotedInfo(message: Record<string, any>): {
+  quotedMessageId: string
+  quotedContent: string
+  quotedSender: string
+} {
+  const ctx =
+    message.extendedTextMessage?.contextInfo ||
+    message.imageMessage?.contextInfo ||
+    message.videoMessage?.contextInfo ||
+    message.audioMessage?.contextInfo ||
+    message.documentMessage?.contextInfo ||
+    message.stickerMessage?.contextInfo ||
+    message.contextInfo ||
+    null
+
+  if (!ctx) return { quotedMessageId: '', quotedContent: '', quotedSender: '' }
+
+  const quotedMessageId = String(ctx.stanzaId || ctx.id || '')
+  const participantJid = String(ctx.participant || '')
+  const quotedSender = participantJid
+    ? participantJid.split('@')[0].split(':')[0].replace(/\D/g, '')
+    : ''
+
+  const qm = ctx.quotedMessage || {}
+  let quotedContent = ''
+  if (qm.conversation) {
+    quotedContent = String(qm.conversation)
+  } else if (qm.extendedTextMessage?.text) {
+    quotedContent = String(qm.extendedTextMessage.text)
+  } else if (qm.imageMessage) {
+    quotedContent = qm.imageMessage.caption || '📷 Foto'
+  } else if (qm.videoMessage) {
+    quotedContent = qm.videoMessage.caption || '🎥 Vídeo'
+  } else if (qm.audioMessage) {
+    quotedContent = '🎤 Áudio'
+  } else if (qm.documentMessage) {
+    quotedContent = qm.documentMessage.fileName || '📄 Documento'
+  } else if (qm.stickerMessage) {
+    quotedContent = '🖼️ Figura'
+  } else if (qm.locationMessage) {
+    quotedContent = qm.locationMessage.name || '📍 Localização'
+  } else if (qm.contactMessage) {
+    quotedContent = qm.contactMessage.displayName || '👤 Contato'
+  }
+
+  if (!quotedMessageId && !quotedContent) {
+    return { quotedMessageId: '', quotedContent: '', quotedSender: '' }
+  }
+
+  return { quotedMessageId, quotedContent, quotedSender }
 }
 
 // ── findOrCreateContact: prioridade centros_custo_id, vincula lead ──

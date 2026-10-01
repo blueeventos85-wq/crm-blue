@@ -21,7 +21,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json()
-    const { membroId, conversationId, contentText, mediaUrl, contentType = 'text', centrosCustoId, number: payloadNumber, instanceName: payloadInstanceName, ptt = false, mimeType, fileName } = body
+    const { membroId, conversationId, contentText, mediaUrl, contentType = 'text', centrosCustoId, number: payloadNumber, instanceName: payloadInstanceName, ptt = false, mimeType, fileName, quoted = null, replyMeta = null } = body
 
     console.log('[send] Payload recebido:', {
       membroId,
@@ -32,7 +32,8 @@ serve(async (req) => {
       payloadInstanceName: payloadInstanceName || '(none)',
       ptt,
       mediaUrlSize: mediaUrl ? `${Math.round(mediaUrl.length / 1024)}KB` : '(none)',
-      mediaUrlPrefix: mediaUrl ? mediaUrl.substring(0, 40) : '(none)'
+      mediaUrlPrefix: mediaUrl ? mediaUrl.substring(0, 40) : '(none)',
+      quoted: quoted ? (quoted.key?.id || '(sem id)') : '(none)'
     })
 
     if (!membroId || !conversationId || (!contentText && !mediaUrl)) {
@@ -238,6 +239,12 @@ serve(async (req) => {
       }
     }
 
+    // 4b. Resposta encadeada (quoted reply) — padrão Evolution API v2.3.7.
+    // Aceito em sendText, sendMedia e sendWhatsAppAudio.
+    if (quoted && quoted.key?.id) {
+      payload.quoted = quoted
+    }
+
     // Log do payload (truncar media para não explodir o console)
     const logPayload = { ...payload }
     if (logPayload.media && logPayload.media.length > 100) {
@@ -277,6 +284,9 @@ serve(async (req) => {
         mimetype: mimeType || 'audio/ogg; codecs=opus',
         media: cleanBase64(mediaUrl),
         ptt: true
+      }
+      if (quoted && quoted.key?.id) {
+        payload.quoted = quoted
       }
       try {
         sendResponse = await fetch(apiUrlEndpoint, {
@@ -333,20 +343,39 @@ serve(async (req) => {
     }
 
     try {
-      const { error: msgError } = await supabase
+      const msgRow: Record<string, any> = {
+        conversation_id: conversationId,
+        membro_id: membroId,
+        sender_type: 'member',
+        content_type: contentType,
+        content_text: contentText || '',
+        media_url: mediaUrl || '',
+        mime_type: mimeTypes[contentType] || null,
+        message_id: externalMsgId,
+        status: 'sent',
+        created_at: new Date().toISOString()
+      }
+
+      // Persistir vínculo da resposta encadeada (quoted reply)
+      const quotedMessageId = replyMeta?.message_id || quoted?.key?.id || null
+      const quotedContent = replyMeta?.content || quoted?.message?.conversation || null
+      const quotedSender = replyMeta?.sender || null
+      if (quotedMessageId) msgRow.quoted_message_id = quotedMessageId
+      if (quotedContent) msgRow.quoted_content = quotedContent
+      if (quotedSender) msgRow.quoted_sender = quotedSender
+
+      let { error: msgError } = await supabase
         .from('messages')
-        .insert([{
-          conversation_id: conversationId,
-          membro_id: membroId,
-          sender_type: 'member',
-          content_type: contentType,
-          content_text: contentText || '',
-          media_url: mediaUrl || '',
-          mime_type: mimeTypes[contentType] || null,
-          message_id: externalMsgId,
-          status: 'sent',
-          created_at: new Date().toISOString()
-        }])
+        .insert([msgRow])
+
+      // Resiliência: migração quoted_* ainda não aplicada → não perder a mensagem
+      if (msgError && /quoted_/.test(msgError.message || '')) {
+        console.warn('[send] Colunas quoted_* indisponíveis — inserindo sem elas:', msgError.message)
+        delete msgRow.quoted_message_id
+        delete msgRow.quoted_content
+        delete msgRow.quoted_sender
+        ;({ error: msgError } = await supabase.from('messages').insert([msgRow]))
+      }
 
       if (msgError) {
         console.error('[send] DB insert error (não crítico):', msgError)

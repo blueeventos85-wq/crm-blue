@@ -8255,7 +8255,7 @@ textarea:focus-visible,
 @keyframes convTyping{0%,60%,100%{opacity:0.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
 
 /* ---- Composer ---- */
-.conv-chat-composer{padding:12px 16px;background:var(--card-bg);border-top:1px solid var(--gray-200);display:flex;align-items:flex-end;gap:8px;flex-shrink:0}
+.conv-chat-composer{padding:12px 16px;background:var(--card-bg);border-top:1px solid var(--gray-200);display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px;flex-shrink:0}
 .conv-composer-btn{width:36px;height:36px;border-radius:8px;border:none;background:transparent;color:var(--gray-400);cursor:pointer;display:grid;place-items:center;flex-shrink:0;transition:all 0.15s}
 .conv-composer-btn:hover{background:var(--gray-100);color:var(--gray-800)}
 .conv-composer-btn i{width:18px;height:18px}
@@ -8270,6 +8270,19 @@ textarea:focus-visible,
 .conv-composer--disabled textarea{cursor:not-allowed}
 .conv-composer-mic.recording{color:#ef4444;animation:convMicPulse 1s infinite}
 @keyframes convMicPulse{0%,100%{opacity:1}50%{opacity:0.4}}
+
+/* ---- Reply Preview (banner de resposta acima do input) ---- */
+.conv-reply-preview{flex:1 0 100%;display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--gray-50);border-radius:8px;box-shadow:inset 0 0 0 1px var(--gray-200)}
+.conv-reply-preview--lead{border-left:4px solid #00a884}
+.conv-reply-preview--agent{border-left:4px solid var(--primary-blue)}
+.conv-reply-preview-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.conv-reply-preview-author{font-size:12.5px;font-weight:700;color:var(--gray-800);line-height:1.3}
+.conv-reply-preview--lead .conv-reply-preview-author{color:#00a884}
+.conv-reply-preview--agent .conv-reply-preview-author{color:var(--primary-blue)}
+.conv-reply-preview-text{font-size:12px;color:var(--gray-500);line-height:1.35;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.conv-reply-preview-close{width:26px;height:26px;border-radius:50%;border:none;background:transparent;color:var(--gray-400);cursor:pointer;display:grid;place-items:center;flex-shrink:0;transition:all 0.15s}
+.conv-reply-preview-close:hover{background:var(--gray-200);color:var(--gray-700)}
+.conv-reply-preview-close i,.conv-reply-preview-close svg{width:14px;height:14px}
 
 /* ---- Media Preview ---- */
 .conv-media-preview{padding:8px 16px;background:var(--card-bg);border-top:1px solid var(--gray-200);display:flex;align-items:center;gap:10px}
@@ -8319,6 +8332,25 @@ textarea:focus-visible,
   cursor:default;
 }
 .conv-msg-deleted em{font-style:italic}
+
+/* ---- Bloco de citação no balão (quoted reply) ---- */
+.conv-msg-quote{display:flex;flex-direction:column;gap:2px;padding:5px 8px;border-radius:6px;border-left:3px solid;cursor:pointer;margin-bottom:5px;min-width:0;transition:filter 0.15s}
+.conv-msg-quote:hover{filter:brightness(0.97)}
+.conv-msg-quote--lead{background:rgba(15,23,42,0.06);border-left-color:#00a884}
+.conv-msg-quote--agent{background:rgba(255,255,255,0.18);border-left-color:rgba(255,255,255,0.9)}
+.conv-msg-quote-author{font-size:12.5px;font-weight:700;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv-msg-quote--lead .conv-msg-quote-author{color:#00a884}
+.conv-msg-quote--agent .conv-msg-quote-author{color:#fff}
+.conv-msg-quote-text{font-size:12.5px;line-height:1.35;opacity:0.85;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.conv-msg-quote--agent .conv-msg-quote-text{color:rgba(255,255,255,0.95)}
+
+/* Flash highlight ao clicar numa citação (scroll até a mensagem original) */
+.conv-msg--flash{animation:convMsgFlash 1.4s ease-out}
+@keyframes convMsgFlash{
+  0%{box-shadow:0 0 0 3px rgba(22,91,255,0.75),0 0 18px rgba(22,91,255,0.45)}
+  70%{box-shadow:0 0 0 3px rgba(22,91,255,0.4),0 0 12px rgba(22,91,255,0.2)}
+  100%{box-shadow:0 0 0 3px rgba(22,91,255,0),0 0 0 rgba(22,91,255,0)}
+}
 
 /* ---- Drag & drop no chat ---- */
 .conv-chat-messages.dragover{outline:2px dashed var(--primary-blue);outline-offset:-8px;background:rgba(59,130,246,0.06)}
@@ -8476,6 +8508,16 @@ textarea:focus-visible,
 .theme-dark .conv-composer-input-wrap{background:#1E293B;border-color:#334155}
 .theme-dark .conv-composer-input-wrap textarea{color:#E2E8F0}
 .theme-dark .conv-composer-input-wrap textarea::placeholder{color:#475569}
+.theme-dark .conv-reply-preview{background:#1E293B;box-shadow:inset 0 0 0 1px #334155}
+.theme-dark .conv-reply-preview-author{color:#E2E8F0}
+.theme-dark .conv-reply-preview--lead .conv-reply-preview-author{color:#00A884}
+.theme-dark .conv-reply-preview--agent .conv-reply-preview-author{color:#4D80FF}
+.theme-dark .conv-reply-preview-text{color:#94A3B8}
+.theme-dark .conv-reply-preview-close{color:#64748B}
+.theme-dark .conv-reply-preview-close:hover{background:rgba(255,255,255,0.08);color:#E2E8F0}
+.theme-dark .conv-msg-quote--lead{background:rgba(255,255,255,0.06)}
+.theme-dark .conv-msg-quote--agent{background:rgba(255,255,255,0.14)}
+.theme-dark .conv-msg-quote--lead .conv-msg-quote-author{color:#00A884}
 .theme-dark .conv-crm-panel{background:#0F172A;border-color:#1E293B}
 .theme-dark .conv-crm-panel::-webkit-scrollbar-thumb{background:#334155}
 .theme-dark .conv-crm-empty{color:#475569}

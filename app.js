@@ -12384,6 +12384,7 @@ const conversasState = {
   waStatus: 'disconnected',
   instanceName: null,
   avatarsByPhone: {}, // dígitos → URL da foto de perfil (WhatsApp)
+  replyingTo: null,   // mensagem selecionada para resposta encadeada (quoted reply)
   _loadAbortController: null
 };
 
@@ -12807,6 +12808,9 @@ function _convUpdateConnectionStatus(waConfig) {
 
   conversasState.waStatus = status;
 
+  // Sem conexão não há como responder → cancela resposta pendente
+  if (status !== 'connected' && conversasState.replyingTo) _convCancelReply();
+
   console.log('[Conversas] WhatsApp status:', status, '| Instance:', instanceName);
 
   const dotClass = status === 'connected' ? 'conv-connection-dot--connected' :
@@ -12871,6 +12875,9 @@ function _renderConvFilterChips() {
 /* ---------- select chat ---------- */
 async function _convSelectChat(chatId) {
   conversasState.selectedChatId = chatId;
+  // Trocar de conversa cancela qualquer resposta pendente
+  conversasState.replyingTo = null;
+  _convRenderReplyPreview();
   _renderConvChatList();
 
   const chat = conversasState.allChats.find(c => c.id === chatId);
@@ -13132,11 +13139,24 @@ async function _convLoadMessages(chatId) {
   const container = $('#convMessages');
   if (!container) return;
   try {
-    const { data, error } = await _supabase
+    const msgCols = 'id, conversation_id, membro_id, sender_type, sender_jid, sender_name, sender_phone, content_type, content_text, media_url, mime_type, message_id, status, is_deleted, quoted_message_id, quoted_content, quoted_sender, created_at';
+    let { data, error } = await _supabase
       .from('messages')
-      .select('id, conversation_id, membro_id, sender_type, sender_jid, sender_name, sender_phone, content_type, content_text, media_url, mime_type, message_id, status, is_deleted, created_at')
+      .select(msgCols)
       .eq('conversation_id', chatId)
       .order('created_at', { ascending: true });
+
+    // Resiliência: migração quoted_* ainda não aplicada → repetir select sem elas
+    if (error && /quoted_/.test(error.message || '')) {
+      console.warn('[Conversas] Colunas quoted_* indisponíveis — select reduzido:', error.message);
+      const reduced = msgCols.replace(/,\s*quoted_message_id,\s*quoted_content,\s*quoted_sender/,'');
+      ({ data, error } = await _supabase
+        .from('messages')
+        .select(reduced)
+        .eq('conversation_id', chatId)
+        .order('created_at', { ascending: true }));
+    }
+
     if (error) {
       console.error('[Conversas] Erro na query messages:', error);
       throw error;
@@ -13284,6 +13304,18 @@ function _renderConvMessages() {
       senderHtml = `<div class="conv-msg-sender-name" style="font-size:12.5px;font-weight:600;color:#00a884;margin-bottom:2px;">${_convHtmlEscape(senderLabel)}</div>`;
     }
 
+    // Bloco de citação (quoted reply) — estilo WhatsApp Web
+    let quotedHtml = '';
+    if (!msg.is_deleted && (msg.quoted_message_id || msg.quoted_content)) {
+      const quoteAuthor = _convQuotedAuthorLabel(msg);
+      const quoteText = msg.quoted_content || 'Mensagem';
+      const quoteVariant = type === 'agent' ? 'conv-msg-quote--agent' : 'conv-msg-quote--lead';
+      quotedHtml = `<div class="conv-msg-quote ${quoteVariant}" data-quoted-for="${_convHtmlEscape(msg.quoted_message_id || '')}" role="button" tabindex="0" title="Ir para a mensagem original">
+          <div class="conv-msg-quote-author">${_convHtmlEscape(quoteAuthor)}</div>
+          <div class="conv-msg-quote-text">${_convHtmlEscape(quoteText)}</div>
+        </div>`;
+    }
+
     let contentHtml = '';
     if (msg.is_deleted) {
       contentHtml = '<div class="conv-msg-deleted">🚫 <em>Mensagem apagada</em></div>';
@@ -13319,16 +13351,18 @@ function _renderConvMessages() {
     }
 
     const canDeleteMsg = !msg.is_deleted && can('can_conversas_delete_msg');
-    const menuHtml = canDeleteMsg ? `
+    const canReplyMsg = !msg.is_deleted && !!msg.message_id;
+    const menuHtml = (canDeleteMsg || canReplyMsg) ? `
         <button class="conv-msg-menu-btn" title="Opções da mensagem"><i data-lucide="chevron-down"></i></button>
         <div class="conv-msg-menu">
-          <button class="danger" data-action="msg-delete"><i data-lucide="trash-2"></i> Apagar</button>
+          ${canReplyMsg ? '<button data-action="msg-reply"><i data-lucide="reply"></i> Responder</button>' : ''}
+          ${canDeleteMsg ? '<button class="danger" data-action="msg-delete"><i data-lucide="trash-2"></i> Apagar</button>' : ''}
         </div>` : '';
 
     html += `
-      <div class="conv-msg ${type}" data-msg-id="${msg.id}">
+      <div class="conv-msg ${type}" data-msg-id="${msg.id}"${msg.message_id ? ` data-wa-id="${_convHtmlEscape(msg.message_id)}"` : ''}>
         ${menuHtml}
-        <div class="conv-msg-content">${senderHtml}${contentHtml}</div>
+        <div class="conv-msg-content">${senderHtml}${quotedHtml}${contentHtml}</div>
         <div class="conv-msg-meta">
           <span class="conv-msg-time">${time}</span>
           ${type === 'agent' && !msg.is_deleted ? statusIcon : ''}
@@ -13395,6 +13429,14 @@ function _convInitMsgMenuDelegation() {
   container._msgMenuDelegate = true;
 
   container.addEventListener('click', (e) => {
+    // Bloco de citação dentro do balão → scroll até a mensagem original
+    const quoteEl = e.target.closest('.conv-msg-quote');
+    if (quoteEl) {
+      e.stopPropagation();
+      _convCloseMsgMenus();
+      _convScrollToQuoted(quoteEl.dataset.quotedFor || '');
+      return;
+    }
     const menuBtn = e.target.closest('.conv-msg-menu-btn');
     if (menuBtn) {
       e.stopPropagation();
@@ -13402,6 +13444,14 @@ function _convInitMsgMenuDelegation() {
       const wasOpen = menu?.classList.contains('open');
       _convCloseMsgMenus();
       if (menu && !wasOpen) menu.classList.add('open');
+      return;
+    }
+    const replyBtn = e.target.closest('[data-action="msg-reply"]');
+    if (replyBtn) {
+      e.stopPropagation();
+      const msgEl = replyBtn.closest('.conv-msg');
+      _convCloseMsgMenus();
+      if (msgEl) _convStartReply(msgEl.dataset.msgId);
       return;
     }
     const delBtn = e.target.closest('[data-action="msg-delete"]');
@@ -13414,6 +13464,184 @@ function _convInitMsgMenuDelegation() {
     }
     _convCloseMsgMenus();
   });
+}
+
+/* ---------- resposta encadeada (quoted reply) ---------- */
+// Texto de prévia da mensagem citada: conteúdo ou indicativo de mídia
+function _convQuotedPreview(msg) {
+  if (!msg) return 'Mensagem';
+  const text = String(msg.content_text || '').trim();
+  if (text) return text;
+  switch (msg.content_type) {
+    case 'image': return '📷 Foto';
+    case 'audio': return '🎤 Áudio';
+    case 'video': return '🎥 Vídeo';
+    case 'document': return '📄 Documento';
+    case 'sticker': return '🖼️ Figura';
+    case 'location': return '📍 Localização';
+    default: return 'Mensagem';
+  }
+}
+
+// Autor da mensagem citada: prioriza a mensagem original carregada no timeline
+function _convQuotedAuthorLabel(msg) {
+  if (!msg) return 'Mensagem';
+  const target = msg.quoted_message_id
+    ? conversasState.messages.find(m => m.message_id && m.message_id === msg.quoted_message_id)
+    : null;
+
+  if (target) {
+    if (target.sender_type === 'member') return 'Você';
+    const name = String(target.sender_name || '').trim();
+    const jidDigits = String(target.sender_jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+    const phoneDigits = String(target.sender_phone || '').replace(/\D/g, '') || jidDigits;
+    const savedName = phoneDigits ? _convLookupContactName(phoneDigits) : '';
+    return (name && name !== 'Participante' ? name : '')
+      || savedName
+      || (phoneDigits ? _convFormatPhoneIntl(phoneDigits) : '')
+      || 'Participante';
+  }
+
+  const fallback = String(msg.quoted_sender || '').trim();
+  if (!fallback) return 'Mensagem';
+  if (/^\d+$/.test(fallback)) {
+    return _convLookupContactName(fallback) || _convFormatPhoneIntl(fallback) || fallback;
+  }
+  return fallback;
+}
+
+// Monta o payload `quoted` (Evolution API v2) + `replyMeta` (persistência no CRM)
+function _convBuildQuotedPayload(chat) {
+  const q = conversasState.replyingTo;
+  if (!q || !q.message_id) return null;
+
+  const isGroup = chat?.is_group === true || !!chat?.group_jid;
+  const sendTarget = _convResolveSendNumber(chat);
+  let remoteJid = '';
+  if (isGroup) {
+    remoteJid = (sendTarget && sendTarget.includes('@')) ? sendTarget : String(chat?.group_jid || '');
+  } else if (sendTarget) {
+    remoteJid = `${sendTarget}@s.whatsapp.net`;
+  }
+
+  const fromMe = q.sender_type === 'member';
+  const preview = _convQuotedPreview(q);
+
+  const key = { fromMe, id: q.message_id };
+  if (remoteJid) key.remoteJid = remoteJid;
+  if (q.sender_jid) key.participant = q.sender_jid;
+
+  return {
+    quoted: { key, message: { conversation: preview } },
+    replyMeta: {
+      message_id: q.message_id,
+      content: preview,
+      sender: String(q.sender_name || '').trim() || (fromMe ? 'Você' : String(q.sender_phone || '').trim())
+    }
+  };
+}
+
+function _convStartReply(msgId) {
+  const msg = conversasState.messages.find(m => m.id === msgId);
+  if (!msg) return;
+  if (msg.is_deleted || !msg.message_id) {
+    toast('Não é possível responder a esta mensagem.', 'error');
+    return;
+  }
+  conversasState.replyingTo = msg;
+  _convRenderReplyPreview();
+  const input = $('#convMessageInput');
+  if (input) input.focus();
+}
+
+function _convCancelReply() {
+  conversasState.replyingTo = null;
+  _convRenderReplyPreview();
+}
+
+function _convRenderReplyPreview() {
+  const el = $('#convReplyPreview');
+  if (!el) return;
+
+  const q = conversasState.replyingTo;
+  if (!q) {
+    el.innerHTML = '';
+    el.style.display = 'none';
+    el.classList.remove('conv-reply-preview--lead', 'conv-reply-preview--agent');
+    return;
+  }
+
+  const fromMe = q.sender_type === 'member';
+  const author = _convQuotedAuthorLabel(q);
+  const preview = _convQuotedPreview(q);
+
+  el.className = `conv-reply-preview ${fromMe ? 'conv-reply-preview--agent' : 'conv-reply-preview--lead'}`;
+  el.style.display = 'flex';
+  el.innerHTML = `
+    <div class="conv-reply-preview-body">
+      <div class="conv-reply-preview-author">${_convHtmlEscape(author)}</div>
+      <div class="conv-reply-preview-text">${_convHtmlEscape(preview)}</div>
+    </div>
+    <button type="button" class="conv-reply-preview-close" id="btnConvReplyCancel" title="Cancelar resposta (Esc)"><i data-lucide="x"></i></button>`;
+  initIcons();
+
+  const closeBtn = $('#btnConvReplyCancel');
+  if (closeBtn) closeBtn.addEventListener('click', _convCancelReply);
+}
+
+// Scroll suave + flash até a mensagem original de uma citação
+async function _convScrollToQuoted(waId) {
+  if (!waId) return;
+  const container = $('#convMessages');
+  if (!container) return;
+
+  const findEl = () => container.querySelector(`[data-wa-id="${CSS.escape(waId)}"]`);
+  let el = findEl();
+
+  if (!el) {
+    // Mensagem fora do timeline carregado → buscar no banco e inserir
+    const convId = conversasState.allChats.find(c => c.id === conversasState.selectedChatId)?._conversationId || conversasState.selectedChatId;
+    if (convId) {
+      try {
+        const quotedCols = ', quoted_message_id, quoted_content, quoted_sender';
+        const baseCols = 'id, conversation_id, membro_id, sender_type, sender_jid, sender_name, sender_phone, content_type, content_text, media_url, mime_type, message_id, status, is_deleted, created_at';
+        let q = _supabase
+          .from('messages')
+          .select(baseCols + quotedCols)
+          .eq('conversation_id', convId)
+          .eq('message_id', waId)
+          .maybeSingle();
+        let { data, error: qErr } = await q;
+        if (qErr && /quoted_/.test(qErr.message || '')) {
+          ({ data } = await _supabase
+            .from('messages')
+            .select(baseCols)
+            .eq('conversation_id', convId)
+            .eq('message_id', waId)
+            .maybeSingle());
+        }
+        if (data && !conversasState.messages.some(m => m.id === data.id)) {
+          conversasState.messages.push(data);
+          conversasState.messages.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+          _renderConvMessages();
+        }
+      } catch (err) {
+        console.warn('[Conversas] Erro ao buscar mensagem citada:', err);
+      }
+    }
+    el = findEl();
+  }
+
+  if (!el) {
+    toast('Mensagem original não disponível.', 'error');
+    return;
+  }
+
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.remove('conv-msg--flash');
+  void el.offsetWidth; // reflow: reinicia a animação
+  el.classList.add('conv-msg--flash');
+  setTimeout(() => el && el.classList.remove('conv-msg--flash'), 1400);
 }
 
 function _convOpenDeleteModal(msgId) {
@@ -13549,7 +13777,10 @@ async function _convSendMessage() {
       return;
     }
 
-    const result = await waSendText(currentUser.id, chat._conversationId || conversasState.selectedChatId, content, ccId, number, instanceName);
+    const replyPayload = _convBuildQuotedPayload(chat);
+    const result = await waSendText(currentUser.id, chat._conversationId || conversasState.selectedChatId, content, ccId, number, instanceName, replyPayload?.quoted || null, replyPayload?.replyMeta || null);
+
+    if (replyPayload) _convCancelReply(); // envio OK → fecha o banner de resposta
 
     await _supabase.from('conversations').update({
       last_message_text: content,
@@ -13897,11 +14128,13 @@ async function _convSendPendingMedia(captionOverride) {
     if (input && typeof captionOverride !== 'string') { input.value = ''; input.style.height = 'auto'; }
 
     // Enviar conforme tipo
+    const replyPayload = _convBuildQuotedPayload(chat);
     if (media.type === 'audio' && media._isVoiceNote) {
-      await waSendVoiceNote(currentUser.id, convId, media.dataUrl, ccId, number, instanceName);
+      await waSendVoiceNote(currentUser.id, convId, media.dataUrl, ccId, number, instanceName, replyPayload?.quoted || null, replyPayload?.replyMeta || null);
     } else {
-      await waSendMedia(currentUser.id, convId, media.dataUrl, media.type, caption, ccId, number, instanceName);
+      await waSendMedia(currentUser.id, convId, media.dataUrl, media.type, caption, ccId, number, instanceName, replyPayload?.quoted || null, replyPayload?.replyMeta || null);
     }
+    if (replyPayload) _convCancelReply(); // envio OK → fecha o banner de resposta
 
     const lastText = caption || `[${media.type}]`;
     await _supabase.from('conversations').update({
@@ -14781,6 +15014,12 @@ function initConversas() {
   if (sendBtn) sendBtn.addEventListener('click', _convSendMessage);
   if (msgInput) {
     msgInput.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && conversasState.replyingTo) {
+        e.preventDefault();
+        e.stopPropagation();
+        _convCancelReply();
+        return;
+      }
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); _convSendMessage(); }
     });
     msgInput.addEventListener('input', () => _convAutoResize(msgInput));

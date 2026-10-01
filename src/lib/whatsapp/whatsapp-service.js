@@ -139,7 +139,7 @@ async function waDisconnect(membroId, centrosCustoId) {
 /* ============================================
    4. SEND TEXT: enviar mensagem de texto
    ============================================ */
-async function waSendText(membroId, conversationId, text, centrosCustoId, number, instanceName) {
+async function waSendText(membroId, conversationId, text, centrosCustoId, number, instanceName, quoted = null, replyMeta = null) {
   if (!membroId || !conversationId || !text) {
     throw new Error('membroId, conversationId e text são obrigatórios')
   }
@@ -153,6 +153,8 @@ async function waSendText(membroId, conversationId, text, centrosCustoId, number
     number: number || null,
     instanceName: instanceName || null
   }
+  if (quoted) payload.quoted = quoted
+  if (replyMeta) payload.replyMeta = replyMeta
   console.log('[WA] Payload enviado para evolution-send:', payload)
 
   const result = await waInvokeFunction('evolution-send', payload)
@@ -167,7 +169,7 @@ async function waSendText(membroId, conversationId, text, centrosCustoId, number
 /* ============================================
    5. SEND MEDIA: enviar mídia
    ============================================ */
-async function waSendMedia(membroId, conversationId, mediaUrl, contentType = 'image', caption = '', centrosCustoId, number, instanceName) {
+async function waSendMedia(membroId, conversationId, mediaUrl, contentType = 'image', caption = '', centrosCustoId, number, instanceName, quoted = null, replyMeta = null) {
   if (!membroId || !conversationId || !mediaUrl) {
     throw new Error('membroId, conversationId e mediaUrl são obrigatórios')
   }
@@ -175,7 +177,7 @@ async function waSendMedia(membroId, conversationId, mediaUrl, contentType = 'im
   const mediaSize = mediaUrl.length > 100 ? `${Math.round(mediaUrl.length / 1024)}KB` : 'small'
   console.log('[WA] Enviando mídia:', { contentType, conversationId, number, instanceName, mediaSize })
 
-  const result = await waInvokeFunction('evolution-send', {
+  const body = {
     membroId,
     conversationId,
     contentText: caption,
@@ -184,7 +186,11 @@ async function waSendMedia(membroId, conversationId, mediaUrl, contentType = 'im
     centrosCustoId: centrosCustoId || null,
     number: number || null,
     instanceName: instanceName || null
-  })
+  }
+  if (quoted) body.quoted = quoted
+  if (replyMeta) body.replyMeta = replyMeta
+
+  const result = await waInvokeFunction('evolution-send', body)
 
   if (result && result.success === false) {
     throw new Error(result.error || 'Erro ao enviar mídia')
@@ -196,7 +202,7 @@ async function waSendMedia(membroId, conversationId, mediaUrl, contentType = 'im
 /* ============================================
    5b. SEND VOICE NOTE: enviar áudio como PTT (voice note nativo WhatsApp)
    ============================================ */
-async function waSendVoiceNote(membroId, conversationId, mediaUrl, centrosCustoId, number, instanceName) {
+async function waSendVoiceNote(membroId, conversationId, mediaUrl, centrosCustoId, number, instanceName, quoted = null, replyMeta = null) {
   if (!membroId || !conversationId || !mediaUrl) {
     throw new Error('membroId, conversationId e mediaUrl são obrigatórios')
   }
@@ -204,7 +210,7 @@ async function waSendVoiceNote(membroId, conversationId, mediaUrl, centrosCustoI
   const mediaSize = mediaUrl.length > 100 ? `${Math.round(mediaUrl.length / 1024)}KB` : 'small'
   console.log('[WA] Enviando voice note (PTT):', { conversationId, number, instanceName, mediaSize })
 
-  const result = await waInvokeFunction('evolution-send', {
+  const body = {
     membroId,
     conversationId,
     contentText: '',
@@ -214,7 +220,11 @@ async function waSendVoiceNote(membroId, conversationId, mediaUrl, centrosCustoI
     centrosCustoId: centrosCustoId || null,
     number: number || null,
     instanceName: instanceName || null
-  })
+  }
+  if (quoted) body.quoted = quoted
+  if (replyMeta) body.replyMeta = replyMeta
+
+  const result = await waInvokeFunction('evolution-send', body)
 
   if (result && result.success === false) {
     throw new Error(result.error || 'Erro ao enviar voice note')
