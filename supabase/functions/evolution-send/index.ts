@@ -20,6 +20,47 @@ function cleanBase64(data: string): string {
   return data
 }
 
+// A Evolution API deriva o mimetype do ARQUIVO quando o payload traz fileName
+// (mimeTypes.lookup no prepareWAMessageMedia). Nome sem extensão → lookup
+// retorna false → WhatsApp recebe mimetype inválido e o documento NÃO ABRE.
+// Ex.: fileName "documento" virava mimetype "false".
+const MIME_EXTENSIONS: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/zip': 'zip',
+  'application/rtf': 'rtf',
+  'text/plain': 'txt',
+  'text/csv': 'csv',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'video/mp4': 'mp4',
+  'video/3gpp': '3gp',
+  'audio/mpeg': 'mp3',
+  'audio/ogg': 'ogg',
+  'audio/mp4': 'm4a',
+}
+
+function ensureExtension(name: string | null | undefined, mime: string | null | undefined): string {
+  const base = String(name || '')
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\.+$/, '')
+    .slice(0, 120)
+  const clean = base || 'documento'
+  if (/\.[A-Za-z0-9]{1,10}$/.test(clean)) return clean
+
+  const mimeKey = String(mime || '').split(';')[0].trim().toLowerCase()
+  const generic = mimeKey.split('/')[1] || ''
+  const ext = MIME_EXTENSIONS[mimeKey] || (/^[a-z0-9]{1,8}$/.test(generic) ? generic : '')
+  return `${clean}.${ext || 'pdf'}`
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -226,30 +267,38 @@ serve(async (req) => {
       }
     } else if (contentType === 'image') {
       apiUrlEndpoint = `${apiUrl}/message/sendMedia/${encInstance}`
+      const imgMime = mimeType || 'image/jpeg'
       payload = {
         number: phone,
         mediatype: 'image',
-        mimetype: mimeType || 'image/jpeg',
+        mimetype: imgMime,
         media: cleanBase64(mediaUrl),
         caption: contentText || ''
       }
+      // fileName só se o cliente informou — e sempre com extensão válida
+      if (fileName) payload.fileName = ensureExtension(fileName, imgMime)
     } else if (contentType === 'video') {
       apiUrlEndpoint = `${apiUrl}/message/sendMedia/${encInstance}`
+      const vidMime = mimeType || 'video/mp4'
       payload = {
         number: phone,
         mediatype: 'video',
-        mimetype: mimeType || 'video/mp4',
+        mimetype: vidMime,
         media: cleanBase64(mediaUrl),
         caption: contentText || ''
       }
+      if (fileName) payload.fileName = ensureExtension(fileName, vidMime)
     } else if (contentType === 'document') {
       apiUrlEndpoint = `${apiUrl}/message/sendMedia/${encInstance}`
+      const docMime = mimeType || 'application/pdf'
       payload = {
         number: phone,
         mediatype: 'document',
-        mimetype: mimeType || 'application/pdf',
+        mimetype: docMime,
         media: cleanBase64(mediaUrl),
-        fileName: fileName || contentText || 'documento'
+        // Nunca sem extensão: a Evolution sobrescreve o mimetype acima com
+        // mimeTypes.lookup(fileName) e um nome sem extensão quebra a abertura.
+        fileName: ensureExtension(fileName || contentText || 'documento', docMime)
       }
     } else {
       apiUrlEndpoint = `${apiUrl}/message/sendText/${encInstance}`
