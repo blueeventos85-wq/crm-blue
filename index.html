@@ -16,13 +16,15 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Scripts clássicos com defer: não bloqueiam o parse/render do HTML e
+       executam em ordem de documento, antes dos módulos (linhas 3413-3415). -->
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script defer src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <!-- ============ AUTH OVERLAY (Login / Cadastro) ============ -->
@@ -412,7 +414,7 @@
                 <!-- rendered by JS -->
               </div>
               <div class="card-footer">
-                <button class="btn-secondary eventos-cta" id="eventosCta" onclick="setActivePage('calendario')">
+                <button class="btn-secondary eventos-cta" id="eventosCta">
                   <i data-lucide="calendar-days"></i> Ver no Calendário
                 </button>
               </div>
@@ -1626,6 +1628,9 @@
           <!-- Tab: Tempo por Página -->
           <div class="audit-tab-content" id="auditTabTempo">
             <div class="audit-table-wrap">
+              <p style="font-size:12px;color:var(--muted-text);margin:0 0 10px">
+                Dados ilustrativos — o tempo de permanência por página ainda não é coletado pelo sistema.
+              </p>
               <table class="audit-table">
                 <thead>
                   <tr>

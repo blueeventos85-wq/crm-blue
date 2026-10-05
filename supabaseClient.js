@@ -1121,6 +1121,14 @@ function invalidateCentrosCustoCache() {
   _centrosCustoCache = null;
 }
 
+// Serviços: o cache vive neste módulo (_servicosCache/_servicosById), então a
+// invalidação precisa ser feita daqui — app.js só consegue limpar via window.
+function invalidateServicosCache() {
+  _servicosCache = null;
+  _servicosById = {};
+  _servicosByName = {};
+}
+
 /* ============================================
    HELPER: cadência visibility (perfis)
    ============================================ */
@@ -1232,6 +1240,7 @@ window.fetchCentrosCusto = fetchCentrosCusto;
 window.insertCentroCusto = insertCentroCusto;
 window.deleteCentroCusto = deleteCentroCusto;
 window.invalidateCentrosCustoCache = invalidateCentrosCustoCache;
+window.invalidateServicosCache = invalidateServicosCache;
 window.fetchCadenciaVisibility = fetchCadenciaVisibility;
 window.upsertCadenciaVisibility = upsertCadenciaVisibility;
 window.deleteCadenciaVisibility = deleteCadenciaVisibility;

@@ -67,6 +67,9 @@ function showAuthSuccess(id, msg) {
 function resetAuthState() {
   _authUser = null;
   _userPermCache = null;
+  _authReadyUserId = null;
+  _authReadyPromise = null;
+  stopLeadsRealtime();
   _adminMembersCache = [];
   _adminPermCache = [];
   currentUser.id = null;
@@ -77,6 +80,22 @@ function resetAuthState() {
   currentUser.foto_url = null;
   currentUser.role = 'admin';
   activePage = 'home';
+
+  // Sincronizar o DOM com o estado zerado: sem isso, após um logout/login na
+  // mesma página o usuário via a tela anterior (com dados do usuário antigo) ou
+  // nenhuma página ativa. #page-home é reconstruído por renderHomeModules().
+  $$('.page').forEach(p => p.classList.remove('active'));
+  const homePageEl = document.getElementById('page-home');
+  if (homePageEl) {
+    homePageEl.classList.add('active');
+    homePageEl.innerHTML = '';
+    homeSearchBound = false;
+  }
+  const homeTitle = document.getElementById('pageTitle');
+  if (homeTitle) homeTitle.textContent = 'Home';
+  const homeSubtitle = document.getElementById('pageSubtitle');
+  if (homeSubtitle) homeSubtitle.textContent = '';
+  $$('.nav-item').forEach(n => n.classList.remove('active'));
 
   // Reconstruir sidebar com todos os itens
   _userPermCache = null;
@@ -128,103 +147,114 @@ async function loadMemberFromAuth(authUserId, authEmail) {
   }
 }
 
+// ── Single-flight da inicialização de sessão ─────────────────────────────────
+// onAuthStateChange dispara INITIAL_SESSION logo após initAuth() já ter
+// inicializado a mesma sessão. Sem dedupe, a inicialização roda 2x e o
+// overlay volta a ser escondido/mostrado em paralelo (tela "bugada").
+// _authReadyPromise garante uma única inicialização por vez;
+// _authReadyUserId + _userPermCache evitam re-inicializar a mesma identidade.
+let _authReadyUserId = null;
+let _authReadyPromise = null;
+
+async function _applySessionIdentity(session) {
+  _authUser = session.user;
+  currentUser.authUserId = session.user.id;
+
+  const member = await loadMemberFromAuth(session.user.id, session.user.email);
+  if (member) {
+    currentUser.id = member.id;
+    currentUser.nome = member.nome || session.user.email?.split('@')[0] || 'Usuário';
+    currentUser.centro_custo_id = member.centro_custo_id || null;
+    currentUser.centro_custo_ids = member._centro_custo_ids || [];
+    currentUser.foto_url = member.foto_url || null;
+    currentUser.perfil = member.cargo || 'Atendente';
+  } else if (!currentUser.id) {
+    // Don't overwrite currentUser.id if already set — loadUserPermissions will resolve it
+    currentUser.nome = session.user.user_metadata?.nome || session.user.email?.split('@')[0] || 'Usuário';
+    console.warn('[Auth] loadMemberFromAuth failed, loadUserPermissions will attempt resolution');
+  }
+}
+
+// Identidade + permissões + renderização concluídos ANTES de esconder o overlay.
+// Esconder antes de loadUserPermissions() deixava o sidebar sem filtro de
+// permissões (fail-open) e re-renderizava em seguida (flicker).
+async function _finishAuthSession(session) {
+  await _applySessionIdentity(session);
+  await onAuthReady();
+  // Proteção contra logout no meio da inicialização: só esconde o overlay se
+  // esta sessão ainda for a sessão corrente.
+  if (_authUser && session && session.user && _authUser.id === session.user.id) {
+    hideAuthOverlay();
+  }
+}
+
+function _ensureAuthReady(session) {
+  const uid = session && session.user ? session.user.id : null;
+  if (!uid) return Promise.resolve(false);
+
+  // Mesma identidade já inicializada com permissões carregadas → no-op.
+  if (_authReadyUserId === uid && _userPermCache) return Promise.resolve(true);
+
+  // Já existe uma inicialização em andamento para esta identidade → reaproveita.
+  if (_authReadyPromise) return _authReadyPromise;
+
+  _authReadyPromise = (async () => {
+    try {
+      await _finishAuthSession(session);
+      _authReadyUserId = uid;
+      return true;
+    } catch (err) {
+      console.error('[Auth] init de sessão falhou:', err);
+      return false;
+    } finally {
+      _authReadyPromise = null;
+    }
+  })();
+  return _authReadyPromise;
+}
+
 async function initAuth() {
   if (!_supabase) { showAuthOverlay(); return; }
 
   // Ensure no stale cache on fresh boot
   _userPermCache = null;
+  _authReadyUserId = null;
 
-  const { data: { session } } = await _supabase.auth.getSession();
+  let session = null;
+  try {
+    ({ data: { session } } = await _supabase.auth.getSession());
+  } catch (err) {
+    console.error('[Auth] getSession failed:', err);
+    showAuthOverlay();
+    return;
+  }
+
   if (session && session.user) {
     console.log('[Auth] initAuth: session found for user:', session.user.id);
-    _authUser = session.user;
-    currentUser.authUserId = session.user.id;
-
-    const member = await loadMemberFromAuth(session.user.id, session.user.email);
-    if (member) {
-      currentUser.id = member.id;
-      currentUser.nome = member.nome || session.user.email?.split('@')[0] || 'Usuário';
-      currentUser.centro_custo_id = member.centro_custo_id || null;
-      currentUser.centro_custo_ids = member._centro_custo_ids || [];
-      currentUser.foto_url = member.foto_url || null;
-      currentUser.perfil = member.cargo || 'Atendente';
-    } else {
-      // Don't overwrite currentUser.id if already set — loadUserPermissions will resolve it
-      if (!currentUser.id) {
-        currentUser.nome = session.user.user_metadata?.nome || session.user.email?.split('@')[0] || 'Usuário';
-      }
-      console.warn('[Auth] loadMemberFromAuth failed in initAuth, loadUserPermissions will attempt resolution');
-    }
-
-    hideAuthOverlay();
-    await onAuthReady();
+    await _ensureAuthReady(session);
   } else {
     showAuthOverlay();
   }
 
-  _supabase.auth.onAuthStateChange(async (event, session) => {
-    console.log('[Auth] onAuthStateChange:', event, 'userId:', session?.user?.id);
+  _supabase.auth.onAuthStateChange(async (event, newSession) => {
+    try {
+      console.log('[Auth] onAuthStateChange:', event, 'userId:', newSession?.user?.id);
 
-    if (event === 'SIGNED_OUT' || !session || !session.user) {
-      resetAuthState();
-      showAuthOverlay();
-      return;
-    }
-
-    const newAuthUserId = session.user.id;
-
-    // INITIAL_SESSION fires on every page load/refresh — always recalculate
-    // permissions to avoid stale cache. Only skip re-init for SIGNED_IN when
-    // the same user is already fully loaded.
-    if (event === 'INITIAL_SESSION') {
-      console.log('[Auth] INITIAL_SESSION — clearing permission cache and re-initializing');
-      _userPermCache = null;
-      _authUser = session.user;
-      currentUser.authUserId = newAuthUserId;
-
-      const member = await loadMemberFromAuth(session.user.id, session.user.email);
-      if (member) {
-        currentUser.id = member.id;
-        currentUser.nome = member.nome || session.user.email?.split('@')[0] || 'Usuário';
-        currentUser.centro_custo_id = member.centro_custo_id || null;
-        currentUser.centro_custo_ids = member._centro_custo_ids || [];
-        currentUser.foto_url = member.foto_url || null;
-        currentUser.perfil = member.cargo || 'Atendente';
-      } else if (!currentUser.id) {
-        currentUser.nome = session.user.user_metadata?.nome || session.user.email?.split('@')[0] || 'Usuário';
-        console.warn('[Auth] loadMemberFromAuth failed in INITIAL_SESSION, loadUserPermissions will attempt resolution');
+      if (event === 'SIGNED_OUT' || !newSession || !newSession.user) {
+        resetAuthState();
+        showAuthOverlay();
+        return;
       }
 
-      hideAuthOverlay();
-      await onAuthReady();
-      return;
+      // Dedupe global: se esta identidade já está pronta (ou inicializando),
+      // não re-executa — INITIAL_SESSION dispara após initAuth() e hoje
+      // duplicava toda a inicialização.
+      await _ensureAuthReady(newSession);
+    } catch (err) {
+      // Um erro aqui NÃO pode derrubar o callback (a lib auth-js reinvoca com
+      // session=null e esconde o app de um usuário logado).
+      console.error('[Auth] onAuthStateChange handler error:', err);
     }
-
-    // SIGNED_IN: only re-initialize if user actually changed
-    if (currentUser.authUserId === newAuthUserId && currentUser.id && _userPermCache) {
-      console.log('[Auth] SIGNED_IN same user, permissions already loaded, skipping re-init');
-      return;
-    }
-
-    _authUser = session.user;
-    currentUser.authUserId = newAuthUserId;
-
-    const member = await loadMemberFromAuth(session.user.id, session.user.email);
-    if (member) {
-      currentUser.id = member.id;
-      currentUser.nome = member.nome || session.user.email?.split('@')[0] || 'Usuário';
-      currentUser.centro_custo_id = member.centro_custo_id || null;
-      currentUser.centro_custo_ids = member._centro_custo_ids || [];
-      currentUser.foto_url = member.foto_url || null;
-      currentUser.perfil = member.cargo || 'Atendente';
-    } else if (!currentUser.id) {
-      currentUser.nome = session.user.user_metadata?.nome || session.user.email?.split('@')[0] || 'Usuário';
-      console.warn('[Auth] loadMemberFromAuth failed in onAuthStateChange, loadUserPermissions will attempt resolution');
-    }
-
-    _userPermCache = null;
-    hideAuthOverlay();
-    await onAuthReady();
   });
 }
 
@@ -319,7 +349,8 @@ function bindAuthForms() {
 }
 
 async function onAuthReady() {
-  _settingsBound = false;
+  // NÃO limpar flags de bind aqui: _settingsBound=False a cada evento de auth
+  // fazia initConfiguracoes() re-instalar todos os listeners (acúmulo/duplo clique).
 
   const userNameEl = document.getElementById('sidebarUserName');
   const userAvatarEl = document.getElementById('sidebarUserAvatar');
@@ -336,6 +367,9 @@ async function onAuthReady() {
     }
   }
   if (pageSubtitle) pageSubtitle.textContent = `Bem-vindo de volta, ${(currentUser.nome || 'Usuário').split(' ')[0]} ✨`;
+  // pageConfig é a fonte única do header: atualiza a Home para que um novo
+  // setActivePage('home') (ex.: fim do boot) não sobrescreva a saudação.
+  if (pageConfig.home) pageConfig.home.subtitle = `Bem-vindo de volta, ${(currentUser.nome || 'Usuário').split(' ')[0]} ✨`;
 
   // Logout button
   const logoutBtn = document.getElementById('sidebarLogoutBtn');
@@ -361,6 +395,12 @@ async function onAuthReady() {
     populateEmpresaFilter();
     initCrmEmpresaFilter();
   }
+
+  // Listas acompanham leads criados/alterados por outros usuários (sem F5)
+  initLeadsRealtime();
+
+  // Re-login no mesmo load: o boot carregou as listas do usuário anterior.
+  if (_bootDataLoaded) refreshLeadsEClientsCache().catch(() => {});
 }
 
 /* ============================================
@@ -737,6 +777,8 @@ async function handleMemberSave() {
 
     closeMemberModal();
     await loadMembersFromSupabase();
+    // Lista da aba Equipe (Configurações) usa outra consulta/cache
+    if (typeof loadTeamMembers === 'function') await loadTeamMembers();
 
   } catch (err) {
     console.error('[Admin] Erro ao salvar membro:', err);
@@ -771,6 +813,7 @@ async function handleMemberDelete() {
     if (typeof registrarAuditoria === 'function') registrarAuditoria({ acao: 'Exclusões', caminho_url: '/administrador', modulo: 'Administrador' });
     closeDeleteModal();
     await loadMembersFromSupabase();
+    if (typeof loadTeamMembers === 'function') await loadTeamMembers();
 
   } catch (err) {
     console.error('[Admin] Erro ao excluir:', err);
@@ -1600,9 +1643,14 @@ async function handleEmpresaSave() {
 
     toast(_empresaEditingId ? 'Empresa atualizada com sucesso!' : 'Empresa criada com sucesso!');
 
-    // Invalidar cache global para forçar recarga
+    // Invalidar cache global e recarregar tudo que a empresa alimenta:
+    // centros de custo (dropdowns/filtros), vínculos de serviços e de cadências
     if (typeof invalidateCentrosCustoCache === 'function') invalidateCentrosCustoCache();
-    await loadVinculosCadencias();
+    await Promise.all([
+      loadCentrosCustoFromSupabase(),
+      loadVinculosServicos(),
+      loadVinculosCadencias()
+    ]);
 
     closeEmpresaModal();
     await loadEmpresasAdmin();
@@ -1788,6 +1836,8 @@ async function handleServicoSave() {
 
     closeServicoModal();
     await loadServicosAdmin();
+    // Serviços alimentam chips, filtros e mapeamento de leads (cache global)
+    await refreshServicosCache();
   } catch (err) {
     console.error('[Servicos] Erro ao salvar:', err);
     toast(err.message || 'Erro ao salvar serviço', 'error');
@@ -1831,6 +1881,7 @@ async function handleServicoDelete() {
 
     closeServicoDeleteModal();
     await loadServicosAdmin();
+    await refreshServicosCache();
   } catch (err) {
     console.error('[Servicos] Erro ao excluir:', err);
     toast(err.message || 'Erro ao excluir serviço', 'error');
@@ -2402,9 +2453,11 @@ async function handleCadenciaSave() {
     closeCadenciaModal();
     await loadCadenciasAdmin();
 
+    // Cadências: cache do CRM (_dbCadenciasCache), visibilidade e filtros
+    await refreshCadenciasCache();
+
     // Refresh CRM kanban if on CRM page
     if (activePage === 'crm' && typeof renderAll === 'function') {
-      await rebuildCadenciaMaps();
       await renderAll();
     }
 
@@ -2439,9 +2492,10 @@ async function handleCadenciaDelete() {
     closeCadenciaDeleteModal();
     await loadCadenciasAdmin();
 
+    await refreshCadenciasCache();
+
     // Refresh CRM kanban if on CRM page
     if (activePage === 'crm' && typeof renderAll === 'function') {
-      await rebuildCadenciaMaps();
       await renderAll();
     }
 
@@ -2577,8 +2631,9 @@ async function waLoadStatus() {
       if (connectBtn) connectBtn.style.display = 'none';
       if (disconnectBtn) disconnectBtn.style.display = 'none';
       if (refreshBtn) refreshBtn.style.display = '';
-      if (qrSection) qrSection.style.display = '';
-      waStartQrPolling(instanceName);
+      if (qrSection)       qrSection.style.display = '';
+      _waShowQrLoading('Gerando QR Code...');
+      waStartQrPolling(instanceName, centrosCustoId);
     } else {
       if (label) label.textContent = 'Desconectado';
       if (connectBtn) connectBtn.style.display = '';
@@ -2602,8 +2657,6 @@ async function waHandleConnect() {
   const integrationSelect = document.getElementById('waIntegration');
   const ccSelect = document.getElementById('waCentroCustoSelect');
   const qrSection = document.getElementById('waQrSection');
-  const qrLoading = document.getElementById('waQrLoading');
-  const qrImage = document.getElementById('waQrImage');
 
   const centrosCustoId = ccSelect?.value || null;
 
@@ -2623,8 +2676,7 @@ async function waHandleConnect() {
 
   // Mostrar QR section
   if (qrSection) qrSection.style.display = '';
-  if (qrLoading) qrLoading.style.display = '';
-  if (qrImage) qrImage.style.display = 'none';
+  _waShowQrLoading('Gerando QR Code...');
 
   // Atualizar status
   const dot = document.getElementById('waStatusDot');
@@ -2636,26 +2688,12 @@ async function waHandleConnect() {
     const result = await waConnect(currentUser.id, instanceName, centrosCustoId);
 
     if (result.qr) {
-      if (qrLoading) qrLoading.style.display = 'none';
-      if (qrImage) {
-        // Garantir que o prefixo data:image exista
-        let qrSrc = result.qr;
-        if (qrSrc && !qrSrc.startsWith('data:')) {
-          qrSrc = 'data:image/png;base64,' + qrSrc;
-        }
-        qrImage.src = qrSrc;
-        qrImage.style.display = '';
-        qrImage.onerror = () => {
-          console.error('[WA] Erro ao carregar QR Code');
-          qrImage.style.display = 'none';
-          qrLoading.style.display = '';
-        };
-      }
-      waStartQrPolling(instanceName);
+      _waSetQrImage(result.qr);
     } else {
-      // QR ainda nao disponivel, iniciar polling
-      waStartQrPolling(instanceName);
+      // QR ainda não veio na resposta: o polling passa a buscá-lo
+      _waShowQrLoading('Aguardando o QR Code ser gerado...');
     }
+    waStartQrPolling(instanceName, centrosCustoId);
 
     toast('Instancia criada. Escaneie o QR Code.');
   } catch (err) {
@@ -2682,10 +2720,64 @@ async function waHandleDisconnect() {
   }
 }
 
-function waStartQrPolling(instanceName) {
+// Exibe o QR recebido e esconde o spinner ("Gerando QR Code...")
+function _waSetQrImage(qr) {
+  const qrImg = document.getElementById('waQrImage');
+  const loading = document.getElementById('waQrLoading');
+  if (!qrImg || !qr) return false;
+  let src = String(qr);
+  if (!src.startsWith('data:')) src = 'data:image/png;base64,' + src;
+  qrImg.onerror = () => {
+    console.error('[WA] Erro ao carregar QR Code');
+    _waShowQrLoading('Falha ao exibir o QR Code. Clique em "Atualizar".');
+  };
+  qrImg.src = src;
+  qrImg.style.display = '';
+  if (loading) loading.style.display = 'none';
+  return true;
+}
+
+// Volta para o estado de espera (spinner + mensagem explicando o que está acontencendo)
+function _waShowQrLoading(text) {
+  const qrImg = document.getElementById('waQrImage');
+  const loading = document.getElementById('waQrLoading');
+  if (qrImg) { qrImg.style.display = 'none'; qrImg.removeAttribute('src'); }
+  if (loading) {
+    loading.style.display = '';
+    const p = loading.querySelector('p');
+    if (p) p.textContent = text || 'Gerando QR Code...';
+  }
+}
+
+/* Polling de conexão:
+   - verifica status (com o centro de custo correto — antes era consultado só por
+     membro_id e nunca achava a instância configurada por empresa);
+   - busca/atualiza o QR quando ele não está na tela (a Evolution expira o QR em
+     ~20s e antes nada o renovava, deixando o spinner infinito);
+   - usa o #waQrTimer para mostrar a próxima atualização. */
+function waStartQrPolling(instanceName, centrosCustoId) {
   waStopQrPolling();
   let attempts = 0;
   const maxAttempts = 30;
+  const QR_REFRESH_MS = 15000;
+  let nextQrAt = 0;
+
+  const qrImg0 = document.getElementById('waQrImage');
+  const hasQr = !!(qrImg0 && qrImg0.style.display !== 'none' && qrImg0.src);
+  nextQrAt = hasQr ? Date.now() + QR_REFRESH_MS : 0;
+
+  const refreshQr = async () => {
+    nextQrAt = Date.now() + QR_REFRESH_MS;
+    try {
+      const result = await waConnect(currentUser.id, instanceName, centrosCustoId);
+      if (!result || !result.qr) {
+        _waShowQrLoading('Aguardando o QR Code ser gerado...');
+      }
+    } catch (err) {
+      console.warn('[WA] Falha ao atualizar QR Code:', err);
+      _waShowQrLoading('Não foi possível gerar o QR Code. Clique em "Atualizar".');
+    }
+  };
 
   _waQrPolling = setInterval(async () => {
     attempts++;
@@ -2697,14 +2789,24 @@ function waStartQrPolling(instanceName) {
     }
 
     try {
-      const config = await waFetchConfig(currentUser.id);
+      // centrosCustoId é obrigatório: a config é por empresa (não por membro)
+      const config = await waFetchConfig(currentUser.id, centrosCustoId);
       if (config?.status === 'connected') {
         waStopQrPolling();
         toast('WhatsApp conectado com sucesso!');
         await waLoadStatus();
+        return;
       }
     } catch (e) {
       // Silently retry
+    }
+
+    if (Date.now() >= nextQrAt) await refreshQr();
+
+    const timerEl = document.getElementById('waQrTimer');
+    if (timerEl) {
+      const secs = Math.max(0, Math.ceil((nextQrAt - Date.now()) / 1000));
+      timerEl.textContent = secs > 0 ? `Atualização automática em ${secs}s` : '';
     }
   }, 3000);
 }
@@ -2714,6 +2816,8 @@ function waStopQrPolling() {
     clearInterval(_waQrPolling);
     _waQrPolling = null;
   }
+  const timerEl = document.getElementById('waQrTimer');
+  if (timerEl) timerEl.textContent = '';
 }
 
 async function uploadAvatar(file) {
@@ -2993,6 +3097,8 @@ async function saveBranding(logoUrl, faviconUrl, loginLogoUrl) {
   return true;
 }
 
+let _brandingBound = false;
+
 function initBrandingSection() {
   const card = document.getElementById('settingsBrandingCard');
   if (!card) return;
@@ -3001,6 +3107,11 @@ function initBrandingSection() {
   card.style.display = isAdmin ? '' : 'none';
 
   if (!isAdmin) return;
+
+  // A partir daqui só há binds em elementos estáticos: instala uma única vez.
+  // (initConfiguracoes() roda a cada visita à aba e re-instalava ~10 listeners.)
+  if (_brandingBound) return;
+  _brandingBound = true;
 
   const logoInput = document.getElementById('brandingLogoInput');
   const logoBtn = document.getElementById('brandingLogoBtn');
@@ -3363,13 +3474,18 @@ function renderSidebar() {
 
   nav.innerHTML = html;
 
-  $$('.nav-item').forEach(item => {
-    item.addEventListener('click', (e) => {
+  // Delegação única por container: renderSidebar() é chamado a cada mudança de
+  // permissões/usuário e recria os itens — listeners por item seriam duplicados
+  // ou perdidos entre renders. A navegação fica resolvida em um único handler.
+  if (!nav._navClickBound) {
+    nav._navClickBound = true;
+    nav.addEventListener('click', (e) => {
+      const item = e.target.closest('.nav-item');
+      if (!item || !nav.contains(item)) return;
       e.preventDefault();
-      const page = item.dataset.page;
-      if (page) setActivePage(page);
+      if (item.dataset.page) setActivePage(item.dataset.page);
     });
-  });
+  }
 
   initIcons();
 }
@@ -3729,9 +3845,19 @@ const pageConfig = {
 };
 
 let activePage = 'home';
+// Marcador de que o boot já carregou as listas iniciais. Quando true, um
+// novo login (troca de usuário no mesmo load) precisa recarregar os dados.
+let _bootDataLoaded = false;
 
 function setActivePage(page) {
   const prevPage = activePage;
+
+  // Validação de destino: sem #page-<page> no DOM, o código abaixo removeria
+  // .active de TODAS as páginas e deixaria a tela em branco (navegação "bugada").
+  if (!document.getElementById(`page-${page}`)) {
+    console.warn('[Nav] setActivePage ignorado, página inexistente:', page);
+    return;
+  }
 
   // Verificação de permissão: bloquear acesso a módulos sem permissão
   if (_userPermCache) {
@@ -3753,8 +3879,10 @@ function setActivePage(page) {
 
   activePage = page;
 
-  // Auditoria: registrar acesso à página
-  if (typeof registrarAuditoria === 'function') {
+  // Auditoria: registrar acesso à página apenas quando a rota muda
+  // (evita duplicar registros no boot e em binds de navegação duplicados)
+  const pageChanged = prevPage !== page;
+  if (pageChanged && typeof registrarAuditoria === 'function') {
     const pageLabel = {
       home: 'Home', dashboard: 'Dashboard', crm: 'CRM', clientes: 'Cliente da Base',
       calendario: 'Calendário', configuracoes: 'Configurações', rotina: 'Rotina Blue',
@@ -4391,6 +4519,8 @@ async function transferSingleClient(clientId, memberId) {
     selectedClientIds.delete(String(clientId));
     toast(`Cliente transferido para ${memberName}`);
     renderClients();
+    // CRM (leads) e KPIs também derivam do membro transferido
+    await refreshLeadsEClientsCache();
   } catch (err) {
     console.error('[Transfer] Erro ao transferir cliente:', err);
     toast(err.message || 'Erro ao transferir cliente', 'error');
@@ -4592,6 +4722,8 @@ async function saveMassTransfer() {
     if (qualSelect) qualSelect.value = '';
     if (lostSel) lostSel.value = '';
     renderClients();
+    // Lead alterado no banco: CRM (leads) e KPIs precisam acompanhar.
+    await refreshLeadsEClientsCache();
   } catch (err) {
     console.error('[MassTransfer] Erro ao salvar:', err);
     toast(err.message || 'Erro ao salvar alterações', 'error');
@@ -4642,9 +4774,12 @@ async function deleteMassLeads() {
     if (error) throw error;
 
     clientsData = clientsData.filter(c => !ids.includes(String(c.id)));
+    leads = leads.filter(l => !ids.includes(String(l.id)));
     selectedClientIds.clear();
+    invalidateDashCache();
     toast(`${ids.length} lead(s) excluído(s)`);
     renderClients();
+    renderAll();
     populateServiceFilter();
     populateCadenceFilter();
   } catch (err) {
@@ -5197,14 +5332,9 @@ function animateProgressBars() {
    INTERAÇÕES GERAIS
    ============================================ */
 function initInteractions() {
-  // Navegação sidebar
-  $$('.nav-item').forEach(item => {
-    item.addEventListener('click', (e) => {
-      e.preventDefault();
-      const page = item.dataset.page;
-      if (page) setActivePage(page);
-    });
-  });
+  // Navegação da sidebar: delegação única é instalada em renderSidebar()
+  // (nav._navClickBound). Aqui NÃO se deve fazer bind por item: duplicaria o
+  // handler de navegação (um clique dispararia setActivePage duas vezes).
 
   // Busca de clientes
   const clienteSearch = $('#clienteBaseSearch');
@@ -5759,6 +5889,93 @@ function setServiceChipsActive(values) {
   });
 }
 
+/* ============================================
+   INVALIDAÇÃO DE CACHES PÓS-CADASTRO
+   Toda mutação de CRUD chama um destes helpers: sem isso a lista só
+   atualizava no F5 (leads, clientes, serviços, cadências e vínculos
+   moravam em arrays/cache que só eram populados no boot).
+   ============================================ */
+async function refreshLeadsEClientsCache() {
+  try {
+    if (_supabase) {
+      const filterId = canViewAllData() ? null : getCurrentUserId();
+      const [freshLeads, freshClients] = await Promise.all([
+        fetchLeadsSupabase(filterId),
+        fetchClientsSupabase(filterId)
+      ]);
+      // Mesma regra do boot: só substitui se o servidor retornou dados
+      // (preserva dados locais quando não há registros no Supabase).
+      if (freshLeads && freshLeads.length > 0) leads = freshLeads;
+      if (freshClients && freshClients.length > 0) clientsData = freshClients;
+    }
+  } catch (err) {
+    console.warn('[Cache] refresh de leads/clientes falhou:', err);
+  }
+  invalidateDashCache();
+  renderClients();
+  if (activePage === 'crm') renderAll();
+}
+
+async function refreshServicosCache() {
+  try {
+    if (typeof invalidateServicosCache === 'function') invalidateServicosCache(); // zera o cache em supabaseClient.js
+    await fetchServicosSupabase();    // repopula _servicosById / window._servicosById
+    populateServiceFilter();
+    await loadServiceChips();
+  } catch (err) {
+    console.warn('[Cache] refresh de serviços falhou:', err);
+  }
+}
+
+async function refreshCadenciasCache() {
+  try {
+    await loadDbCadencias();          // colunas e filtros do CRM
+    _cadenciaVisibilityData = await fetchCadenciaVisibility();
+    populateCadenceFilter();
+    await rebuildCadenciaMaps();
+  } catch (err) {
+    console.warn('[Cache] refresh de cadências falhou:', err);
+  }
+}
+
+/* ── Realtime de leads ──────────────────────────────────────────────────────
+   Sem isto, leads criados/atualizados por OUTRO usuário (ou em outra aba)
+   só apareciam após F5. O canal dispara um refetch debounced nas listas. */
+let _leadsRealtimeChannel = null;
+let _leadsRealtimeTimer = null;
+
+function initLeadsRealtime() {
+  if (!_supabase || _leadsRealtimeChannel) return;
+  try {
+    _leadsRealtimeChannel = _supabase
+      .channel('crm-leads-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => {
+        // Debounce: importações/massa geram vários eventos em sequência
+        clearTimeout(_leadsRealtimeTimer);
+        _leadsRealtimeTimer = setTimeout(() => {
+          _leadsRealtimeTimer = null;
+          Promise.resolve(refreshLeadsEClientsCache())
+            .catch(err => console.warn('[Realtime] refresh de leads falhou:', err));
+        }, 800);
+      })
+      .subscribe(status => {
+        if (status === 'CHANNEL_ERROR') console.warn('[Realtime] canal crm-leads-realtime com erro');
+      });
+  } catch (err) {
+    console.warn('[Realtime] falha ao assinar leads:', err);
+    _leadsRealtimeChannel = null;
+  }
+}
+
+function stopLeadsRealtime() {
+  clearTimeout(_leadsRealtimeTimer);
+  _leadsRealtimeTimer = null;
+  if (_leadsRealtimeChannel && _supabase) {
+    try { _supabase.removeChannel(_leadsRealtimeChannel); } catch (e) { /* canal já removido */ }
+  }
+  _leadsRealtimeChannel = null;
+}
+
 async function loadCalServiceChips(empresaId, selectedNames) {
   const container = document.getElementById('calEventServices');
   if (!container) return;
@@ -6088,11 +6305,8 @@ async function transferLead() {
       data: { leadId: lead.id }
     });
 
-    // Recarregar leads do Supabase para manter filtro consistente
-    const isAdmin = isCurrentUserAdmin();
-    const filterId = isAdmin ? null : currentUser.id;
-    const refreshed = await fetchLeadsSupabase(filterId);
-    leads = refreshed;
+    // Recarregar leads e clientes do Supabase para manter filtro consistente
+    await refreshLeadsEClientsCache();
 
     renderAll();
     closeLeadModal();
@@ -7312,6 +7526,9 @@ async function saveLead() {
   const isNew = currentLeadId === null;
   const lead = isNew ? null : leads.find(l => String(l.id) === String(currentLeadId));
   if (!isNew && !lead) return;
+  // true quando a gravação no Supabase deu certo — só nesse caso vale
+  // recarregar leads/clientes (evita apagar um registro local cujo insert falhou).
+  let savedOk = false;
 
   invalidateDashCache();
 
@@ -7488,6 +7705,7 @@ async function saveLead() {
         currentLeadId = result[0].id;
       }
       toast('Lead criado: ' + newLead.empresa);
+      savedOk = true;
       if (typeof registrarAuditoria === 'function') {
         registrarAuditoria({ acao: 'Inclusões', caminho_url: '/crm', modulo: 'CRM' });
       }
@@ -7580,6 +7798,7 @@ async function saveLead() {
 
       await updateLeadSupabase(lead.id, payload);
       toast('Lead atualizado: ' + lead.empresa);
+      savedOk = true;
       if (typeof registrarAuditoria === 'function') {
         registrarAuditoria({ acao: 'Atualizações', caminho_url: '/crm', modulo: 'CRM' });
       }
@@ -7599,6 +7818,10 @@ async function saveLead() {
 
   closeLeadModal();
   renderAll();
+
+  // Cadastro/edição concluído: a página "Cliente da Base" é alimentada por uma
+  // consulta separada (clientsData) — sem este refresh ela só atualizava no F5.
+  if (savedOk) await refreshLeadsEClientsCache();
 }
 
 function validarCNPJ(v) {
@@ -10347,6 +10570,10 @@ document.addEventListener('keydown', (e) => {
 /* ============================================
    DASHBOARD WIDGETS v3 — Date-Filtered
    ============================================ */
+// Bind única única dos controles de período (initDashboardPeriod roda a cada
+// visita ao Dashboard e re-instalava 4 listeners por visita — acúmulo infinito).
+let _dashPeriodBound = false;
+
 function initDashboardPeriod() {
   const saved = sessionStorage.getItem('dashPeriod');
   if (saved) {
@@ -10370,6 +10597,10 @@ function initDashboardPeriod() {
     if (si) si.value = dashState.startDate;
     if (ei) ei.value = dashState.endDate || '';
   }
+
+  if (_dashPeriodBound) return;
+  _dashPeriodBound = true;
+
   segBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       const period = btn.dataset.period;
@@ -11836,28 +12067,28 @@ let auditData = [];
 let auditPage = 1;
 const auditPageSize = 15;
 
+// Linhas da tabela auditoria → formato exibido (usado no load e no refresh)
+function mapAuditRows(dados) {
+  return (dados || []).map(row => ({
+    id: row.id,
+    user: row.usuario_nome,
+    hash: row.usuario_id,
+    action: row.acao,
+    actionUrl: row.caminho_url,
+    module: row.modulo,
+    device: row.dispositivo,
+    deviceIcon: (row.dispositivo || '').toLowerCase() === 'mobile' ? 'smartphone' : 'monitor',
+    datetime: formatAuditDate(row.created_at)
+  }));
+}
+
 async function initAuditoria() {
-  // Carregar dados reais do Supabase
+  // Carregar dados reais do Supabase (sem fallback de dados fictícios)
   try {
-    const dados = await buscarAuditoria({ limit: 500 });
-    if (dados.length > 0) {
-      auditData = dados.map(row => ({
-        id: row.id,
-        user: row.usuario_nome,
-        hash: row.usuario_id,
-        action: row.acao,
-        actionUrl: row.caminho_url,
-        module: row.modulo,
-        device: row.dispositivo,
-        deviceIcon: (row.dispositivo || '').toLowerCase() === 'mobile' ? 'smartphone' : 'monitor',
-        datetime: formatAuditDate(row.created_at)
-      }));
-    } else {
-      auditData = generateAuditMockData(120);
-    }
+    auditData = mapAuditRows(await buscarAuditoria({ limit: 500 }));
   } catch (err) {
     console.error('[Auditoria] Erro ao buscar dados reais:', err);
-    auditData = generateAuditMockData(120);
+    // Mantém o que já estiver carregado; sem nada, a tabela mostra estado vazio
   }
 
   // Atualizar KPIs com dados reais
@@ -11907,53 +12138,9 @@ async function updateAuditKPIs() {
   }
 }
 
-/* Mock data fallback */
-const auditMockUsers = [
-  { name: 'Camila Souza', hash: 'CS-8a2f' },
-  { name: 'Rafaela Ferreira', hash: 'RF-3b1c' },
-  { name: 'João Pedro', hash: 'JP-7d4e' },
-  { name: 'Marina Alves', hash: 'MA-9f6a' }
-];
-const auditMockActions = [
-  { name: 'LOGIN', url: '/auth/login' },
-  { name: 'VIEW_LEAD', url: '/crm' },
-  { name: 'EDIT_LEAD', url: '/crm/edit' },
-  { name: 'CREATE_LEAD', url: '/crm/new' },
-  { name: 'VIEW_EVENT', url: '/calendario' },
-  { name: 'VIEW_ROTINA', url: '/rotina' },
-  { name: 'EDIT_ROTINA', url: '/rotina/edit' },
-  { name: 'VIEW_DASH', url: '/dashboard' }
-];
-const auditMockModules = ['CRM', 'Clientes', 'Calendário', 'Rotina', 'Dashboard', 'Configurações'];
-const auditMockDevices = [
-  { type: 'desktop', icon: 'monitor', label: 'Desktop' },
-  { type: 'mobile', icon: 'smartphone', label: 'Mobile' }
-];
-
-function generateAuditMockData(count) {
-  const data = [];
-  const now = new Date();
-  for (let i = 0; i < count; i++) {
-    const user = auditMockUsers[Math.floor(Math.random() * auditMockUsers.length)];
-    const action = auditMockActions[Math.floor(Math.random() * auditMockActions.length)];
-    const module = auditMockModules[Math.floor(Math.random() * auditMockModules.length)];
-    const device = auditMockDevices[Math.floor(Math.random() * auditMockDevices.length)];
-    const date = new Date(now);
-    date.setMinutes(date.getMinutes() - Math.floor(Math.random() * 1440));
-    data.push({
-      id: i + 1,
-      user: user.name,
-      hash: user.hash,
-      action: action.name,
-      actionUrl: action.url,
-      module,
-      device: device.label,
-      deviceIcon: device.icon,
-      datetime: formatAuditDate(date.toISOString())
-    });
-  }
-  return data.sort((a, b) => b.id - a.id);
-}
+/* Sem dados fictícios: a Auditoria mostra apenas registros reais (a tabela
+   vazia exibe "Nenhum registro encontrado"). auditTempoData é ilustrativo e
+   está rotulado como tal no HTML (ainda não há coleta de tempo por página). */
 
 const auditTempoData = [
   { page: '/crm', tempoMedio: '4m 32s', visitas: 342, usuarios: 6, retorno: '68%' },
@@ -12115,25 +12302,10 @@ function bindAuditFilters() {
   const refresh = $('#auditRefreshBtn');
   if (refresh) refresh.addEventListener('click', async () => {
     try {
-      const dados = await buscarAuditoria({ limit: 500 });
-      if (dados.length > 0) {
-        auditData = dados.map(row => ({
-          id: row.id,
-          user: row.usuario_nome,
-          hash: row.usuario_id,
-          action: row.acao,
-          actionUrl: row.caminho_url,
-          module: row.modulo,
-          device: row.dispositivo,
-          deviceIcon: (row.dispositivo || '').toLowerCase() === 'mobile' ? 'smartphone' : 'monitor',
-          datetime: formatAuditDate(row.created_at)
-        }));
-      } else {
-        auditData = generateAuditMockData(120);
-      }
+      auditData = mapAuditRows(await buscarAuditoria({ limit: 500 }));
     } catch (err) {
       console.error('[Auditoria] Erro ao atualizar:', err);
-      auditData = generateAuditMockData(120);
+      // Mantém os registros já carregados (nada de inventar dados)
     }
     auditPage = 1;
     updateAuditKPIs();
@@ -12353,7 +12525,14 @@ function drawCalibDonut(quente, morno, frio) {
   });
 }
 
+// Abas e botões de relatório da Calibragem são estáticos no index.html e
+// initCalibragem() roda a cada visita à página — bind precisava ser única.
+let _calibControlsBound = false;
+let _calibReportBound = false;
+
 function bindCalibragemTabs() {
+  if (_calibControlsBound) return;
+  _calibControlsBound = true;
   document.querySelectorAll('.calib-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.calib-tab').forEach(t => t.classList.remove('active'));
@@ -12374,6 +12553,8 @@ function bindCalibragemTabs() {
 }
 
 function bindCalibragemReport() {
+  if (_calibReportBound) return;
+  _calibReportBound = true;
   const btn = document.getElementById('calibReportBtn');
   if (btn) {
     btn.addEventListener('click', () => {
@@ -13838,6 +14019,8 @@ async function _convDeleteMessage(scope, btn) {
     }
     console.error('[Conversas] Detalhe exclusão:', { raw, parsed });
     toast(friendly, 'error');
+  } finally {
+    // Modal reabre depois: o botão precisa voltar ao normal também no sucesso
     if (btn) { btn.disabled = false; btn.style.opacity = ''; }
   }
 }
@@ -14282,6 +14465,9 @@ async function _convEditorSend() {
   } catch (err) {
     console.error('[Editor] Erro ao processar imagem:', err);
     toast('Erro ao processar imagem: ' + (err.message || 'Tente novamente'), 'error');
+  } finally {
+    // O elemento fica no DOM (só o overlay é escondido): sem o finally o botão
+    // permanecia desabilitado e a próxima edição não conseguia enviar.
     if (btn) btn.disabled = false;
   }
 }
@@ -15569,11 +15755,12 @@ let _ccDetailNome = null;
 let dashCcFilter = 'all';
 
 async function initCentrosCusto() {
+  // Dados a cada visita (a guarda abaixo só protege os binds): centros criados
+  // ou renomeados em outra tela precisam aparecer sem recarregar a página.
+  await loadCentrosCustoFromSupabase();
+
   if (_ccBound) return;
   _ccBound = true;
-
-  // Carregar dados
-  await loadCentrosCustoFromSupabase();
 
   // Botão "Novo Centro de Custo"
   const newBtn = document.getElementById('ccNewBtn');
@@ -15933,91 +16120,65 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderCalUpcoming();
     renderDashRemindersWidget();
     renderReunRespChips();
-    initCalibragem();
+    // initCalibragem NÃO roda no boot: carrega membros do servidor e, para
+    // não-admin, chamava setActivePage('home') no meio da inicialização.
+    // É chamado em setActivePage('calibragem') quando a tela é aberta.
     initNotifications();
 
-    // Carregar serviços primeiro (necessário para mapear leads)
-    try {
-      await seedServicos();
-      await fetchServicosSupabase();
-    } catch (err) {
-      console.error('[Boot] Erro ao carregar serviços:', err);
-    }
+    // ── Cargas do Supabase, agrupadas por dependência real e rodando em paralelo ──
+    // Antes eram ~10 requisições em série, cada uma bloqueando o boot inteiro
+    // (tela fica "travada" até a última resposta).
+    // helper: uma carga que falha não pode derrubar as demais
+    const bootLoad = (label, fn) => Promise.resolve()
+      .then(fn)
+      .catch(err => console.error(`[Boot] Erro ao carregar ${label}:`, err));
 
-    // Carregar leads do Supabase (Administrador vê todos, Atendente/Marketing veem apenas seus)
-    try {
-      const canViewAll = canViewAllData();
-      const filterId = canViewAll ? null : getCurrentUserId();
-      console.log('[Boot] Carregando leads, canViewAll:', canViewAll, 'filterId:', filterId, 'currentUser.id:', currentUser.id);
-      const supabaseLeads = await fetchLeadsSupabase(filterId);
-      if (supabaseLeads.length > 0) {
-        leads = supabaseLeads;
+    // Etapa 1 — nenhuma depende da outra (só de autenticação já resolvida)
+    await Promise.all([
+      // Serviços ANTES dos leads: fetchLeadsSupabase mapeia tipo_servico_id via _servicosById
+      bootLoad('serviços', async () => { await seedServicos(); await fetchServicosSupabase(); }),
+      bootLoad('eventos', async () => {
+        const supabaseEvents = await fetchEventosSupabase();
+        if (supabaseEvents.length > 0) { meetings = supabaseEvents; rebuildCalendarEvents(); }
+      }),
+      bootLoad('rotinas', loadRotinas),
+      bootLoad('vínculos de serviços', loadVinculosServicos),
+      bootLoad('vínculos de cadências', loadVinculosCadencias),
+      bootLoad('cadências do DB', loadDbCadencias),
+      bootLoad('visibilidade de cadências', async () => { _cadenciaVisibilityData = await fetchCadenciaVisibility(); })
+    ]);
+    console.log('[Boot] etapa 1 ok — eventos:', meetings.length,
+      'vínculos:', vinculosServicos.length + '/' + vinculosCadencias.length,
+      'cadências:', _dbCadenciasCache.length,
+      'visibilidade:', _cadenciaVisibilityData.length);
+
+    // Etapa 2 — leads e clientes dependem dos serviços; chips reaproveitam o cache
+    await Promise.all([
+      bootLoad('leads', async () => {
+        const filterId = canViewAllData() ? null : getCurrentUserId();
+        console.log('[Boot] Carregando leads, filterId:', filterId, 'currentUser.id:', currentUser.id);
+        const supabaseLeads = await fetchLeadsSupabase(filterId);
+        if (supabaseLeads.length > 0) leads = supabaseLeads;
         console.log('[Boot] Leads carregados do Supabase:', leads.length);
-      } else {
-        console.log('[Boot] Nenhum lead no Supabase, usando dados locais');
-      }
-    } catch (err) {
-      console.error('[Boot] Erro ao carregar leads do Supabase:', err);
-    }
+      }),
+      bootLoad('clientes', async () => {
+        const filterClientId = canViewAllData() ? null : getCurrentUserId();
+        const supabaseClients = await fetchClientsSupabase(filterClientId);
+        if (supabaseClients.length > 0) clientsData = supabaseClients;
+        console.log('[Boot] Clientes carregados do Supabase:', clientsData.length);
+      }),
+      bootLoad('chips de serviços', loadServiceChips)
+    ]);
+    _clientsLoaded = true;
 
-    // Carregar eventos do Supabase
-    try {
-      const supabaseEvents = await fetchEventosSupabase();
-      if (supabaseEvents.length > 0) {
-        meetings = supabaseEvents;
-        rebuildCalendarEvents();
-        console.log('[Boot] Eventos carregados do Supabase:', meetings.length);
-      } else {
-        console.log('[Boot] Nenhum evento no Supabase, usando dados locais');
-      }
-    } catch (err) {
-      console.error('[Boot] Erro ao carregar eventos do Supabase:', err);
-    }
+    // Etapa 3 — centros de custo depois dos leads (renderiza contagens por lead)
+    await bootLoad('centros de custo', loadCentrosCustoFromSupabase);
+    console.log('[Boot] Centros de custo carregados:', centrosCustoData.length);
 
     // Re-renderizar calendário e próximos eventos após carregar dados do Supabase
     renderCalendar();
     renderCalUpcoming();
     renderDashRemindersWidget();
-
-    // Carregar centros de custo do Supabase
-    try {
-      await loadCentrosCustoFromSupabase();
-      console.log('[Boot] Centros de custo carregados:', centrosCustoData.length);
-    } catch (err) {
-      console.error('[Boot] Erro ao carregar centros de custo:', err);
-    }
-
-    // Carregar vínculos de serviços por empresa
-    try {
-      await loadVinculosServicos();
-      console.log('[Boot] Vínculos de serviços carregados:', vinculosServicos.length);
-    } catch (err) {
-      console.error('[Boot] Erro ao carregar vínculos de serviços:', err);
-    }
-
-    // Carregar vínculos de cadências por empresa
-    try {
-      await loadVinculosCadencias();
-      console.log('[Boot] Vínculos de cadências carregados:', vinculosCadencias.length);
-    } catch (err) {
-      console.error('[Boot] Erro ao carregar vínculos de cadências:', err);
-    }
-
-    // Carregar cadências do banco de dados (para CRM dinâmico)
-    try {
-      await loadDbCadencias();
-      console.log('[Boot] Cadências do DB carregadas:', _dbCadenciasCache.length);
-    } catch (err) {
-      console.error('[Boot] Erro ao carregar cadências do DB:', err);
-    }
-
-    // Carregar visibilidade de cadências por perfil
-    try {
-      _cadenciaVisibilityData = await fetchCadenciaVisibility();
-      console.log('[Boot] Visibilidade de cadências carregada:', _cadenciaVisibilityData.length);
-    } catch (err) {
-      console.error('[Boot] Erro ao carregar visibilidade de cadências:', err);
-    }
 
     // Inicializar filtro de empresa no CRM
     initCrmEmpresaFilter();
@@ -16025,22 +16186,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Inicializar filtro de empresa no Calendário
     initCalEmpresaFilter();
 
-    // Carregar chips de serviços no modal
-    try {
-      await loadServiceChips();
-      // Cal service chips are loaded dynamically when the modal opens (filtered by empresa)
-      const calSvcContainer = document.getElementById('calEventServices');
-      if (calSvcContainer) calSvcContainer.innerHTML = '<span style="font-size:11px;color:var(--muted-text);">Selecione uma empresa para ver os serviços</span>';
-    } catch (err) {
-      console.error('[Boot] Erro ao carregar chips de serviços:', err);
-    }
-
-    // Carregar rotinas do Supabase
-    try {
-      await loadRotinas();
-    } catch (err) {
-      console.error('[Boot] Erro ao carregar rotinas do Supabase:', err);
-    }
+    // Cal service chips are loaded dynamically when the modal opens (filtered by empresa)
+    const calSvcContainer = document.getElementById('calEventServices');
+    if (calSvcContainer) calSvcContainer.innerHTML = '<span style="font-size:11px;color:var(--muted-text);">Selecione uma empresa para ver os serviços</span>';
 
     // Render inicial
     renderClients();
@@ -16049,29 +16197,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     initPomodoro();
     initConversas();
 
-    // Carregar clientes do Supabase para a página "Cliente da Base"
-    try {
-      const canViewAllClients = canViewAllData();
-      const filterClientId = canViewAllClients ? null : getCurrentUserId();
-      console.log('[Boot] Carregando clientes, canViewAll:', canViewAllClients, 'filterClientId:', filterClientId);
-      const supabaseClients = await fetchClientsSupabase(filterClientId);
-      if (supabaseClients.length > 0) {
-        clientsData = supabaseClients;
-        console.log('[Boot] Clientes carregados do Supabase:', clientsData.length);
-      } else {
-        console.log('[Boot] Nenhum cliente no Supabase');
-      }
-    } catch (err) {
-      console.error('[Boot] Erro ao carregar clientes do Supabase:', err);
-    }
-    _clientsLoaded = true;
-
     populateServiceFilter();
     populateCadenceFilter();
     initCadenceFilter();
     populateEmpresaFilter();
     initEmpresaFilter();
     renderClients();
+    // Re-render da Home já com os dados carregados (a Home está ativa desde o HTML).
     setActivePage('home');
 
     // Auditoria: registrar login na inicialização da sessão
@@ -16084,9 +16216,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Charts inicializam quando o dashboard for aberto
+    _bootDataLoaded = true;
   } catch (bootErr) {
-    console.error('[Boot] ERRO FATAL:', bootErr);
-    document.body.innerHTML = '<div style="padding:40px;font-family:sans-serif;color:red"><h2>Erro ao inicializar</h2><pre>' + (bootErr.message || bootErr) + '</pre></div>';
+    // Erro no boot NÃO destrói a aplicação: antes o catch fazia
+    // document.body.innerHTML = ... e apagava a tela inteira (obrigando F5).
+    // A UI permanece viva, o erro vai para o console e o usuário é avisado.
+    console.error('[Boot] Erro na inicialização:', bootErr);
+    if (typeof toast === 'function') {
+      toast('Falha ao carregar alguns dados do sistema. Recarregue a página se o problema continuar.', 'error');
+    }
   }
 });
 
@@ -18166,6 +18304,14 @@ window.contratoDownloadPDF = contratoDownloadPDF;
 window.contratoAcoes = contratoAcoes;
 window.contratoExcluir = contratoExcluir;
 window._contratoUploadAssinado = _contratoUploadAssinado;
+
+// app.js é um módulo (index.html carrega <script type="module">): declarações
+// de topo NÃO ficam em window. Qualquer onclick inline gera ReferenceError se a
+// função não for exposta aqui.
+window.setActivePage = setActivePage;
+window.convSendMessageSuggestion = convSendMessageSuggestion;
+window.convToggleArchive = convToggleArchive;
+window.openCcModal = openCcModal;
 
 // Expose Conversas CRM panel functions (called from onclick in generated HTML)
 window.convSetTemperature = convSetTemperature;
