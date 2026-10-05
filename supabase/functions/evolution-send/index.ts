@@ -6,6 +6,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Limite de mídia enviada inline em base64 no corpo desta função.
+// Arquivos maiores devem subir para o Supabase Storage (bucket chat-media) e
+// chegar aqui como URL assinada — manter o base64 grande aqui estoura a memória
+// (256MB) e o limite de payload do gateway de Edge Functions.
+const MAX_INLINE_BASE64_CHARS = 7_000_000 // ≈ 5,2MB de arquivo
+
 function cleanBase64(data: string): string {
   if (!data) return ''
   if (data.includes(';base64,')) {
@@ -21,7 +27,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json()
-    const { membroId, conversationId, contentText, mediaUrl, contentType = 'text', centrosCustoId, number: payloadNumber, instanceName: payloadInstanceName, ptt = false, mimeType, fileName, quoted = null, replyMeta = null } = body
+    const { membroId, conversationId, contentText, mediaUrl, contentType = 'text', centrosCustoId, number: payloadNumber, instanceName: payloadInstanceName, ptt = false, mimeType, fileName, mediaPath = null, quoted = null, replyMeta = null } = body
 
     console.log('[send] Payload recebido:', {
       membroId,
@@ -33,6 +39,7 @@ serve(async (req) => {
       ptt,
       mediaUrlSize: mediaUrl ? `${Math.round(mediaUrl.length / 1024)}KB` : '(none)',
       mediaUrlPrefix: mediaUrl ? mediaUrl.substring(0, 40) : '(none)',
+      mediaPath: mediaPath || '(none)',
       quoted: quoted ? (quoted.key?.id || '(sem id)') : '(none)'
     })
 
@@ -40,6 +47,19 @@ serve(async (req) => {
       console.error('[send] Validação falhou: membroId:', !!membroId, 'conversationId:', !!conversationId, 'contentText:', !!contentText, 'mediaUrl:', !!mediaUrl)
       return new Response(JSON.stringify({ error: 'membroId, conversationId e conteúdo são obrigatórios' }), {
         status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // 0b. Base64 inline só em tamanho pequeno (defesa contra OOM/413 do gateway).
+    const isExternalUrl = /^https?:\/\//i.test(mediaUrl || '')
+    if (mediaUrl && !isExternalUrl && mediaUrl.length > MAX_INLINE_BASE64_CHARS) {
+      console.error('[send] Mídia inline acima do limite:', mediaUrl.length, 'chars')
+      return new Response(JSON.stringify({
+        error: 'media_too_large_inline',
+        details: 'Mídia em base64 acima do limite desta Edge Function. Envie arquivos grandes via Supabase Storage e informe a URL assinada em mediaUrl.'
+      }), {
+        status: 413,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
@@ -349,8 +369,9 @@ serve(async (req) => {
         sender_type: 'member',
         content_type: contentType,
         content_text: contentText || '',
-        media_url: mediaUrl || '',
-        mime_type: mimeTypes[contentType] || null,
+        // Mídia grande: grava o caminho do objeto no Storage (o link é temporário)
+        media_url: mediaPath || mediaUrl || '',
+        mime_type: mimeType || mimeTypes[contentType] || null,
         message_id: externalMsgId,
         status: 'sent',
         created_at: new Date().toISOString()

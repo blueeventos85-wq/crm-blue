@@ -169,13 +169,28 @@ async function waSendText(membroId, conversationId, text, centrosCustoId, number
 /* ============================================
    5. SEND MEDIA: enviar mídia
    ============================================ */
-async function waSendMedia(membroId, conversationId, mediaUrl, contentType = 'image', caption = '', centrosCustoId, number, instanceName, quoted = null, replyMeta = null) {
+/* Mensagem clara quando o envio falha por limite externo ou tempo do gateway.
+   Em arquivos muito grandes a Edge Function pode estourar o tempo de espera
+   (~150s) mesmo com a Evolution API concluindo o envio — por isso o aviso de
+   conferir antes de reenviar. */
+function _waMediaFailureMessage(raw) {
+  const msg = String(raw || '').trim()
+  if (/504|gateway|timeout|timed out|idle time/i.test(msg)) {
+    return 'O envio demorou mais que o tempo limite da Supabase (arquivos grandes podem levar vários minutos). Confira no WhatsApp se a mensagem chegou antes de reenviar; se não chegou, envie um link ou um arquivo menor.'
+  }
+  if (/payload too large|request entity too large|body too large|413|media_too_large_inline/i.test(msg)) {
+    return 'Arquivo grande demais para o serviço de envio. Envie um link para o contato ou um arquivo menor.'
+  }
+  return msg || 'Erro ao enviar mídia'
+}
+
+async function waSendMedia(membroId, conversationId, mediaUrl, contentType = 'image', caption = '', centrosCustoId, number, instanceName, quoted = null, replyMeta = null, extra = null) {
   if (!membroId || !conversationId || !mediaUrl) {
     throw new Error('membroId, conversationId e mediaUrl são obrigatórios')
   }
 
   const mediaSize = mediaUrl.length > 100 ? `${Math.round(mediaUrl.length / 1024)}KB` : 'small'
-  console.log('[WA] Enviando mídia:', { contentType, conversationId, number, instanceName, mediaSize })
+  console.log('[WA] Enviando mídia:', { contentType, conversationId, number, instanceName, mediaSize, storagePath: extra?.mediaPath || null })
 
   const body = {
     membroId,
@@ -189,11 +204,16 @@ async function waSendMedia(membroId, conversationId, mediaUrl, contentType = 'im
   }
   if (quoted) body.quoted = quoted
   if (replyMeta) body.replyMeta = replyMeta
+  // Extras (opcionais): mídia grande veio do Supabase Storage (mediaPath é o
+  // caminho do objeto gravado em messages.media_url — o link é temporário).
+  if (extra?.mimeType) body.mimeType = extra.mimeType
+  if (extra?.fileName) body.fileName = extra.fileName
+  if (extra?.mediaPath) body.mediaPath = extra.mediaPath
 
   const result = await waInvokeFunction('evolution-send', body)
 
   if (result && result.success === false) {
-    throw new Error(result.error || 'Erro ao enviar mídia')
+    throw new Error(_waMediaFailureMessage(result.error))
   }
 
   return result

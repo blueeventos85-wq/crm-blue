@@ -13293,6 +13293,8 @@ function _convResolveMediaUrl(url, contentType, messageId, mimeType) {
   }
 
   if (!url || typeof url !== 'string') return '';
+  // Objeto no Supabase Storage (bucket chat-media) — vira signed URL no resolve
+  if (_convIsStoragePath(url)) return url;
   // Já é data URI — retornar direto
   if (url.startsWith('data:')) return url;
   // Base64 puro (sem prefixo) — adicionar MIME type
@@ -13318,6 +13320,24 @@ function _convResolveMediaUrl(url, contentType, messageId, mimeType) {
 
 /* ---------- media: buscar mídia via proxy (com fallback) ---------- */
 async function _convFetchMediaAsDataUrl(proxyUrl, contentType) {
+  // Mídia própria no Supabase Storage: gera signed URL e devolve a URL direta.
+  // Evita baixar o arquivo inteiro para a memória (vídeos de até 64MB).
+  if (_convIsStoragePath(proxyUrl)) {
+    try {
+      const { data, error } = await _supabase.storage
+        .from(CONV_MEDIA_BUCKET)
+        .createSignedUrl(_convStorageObjectPath(proxyUrl), CONV_RENDER_URL_TTL);
+      if (error || !data?.signedUrl) {
+        console.warn('[media] signed URL falhou:', error?.message || 'URL não retornada', proxyUrl);
+        return '';
+      }
+      return data.signedUrl;
+    } catch (e) {
+      console.error('[media] signed URL exception:', e.message);
+      return '';
+    }
+  }
+
   try {
     const resp = await fetch(proxyUrl);
     if (!resp.ok) {
@@ -13906,6 +13926,92 @@ conversasState.pendingMedia = null; // { file, dataUrl, type, previewUrl }
 conversasState.mediaRecorder = null;
 conversasState.audioChunks = [];
 conversasState.isRecording = false;
+conversasState.isSendingMedia = false; // evita envio duplicado enquanto sobe o arquivo
+
+/* ---------- limites de mídia (Conversas / WhatsApp) ---------- */
+// Limite máximo de arquivo aceito pelo app: 500MB (exige Supabase Pro para
+// "Global file size limit" >= 500MB; planos Free limitam a 50MB por arquivo).
+const CONV_MAX_FILE_BYTES = 500 * 1024 * 1024;
+// Limite real do WhatsApp para vídeos: 64MB (FAQ oficial "Can't send longer videos").
+// NÃO é contornável: vídeos acima disso são recusados com mensagem clara.
+const CONV_MAX_VIDEO_BYTES = 64 * 1024 * 1024;
+// Imagens maiores que isso não passam pelo editor de imagem (crop/rotação):
+// montar dataUrl + canvas de um arquivo de centenas de MB derrubaria a aba.
+const CONV_IMAGE_EDITOR_MAX_BYTES = 30 * 1024 * 1024;
+// Acima disso o arquivo NÃO é convertido em base64: vai para o Supabase Storage
+// e a Evolution API recebe apenas uma URL assinada (base64 estouraria o corpo
+// da Edge Function e gravaria um blob gigante na tabela messages).
+// 4MB → ~5,6MB de base64, com margem sobrando no limite da Edge Function.
+const CONV_INLINE_MAX_BYTES = 4 * 1024 * 1024;
+// Aviso de tempo: o gateway de Edge Functions corta a resposta em ~150s, então
+// arquivos muito grandes podem expirar antes da Evolution API terminar.
+const CONV_LARGE_SEND_BYTES = 150 * 1024 * 1024;
+// Bucket privado de mídia das conversas (ver migration chat_media_bucket).
+const CONV_MEDIA_BUCKET = 'chat-media';
+// Validade do link assinado enviado à Evolution API (download imediato).
+const CONV_SIGNED_URL_TTL = 6 * 60 * 60;
+// Validade do link assinado usado para exibir a mídia na conversa.
+const CONV_RENDER_URL_TTL = 6 * 60 * 60;
+
+function _convIsStoragePath(url) {
+  if (typeof url !== 'string' || !url) return false;
+  if (url.startsWith('data:') || /^https?:/i.test(url)) return false;
+  return url.startsWith(CONV_MEDIA_BUCKET + '/');
+}
+
+// messages.media_url guarda "<bucket>/<scope>/<arquivo>"; a API do Storage
+// recebe apenas "<scope>/<arquivo>".
+function _convStorageObjectPath(path) {
+  if (typeof path !== 'string' || !path) return '';
+  return path.startsWith(CONV_MEDIA_BUCKET + '/') ? path.slice(CONV_MEDIA_BUCKET.length + 1) : path;
+}
+
+function _convBuildStoragePath(ccId, file) {
+  const safeName = (file?.name || 'arquivo')
+    .replace(/[^\w.\-]+/g, '_')
+    .slice(-80) || 'arquivo';
+  const scope = String(ccId || 'geral').replace(/[^\w\-]/g, '');
+  return `${scope}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
+}
+
+async function _convUploadToStorage(ccId, file) {
+  const path = _convBuildStoragePath(ccId, file);
+  const sizeLabel = _convFormatFileSize(file.size || 0);
+
+  const { error } = await _supabase.storage
+    .from(CONV_MEDIA_BUCKET)
+    .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+
+  if (error) {
+    const detail = String(error.message || error);
+    console.error('[Conversas] Upload para Storage falhou:', error);
+    if (/bucket.*not found|not found.*bucket/i.test(detail)) {
+      return {
+        ok: false,
+        message: 'Bucket chat-media não existe. Aplique a migração supabase/migrations/20261005120000_chat_media_bucket.sql no Supabase.'
+      };
+    }
+    const isSize = /too large|exceed|payload|413|size/i.test(detail);
+    return {
+      ok: false,
+      message: isSize
+        ? `Arquivo de ${sizeLabel} recusado pelo Supabase Storage: ${detail}. Aumente o "Global file size limit" em Supabase Dashboard → Storage → Settings para pelo menos 512MB (planos Free têm teto de 50MB e exigem upgrade para Pro).`
+        : `Falha no upload da mídia (${sizeLabel}): ${detail}`
+    };
+  }
+
+  const { data, error: signError } = await _supabase.storage
+    .from(CONV_MEDIA_BUCKET)
+    .createSignedUrl(path, CONV_SIGNED_URL_TTL);
+
+  if (signError || !data?.signedUrl) {
+    console.error('[Conversas] Falha ao gerar signed URL:', signError);
+    _supabase.storage.from(CONV_MEDIA_BUCKET).remove([path]).catch(() => {});
+    return { ok: false, message: 'Falha ao gerar link temporário da mídia: ' + String(signError?.message || 'URL não retornada') };
+  }
+
+  return { ok: true, path, storagePath: `${CONV_MEDIA_BUCKET}/${path}`, signedUrl: data.signedUrl };
+}
 
 function _convFileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -13936,7 +14042,7 @@ function _convShowMediaPreview(file, dataUrl) {
   if (!previewEl) return;
 
   let thumbHtml = '';
-  if (contentType === 'image') {
+  if (contentType === 'image' && dataUrl) {
     thumbHtml = `<img src="${dataUrl}" class="conv-media-preview-thumb" />`;
   } else if (contentType === 'audio') {
     thumbHtml = '<div style="width:48px;height:48px;border-radius:6px;background:var(--gray-100);display:grid;place-items:center"><i data-lucide="mic" style="width:20px;height:20px;color:var(--gray-500)"></i></div>';
@@ -13946,11 +14052,16 @@ function _convShowMediaPreview(file, dataUrl) {
     thumbHtml = '<div style="width:48px;height:48px;border-radius:6px;background:var(--gray-100);display:grid;place-items:center"><i data-lucide="file-text" style="width:20px;height:20px;color:var(--gray-500)"></i></div>';
   }
 
+  const bigSendNote = (file.size || 0) > CONV_LARGE_SEND_BYTES
+    ? `<div class="conv-media-preview-size" style="color:var(--gray-500)">Arquivo grande: o envio pode levar alguns minutos — se falhar por tempo limite, confira antes de reenviar.</div>`
+    : '';
+
   previewEl.innerHTML = `
     ${thumbHtml}
     <div class="conv-media-preview-info">
       <div class="conv-media-preview-name">${_convHtmlEscape(file.name || 'Áudio gravado')}</div>
       <div class="conv-media-preview-size">${_convFormatFileSize(file.size || 0)}</div>
+      ${bigSendNote}
     </div>
     <button class="conv-media-preview-cancel" id="btnConvPreviewCancel" title="Cancelar"><i data-lucide="x"></i></button>
   `;
@@ -13972,15 +14083,48 @@ function _convClearMediaPreview() {
 function _convProcessIncomingFile(file) {
   if (!file) return;
 
-  if (file.size > 16 * 1024 * 1024) {
-    toast('Arquivo muito grande. Máximo 16MB.', 'error');
+  const isVideo = (file.type || '').startsWith('video/');
+  const sizeLabel = _convFormatFileSize(file.size || 0);
+
+  // 1. Limite geral do app (500MB)
+  if (file.size > CONV_MAX_FILE_BYTES) {
+    toast(`Arquivo de ${sizeLabel} muito grande. O limite é de 500MB. Comprima o arquivo ou envie um link.`, 'error');
+    return;
+  }
+
+  // 2. Limite real do WhatsApp para vídeos: 64MB (não contornável)
+  if (isVideo && file.size > CONV_MAX_VIDEO_BYTES) {
+    toast(`Vídeo de ${sizeLabel} acima do limite do WhatsApp (64MB). Comprima o vídeo ou envie um link para o contato.`, 'error');
     return;
   }
 
   const isImage = (file.type || '').startsWith('image/');
+  if (isImage && file.size <= CONV_IMAGE_EDITOR_MAX_BYTES) {
+    // Imagens passam pelo editor (crop/rotação) e precisam do dataUrl
+    _convFileToBase64(file).then(dataUrl => {
+      _convOpenImageEditor(file, dataUrl);
+    }).catch(err => {
+      console.error('[Conversas] Erro ao ler arquivo:', err);
+      toast('Erro ao ler arquivo', 'error');
+    });
+    return;
+  }
+  if (isImage) {
+    // Imagem gigante: sem editor (evita dataUrl/canvas gigantes em memória);
+    // o envio vai direto pelo Storage, com a URL assinada.
+    _convShowMediaPreview(file, null);
+    return;
+  }
+
+  if (file.size > CONV_INLINE_MAX_BYTES) {
+    // Arquivo grande: não gerar base64 (evita ~130MB em memória).
+    // O envio fará upload para o Supabase Storage e usará uma URL assinada.
+    _convShowMediaPreview(file, null);
+    return;
+  }
+
   _convFileToBase64(file).then(dataUrl => {
-    if (isImage) _convOpenImageEditor(file, dataUrl);
-    else _convShowMediaPreview(file, dataUrl);
+    _convShowMediaPreview(file, dataUrl);
   }).catch(err => {
     console.error('[Conversas] Erro ao ler arquivo:', err);
     toast('Erro ao ler arquivo', 'error');
@@ -14186,11 +14330,40 @@ function _convInitDragDrop() {
 async function _convSendPendingMedia(captionOverride) {
   const media = conversasState.pendingMedia;
   if (!media) return;
+  if (conversasState.isSendingMedia) return; // upload/envio já em andamento
 
   const chat = conversasState.allChats.find(c => c.id === conversasState.selectedChatId);
   if (!chat) return;
 
-  _convClearMediaPreview();
+  conversasState.isSendingMedia = true;
+
+  // Mantém o preview na tela como indicador de envio (upload de arquivo grande
+  // pode levar vários segundos). Ele é limpo ao concluir ou restaurado no erro.
+  const previewEl = $('#convMediaPreview');
+  const cancelBtn = $('#btnConvPreviewCancel');
+  const sizeEl = previewEl ? previewEl.querySelector('.conv-media-preview-size') : null;
+  const sizeTextOriginal = sizeEl ? sizeEl.textContent : '';
+  if (cancelBtn) cancelBtn.style.display = 'none';
+  if (sizeEl && media.file) sizeEl.textContent = `Enviando ${_convFormatFileSize(media.file.size)}…`;
+
+  let uploadedStoragePath = null;
+  let sendOk = false;
+
+  const fail = (message, err) => {
+    if (uploadedStoragePath) {
+      _supabase.storage.from(CONV_MEDIA_BUCKET).remove([uploadedStoragePath]).catch(() => {});
+      uploadedStoragePath = null;
+    }
+    if (err) console.error('[Conversas] Erro ao enviar mídia:', err);
+    toast(message, 'error');
+    // Mídia já foi para o WhatsApp → não oferece reenvio (evita duplicar)
+    if (sendOk) { _convClearMediaPreview(); return; }
+    // Mantém o preview para o usuário tentar de novo ou cancelar (X)
+    if (conversasState.pendingMedia) {
+      if (sizeEl) sizeEl.textContent = sizeTextOriginal;
+      if (cancelBtn) cancelBtn.style.display = '';
+    }
+  };
 
   try {
     let ccId = chat._centroCustoId || conversasState.selectedCentroCustoId;
@@ -14220,22 +14393,54 @@ async function _convSendPendingMedia(captionOverride) {
     const number = _convResolveSendNumber(chat);
 
     if (!ccId || !instanceName) {
-      toast('Selecione uma empresa no filtro superior para enviar mídia.', 'error');
+      fail('Selecione uma empresa no filtro superior para enviar mídia.');
       return;
     }
 
     const convId = chat._conversationId || conversasState.selectedChatId;
     const input = $('#convMessageInput');
     const caption = typeof captionOverride === 'string' ? captionOverride : (input ? input.value.trim() : '');
-    if (input && typeof captionOverride !== 'string') { input.value = ''; input.style.height = 'auto'; }
 
-    // Enviar conforme tipo
+    // Enviar conforme tipo.
+    // Arquivos maiores que CONV_INLINE_MAX_BYTES vão para o Supabase Storage e a
+    // Evolution API recebe apenas a URL assinada (sem base64 no pipeline).
     const replyPayload = _convBuildQuotedPayload(chat);
-    if (media.type === 'audio' && media._isVoiceNote) {
-      await waSendVoiceNote(currentUser.id, convId, media.dataUrl, ccId, number, instanceName, replyPayload?.quoted || null, replyPayload?.replyMeta || null);
-    } else {
-      await waSendMedia(currentUser.id, convId, media.dataUrl, media.type, caption, ccId, number, instanceName, replyPayload?.quoted || null, replyPayload?.replyMeta || null);
+    const file = media.file;
+    const isVoiceNote = media.type === 'audio' && media._isVoiceNote;
+    const useStorage = !isVoiceNote && !!file && file.size > CONV_INLINE_MAX_BYTES;
+    let mediaRef = media.dataUrl || null;
+    let mediaPath = null;
+
+    if (useStorage) {
+      const uploaded = await _convUploadToStorage(ccId, file);
+      if (!uploaded.ok) {
+        fail(uploaded.message);
+        return;
+      }
+      uploadedStoragePath = uploaded.path;   // caminho "pelado" (para remover do Storage)
+      mediaRef = uploaded.signedUrl;
+      mediaPath = uploaded.storagePath;      // caminho completo gravado em messages.media_url
     }
+
+    if (!mediaRef) {
+      fail('Não foi possível ler a mídia para envio. Anexe o arquivo novamente.');
+      return;
+    }
+
+    if (isVoiceNote) {
+      await waSendVoiceNote(currentUser.id, convId, mediaRef, ccId, number, instanceName, replyPayload?.quoted || null, replyPayload?.replyMeta || null);
+    } else {
+      await waSendMedia(currentUser.id, convId, mediaRef, media.type, caption, ccId, number, instanceName, replyPayload?.quoted || null, replyPayload?.replyMeta || null, {
+        mimeType: file?.type || null,
+        fileName: file?.name || null,
+        mediaPath
+      });
+    }
+
+    sendOk = true;
+    uploadedStoragePath = null; // enviado com sucesso → manter o objeto no Storage
+    _convClearMediaPreview();
+    if (input && typeof captionOverride !== 'string') { input.value = ''; input.style.height = 'auto'; }
     if (replyPayload) _convCancelReply(); // envio OK → fecha o banner de resposta
 
     const lastText = caption || `[${media.type}]`;
@@ -14251,8 +14456,13 @@ async function _convSendPendingMedia(captionOverride) {
     await _convLoadMessages(convId);
 
   } catch (err) {
-    console.error('[Conversas] Erro ao enviar mídia:', err);
-    toast('Erro ao enviar mídia: ' + (err.message || 'Tente novamente'));
+    if (sendOk) {
+      fail('Mídia enviada, mas houve erro ao atualizar a conversa: ' + (err.message || 'recarregue a tela'), err);
+    } else {
+      fail('Erro ao enviar mídia: ' + (err.message || 'Tente novamente'), err);
+    }
+  } finally {
+    conversasState.isSendingMedia = false;
   }
 }
 
