@@ -12902,8 +12902,14 @@ async function loadConversasChats() {
       let groupName = _t(c.group_name) || _t(c.title) || _t(contact.name);
       if (groupName && groupName === _t(c.last_message_text)) groupName = ''; // legado: group_name poluído com o texto da mensagem
       // INDIVIDUAL: contact.name || contact.push_name || nome do lead || telefone formatado.
-      // Cadeia à prova de nulos/vazios — o título NUNCA renderiza em branco.
-      const recoveredPushName = recoverPushNameFromContact(contact, c.last_message_text);
+      // Cadeia à prova de nulos/vazios — o título NUNCA renderiza em branca.
+      let recoveredPushName = '';
+      try {
+        recoveredPushName = recoverPushNameFromContact(contact, c.last_message_text);
+      } catch (e) {
+        console.error('[Conversas] Erro em recoverPushNameFromContact:', e.message);
+        recoveredPushName = '';
+      }
       const individualTitle = (!isGenericConvName(recoveredPushName, phoneDigits) && _t(recoveredPushName))
         || (!isGenericConvName(contact.name, phoneDigits) && _t(contact.name))
         || (!isGenericConvName(contact.push_name, phoneDigits) && _t(contact.push_name))
@@ -12970,7 +12976,7 @@ const isGenericConvName = (n, digits) => {
   if (!s) return true;
   if (digits && s === digits) return true;               // só o telefone
   if (/^\d{6,}$/.test(s)) return true;                    // só dígitos
-  if (operatorName && s.toLowerCase() === operatorName.toLowerCase()) return true; // nome do atendente (poluição fromMe)
+  if (typeof operatorName !== 'undefined' && s.toLowerCase() === operatorName.toLowerCase()) return true; // nome do atendente (poluição fromMe)
   return false;
 }
 
