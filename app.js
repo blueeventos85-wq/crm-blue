@@ -12634,7 +12634,7 @@ const conversasState = {
   messages: [],
   members: [],
   leads: [],
-  filter: 'all',
+  filter: 'mine',
   searchTerm: '',
   realtimeChannel: null,
   selectedCentroCustoId: null,

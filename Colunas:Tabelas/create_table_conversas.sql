@@ -65,19 +65,21 @@ $$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
 -- POLÍTICAS: chats
 -- ============================================
 DROP POLICY IF EXISTS "chats_admin_all" ON chats;
-DROP POLICY IF EXISTS "chats_select" ON chats;
-DROP POLICY IF EXISTS "chats_insert" ON chats;
-DROP POLICY IF EXISTS "chats_update" ON chats;
-
-CREATE POLICY "chats_admin_all" ON chats
-  FOR ALL TO authenticated
-  USING (is_chat_admin())
-  WITH CHECK (is_chat_admin());
+-- chats_admin_all removido: admins agora sujeitos ao mesmo filtro de atribuicao que todos os usuarios.
 
 CREATE POLICY "chats_select" ON chats
   FOR SELECT TO authenticated
   USING (
     assigned_to = (SELECT m.id FROM membros m WHERE m.auth_user_id = auth.uid())
+    OR (
+      -- Dono da instancia WhatsApp tambem ve conversas sem lead e grupos
+      EXISTS (
+        SELECT 1 FROM whatsapp_config wc
+        WHERE wc.membro_id = (SELECT m.id FROM membros m WHERE m.auth_user_id = auth.uid())
+        AND wc.provider = 'evolution_api'
+        AND wc.status = 'connected'
+      )
+    )
   );
 
 CREATE POLICY "chats_insert" ON chats
@@ -87,12 +89,12 @@ CREATE POLICY "chats_insert" ON chats
 CREATE POLICY "chats_update" ON chats
   FOR UPDATE TO authenticated
   USING (
-    is_chat_admin()
-    OR assigned_to = (SELECT m.id FROM membros m WHERE m.auth_user_id = auth.uid())
+    assigned_to = (SELECT m.id FROM membros m WHERE m.auth_user_id = auth.uid())
+    OR is_chat_admin()
   )
   WITH CHECK (
-    is_chat_admin()
-    OR assigned_to = (SELECT m.id FROM membros m WHERE m.auth_user_id = auth.uid())
+    assigned_to = (SELECT m.id FROM membros m WHERE m.auth_user_id = auth.uid())
+    OR is_chat_admin()
   );
 
 -- ============================================
