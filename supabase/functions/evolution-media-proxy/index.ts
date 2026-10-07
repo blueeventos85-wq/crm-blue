@@ -11,7 +11,9 @@ const corsHeaders: Record<string, string> = {
 function jsonResponse(body: Record<string, unknown>, status: number): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    // Erros/expirações NUNCA podem ficar no cache do navegador: senão uma
+    // mídia indisponível volta a falhar mesmo depois de voltar a existir.
+    headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
   })
 }
 
@@ -22,9 +24,33 @@ function binaryResponse(buffer: ArrayBuffer, contentType: string): Response {
       ...corsHeaders,
       'Content-Type': contentType,
       'Content-Length': String(buffer.byteLength),
-      'Cache-Control': 'public, max-age=31536000',
+      // URL estável (messageId) → o navegador guarda os bytes e re-render
+      // não baixa de novo
+      'Cache-Control': 'public, max-age=31536000, immutable',
     }
   })
+}
+
+// Teto do cache em Storage (vídeo do WhatsApp: 64MB; teto do app: 500MB)
+const MAX_CACHE_BYTES = 200 * 1024 * 1024
+
+// Chave determinística do objeto cacheado — SEM expor URL/token nos logs
+function cacheKeyFor(messageId: string, mediaUrl: string): string {
+  if (messageId) return ('msg-' + messageId).replace(/[^\w.-]/g, '_').slice(0, 120)
+  let h = 0x811c9dc5
+  for (let i = 0; i < mediaUrl.length; i++) {
+    h ^= mediaUrl.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return 'url-' + (h >>> 0).toString(36)
+}
+
+function mimeFrom(contentTypeParam: string, fallback = 'application/octet-stream'): string {
+  if (contentTypeParam.startsWith('image')) return 'image/jpeg'
+  if (contentTypeParam.startsWith('audio')) return 'audio/ogg'
+  if (contentTypeParam.startsWith('video')) return 'video/mp4'
+  if (contentTypeParam.startsWith('application')) return contentTypeParam
+  return fallback
 }
 
 serve(async (req) => {
@@ -59,13 +85,8 @@ serve(async (req) => {
     contentTypeParam = url.searchParams.get('contentType') || ''
   }
 
-  console.log('[media-proxy] === REQUISIÇÃO ===', req.method)
-  console.log('[media-proxy] params:', {
-    mediaUrl: mediaUrl ? mediaUrl.substring(0, 150) : '(none)',
-    messageId: messageId || '(none)',
-    instanceName: instanceName || '(none)',
-    contentType: contentTypeParam || '(none)',
-  })
+  // Log enxuto e sem URLs assinadas/links do CDN (podem conter token)
+  console.log('[media-proxy]', req.method, 'msg:', messageId ? 'sim' : 'não', 'url:', mediaUrl ? 'sim' : 'não', 'tipo:', contentTypeParam || '-')
 
   // ── 2. Autenticação ──
   let authOk = false
@@ -94,11 +115,64 @@ serve(async (req) => {
   const evoKey = Deno.env.get('EVOLUTION_GLOBAL_API_KEY') || ''
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
   const serviceKey = Deno.env.get('SERVICE_ROLE_KEY') || ''
+  const bucket = Deno.env.get('MEDIA_BUCKET') || 'chat-media'
   if (!evoUrl || !evoKey) return jsonResponse({ error: 'EVOLUTION_API_URL/EVOLUTION_GLOBAL_API_KEY not set' }, 500)
+
+  const supabase = (supabaseUrl && serviceKey)
+    ? createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
+    : null
 
   // Host da própria Evolution API
   let evoHost = ''
   try { evoHost = new URL(evoUrl).host } catch { /* ignore */ }
+
+  // ── 4. Cache em Storage (chat-media/received/<messageId>) ──
+  // A mesma mídia é pedida a cada re-render e a cada troca de conversa; depois
+  // do primeiro download ela sai do Storage e nunca mais paga o
+  // getBase64FromMediaMessage (medido: 0,3–0,5s por imagem). Toda falha de
+  // cache é best-effort: derruba o cache, nunca o fluxo de envio/resposta.
+  const cacheName = cacheKeyFor(messageId, mediaUrl)
+  const cachePath = `received/${cacheName}`
+
+  if (supabase) {
+    let cacheHit = false
+    try {
+      // supabase-js não expõe "stat" → list com busca por prefixo
+      const { data: rows } = await supabase.storage.from(bucket).list('received', { search: cacheName, limit: 5 })
+      cacheHit = (rows || []).some(r => r.name === cacheName)
+    } catch { cacheHit = false }
+
+    if (cacheHit) {
+      try {
+        const { data: cachedFile, error: readErr } = await supabase.storage.from(bucket).download(cachePath)
+        if (!readErr && cachedFile && cachedFile.size > 0) {
+          const buf = await cachedFile.arrayBuffer()
+          console.log('[media-proxy] cache hit:', buf.byteLength, 'bytes')
+          return binaryResponse(buf, cachedFile.type || mimeFrom(contentTypeParam))
+        }
+        if (readErr) console.warn('[media-proxy] cache read:', readErr.message)
+      } catch (e) {
+        console.warn('[media-proxy] cache read exception:', e.message)
+      }
+    }
+  }
+
+  // Responde binário gravando-o no cache (best effort) antes de sair
+  const respondMedia = async (buffer: ArrayBuffer, mime: string): Promise<Response> => {
+    if (supabase && buffer.byteLength > 0 && buffer.byteLength <= MAX_CACHE_BYTES) {
+      try {
+        const { error: upErr } = await supabase.storage.from(bucket).upload(cachePath, buffer, {
+          contentType: mime,
+          upsert: true,
+          cacheControl: '31536000'
+        })
+        if (upErr) console.warn('[media-proxy] cache write:', upErr.message)
+      } catch (e) {
+        console.warn('[media-proxy] cache write exception:', e.message)
+      }
+    }
+    return binaryResponse(buffer, mime)
+  }
 
   // ── 4. Determinar se a URL é da Evolution API (busca direta) ou externa (fallback) ──
   const parsed = mediaUrl ? new URL(mediaUrl) : null
@@ -108,13 +182,8 @@ serve(async (req) => {
   // Se messageId NÃO existe, tentar busca direta apenas se a URL é da própria Evolution API
   const shouldTryDirect = !messageId && isEvoHost
 
-  if (mediaUrl && !isEvoHost) {
-    console.log('[media-proxy] Host externo detectado (' + (parsed?.host || '?') + '), usando fallback via messageId')
-  }
-
-  // ── 5. Busca direta (apenas para URLs da Evolution API e sem messageId) ──
+  // ── 6. Busca direta (apenas para URLs da Evolution API e sem messageId) ──
   if (shouldTryDirect && parsed) {
-    console.log('[media-proxy] Busca direta via URL da Evolution API...')
     try {
       const mediaResp = await fetch(parsed.toString(), {
         headers: { 'apikey': evoKey },
@@ -124,21 +193,20 @@ serve(async (req) => {
       if (mediaResp.ok) {
         const mediaBuffer = await mediaResp.arrayBuffer().catch(() => null)
         if (mediaBuffer && mediaBuffer.byteLength > 0) {
-          const ct = mediaResp.headers.get('content-type') || 'application/octet-stream'
-          console.log('[media-proxy] SUCESSO (busca direta):', mediaBuffer.byteLength, 'bytes')
-          return binaryResponse(mediaBuffer, ct)
+          const ct = mediaResp.headers.get('content-type') || mimeFrom(contentTypeParam)
+          console.log('[media-proxy] busca direta:', mediaBuffer.byteLength, 'bytes')
+          return await respondMedia(mediaBuffer, ct)
         }
-        console.log('[media-proxy] Busca direta retornou body vazio')
       } else {
-        console.log('[media-proxy] Busca direta retornou', mediaResp.status)
+        console.log('[media-proxy] busca direta status:', mediaResp.status)
       }
     } catch (e) {
-      console.error('[media-proxy] Busca direta falhou:', e.message)
+      console.error('[media-proxy] busca direta falhou:', e.message)
     }
     // Se chegou aqui, busca direta falhou — tentar fallback
   }
 
-  // ── 6. Fallback: getBase64FromMediaMessage ──
+  // ── 7. Fallback: getBase64FromMediaMessage ──
   if (!messageId) {
     return jsonResponse({
       error: 'No media available',
@@ -147,11 +215,8 @@ serve(async (req) => {
   }
 
   // Resolver instanceName
-  if (!instanceName && supabaseUrl && serviceKey) {
+  if (!instanceName && supabase) {
     try {
-      const supabase = createClient(supabaseUrl, serviceKey, {
-        auth: { autoRefreshToken: false, persistSession: false }
-      })
       const { data: config } = await supabase
         .from('whatsapp_config')
         .select('provider_config')
@@ -161,7 +226,6 @@ serve(async (req) => {
 
       if (config?.provider_config?.instanceName) {
         instanceName = config.provider_config.instanceName
-        console.log('[media-proxy] instanceName via DB:', instanceName)
       }
     } catch (e) {
       console.error('[media-proxy] Erro ao buscar instanceName:', e.message)
@@ -176,7 +240,7 @@ serve(async (req) => {
   }
 
   const fallbackUrl = `${evoUrl}/chat/getBase64FromMediaMessage/${instanceName}`
-  console.log('[media-proxy] Fallback:', fallbackUrl, '| messageId:', messageId)
+  console.log('[media-proxy] fallback via getBase64FromMediaMessage')
 
   try {
     const fallbackResp = await fetch(fallbackUrl, {
@@ -195,21 +259,17 @@ serve(async (req) => {
       redirect: 'follow',
     })
 
-    console.log('[media-proxy] Fallback status:', fallbackResp.status)
-
     if (!fallbackResp.ok) {
       const errBody = await fallbackResp.text().catch(() => '')
-      console.error('[media-proxy] Fallback retornou erro:', fallbackResp.status, errBody.substring(0, 300))
+      console.error('[media-proxy] fallback status:', fallbackResp.status, errBody.substring(0, 200))
       return jsonResponse({
         error: `getBase64FromMediaMessage returned ${fallbackResp.status}`,
-        detail: errBody.substring(0, 300),
       }, 404)
     }
 
     const fallbackData = await fallbackResp.json()
-    console.log('[media-proxy] Fallback response keys:', Object.keys(fallbackData))
 
-    // Extrair base64 de多种 formatos de resposta
+    // Extrair base64 de vários formatos de resposta
     let base64Raw = ''
     if (fallbackData.base64) {
       base64Raw = fallbackData.base64
@@ -220,10 +280,9 @@ serve(async (req) => {
     }
 
     if (!base64Raw) {
-      console.error('[media-proxy] Fallback não retornou base64:', JSON.stringify(fallbackData).substring(0, 300))
+      console.error('[media-proxy] fallback sem base64 — chaves:', Object.keys(fallbackData || {}).join(','))
       return jsonResponse({
         error: 'getBase64FromMediaMessage did not return base64 data',
-        response: JSON.stringify(fallbackData).substring(0, 300),
       }, 404)
     }
 
@@ -232,25 +291,21 @@ serve(async (req) => {
       const mimeMatch = base64Raw.match(/^data:([^;]+);base64,(.+)$/)
       if (mimeMatch) {
         const mime = mimeMatch[1]
-        const b64 = mimeMatch[2]
-        const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
-        console.log('[media-proxy] SUCESSO (data URI):', bin.byteLength, 'bytes', mime)
-        return binaryResponse(bin.buffer, mime)
+        const bin = Uint8Array.from(atob(mimeMatch[2]), c => c.charCodeAt(0))
+        console.log('[media-proxy] fallback ok (data URI):', bin.byteLength, 'bytes')
+        return await respondMedia(bin.buffer, mime)
       }
       return jsonResponse({ dataUri: base64Raw }, 200)
     }
 
     // Base64 puro
-    const mime = contentTypeParam.startsWith('image') ? 'image/jpeg'
-      : contentTypeParam.startsWith('audio') ? 'audio/ogg'
-      : contentTypeParam.startsWith('video') ? 'video/mp4'
-      : 'application/octet-stream'
+    const mime = mimeFrom(contentTypeParam)
     const bin = Uint8Array.from(atob(base64Raw), c => c.charCodeAt(0))
-    console.log('[media-proxy] SUCESSO (base64):', bin.byteLength, 'bytes', mime)
-    return binaryResponse(bin.buffer, mime)
+    console.log('[media-proxy] fallback ok (base64):', bin.byteLength, 'bytes')
+    return await respondMedia(bin.buffer, mime)
 
   } catch (e) {
-    console.error('[media-proxy] Fallback exception:', e.message)
+    console.error('[media-proxy] fallback exception:', e.message)
     return jsonResponse({ error: 'Fallback failed: ' + e.message }, 500)
   }
 })

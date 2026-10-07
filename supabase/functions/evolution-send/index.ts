@@ -68,7 +68,16 @@ serve(async (req) => {
 
   try {
     const body = await req.json()
-    const { membroId, conversationId, contentText, mediaUrl, contentType = 'text', centrosCustoId, number: payloadNumber, instanceName: payloadInstanceName, ptt = false, mimeType, fileName, mediaPath = null, quoted = null, replyMeta = null } = body
+    const { membroId, conversationId, contentText, mediaUrl, contentType = 'text', centrosCustoId, number: payloadNumber, instanceName: payloadInstanceName, ptt = false, mimeType, fileName, mediaPath = null, quoted = null, replyMeta = null, preview = null } = body
+
+    // Miniatura da imagem enviada (base64 JPEG puro) → messages.media_preview.
+    // Só aceita base64 razoável: nunca grava URL/token/lixo na coluna.
+    const mediaPreview = (() => {
+      if (typeof preview !== 'string') return ''
+      const s = preview.trim().replace(/^data:[^,]*,/, '')
+      if (!s || s.length > 80000) return ''
+      return /^[A-Za-z0-9+/]+={0,2}$/.test(s) ? s : ''
+    })()
 
     console.log('[send] Payload recebido:', {
       membroId,
@@ -79,7 +88,10 @@ serve(async (req) => {
       payloadInstanceName: payloadInstanceName || '(none)',
       ptt,
       mediaUrlSize: mediaUrl ? `${Math.round(mediaUrl.length / 1024)}KB` : '(none)',
-      mediaUrlPrefix: mediaUrl ? mediaUrl.substring(0, 40) : '(none)',
+      // sem prefixo da URL: signed URL tem token e jamais vai para log
+      mediaUrlKind: !mediaUrl ? '(none)'
+        : /^https?:\/\//i.test(mediaUrl) ? 'url-assinada'
+        : mediaUrl.startsWith('data:') ? 'data-uri' : 'inline',
       mediaPath: mediaPath || '(none)',
       quoted: quoted ? (quoted.key?.id || '(sem id)') : '(none)'
     })
@@ -433,17 +445,21 @@ serve(async (req) => {
       if (quotedMessageId) msgRow.quoted_message_id = quotedMessageId
       if (quotedContent) msgRow.quoted_content = quotedContent
       if (quotedSender) msgRow.quoted_sender = quotedSender
+      if (mediaPreview) msgRow.media_preview = mediaPreview
 
       let { error: msgError } = await supabase
         .from('messages')
         .insert([msgRow])
 
-      // Resiliência: migração quoted_* ainda não aplicada → não perder a mensagem
-      if (msgError && /quoted_/.test(msgError.message || '')) {
-        console.warn('[send] Colunas quoted_* indisponíveis — inserindo sem elas:', msgError.message)
-        delete msgRow.quoted_message_id
-        delete msgRow.quoted_content
-        delete msgRow.quoted_sender
+      // Resiliência: migrações quoted_* / media_preview ainda não aplicadas →
+      // não perder a mensagem por causa de uma coluna opcional
+      let guard = 0
+      while (msgError && guard < 6) {
+        guard++
+        const missing = /(quoted_message_id|quoted_content|quoted_sender|media_preview)/.exec(msgError.message || '')
+        if (!missing) break
+        console.warn('[send] Coluna opcional indisponível — inserindo sem ela:', missing[1])
+        delete msgRow[missing[1]]
         ;({ error: msgError } = await supabase.from('messages').insert([msgRow]))
       }
 

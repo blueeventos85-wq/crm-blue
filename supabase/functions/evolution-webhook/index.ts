@@ -48,10 +48,19 @@ serve(async (req) => {
       if (proto && (proto.type === 'REVOKE' || proto.type === 0)) {
         const revokeId = String(proto.key?.id || '')
         if (revokeId) {
-          const { error: revokeErr } = await supabase
+          const revokePayload: Record<string, any> = { is_deleted: true, content_text: null, media_url: null, media_preview: null }
+          let { error: revokeErr } = await supabase
             .from('messages')
-            .update({ is_deleted: true, content_text: null, media_url: null })
+            .update(revokePayload)
             .eq('message_id', revokeId)
+          // Resiliência: media_preview ainda não migrada → repete sem a coluna
+          if (revokeErr && /media_preview/.test(revokeErr.message || '')) {
+            delete revokePayload.media_preview
+            ;({ error: revokeErr } = await supabase
+              .from('messages')
+              .update(revokePayload)
+              .eq('message_id', revokeId))
+          }
           if (revokeErr) {
             console.error('[webhook] Erro ao processar protocolMessage (REVOKE):', revokeErr)
           } else {
@@ -66,7 +75,7 @@ serve(async (req) => {
         })
       }
 
-      const { contentType, contentText, mediaUrl, mimeType } = extractMessageContent(message)
+      const { contentType, contentText, mediaUrl, mimeType, mediaPreview } = extractMessageContent(message)
 
       if (!contentText && !mediaUrl && !remoteJid) {
         console.log('[webhook] Mensagem ignorada: sem conteúdo')
@@ -190,6 +199,9 @@ serve(async (req) => {
         quoted_message_id: quotedMessageId || null,
         quoted_content: quotedContent || null,
         quoted_sender: quotedSender || null,
+        // Miniatura JPEG embutida pelo WhatsApp → pinta a conversa na hora,
+        // sem esperar o proxy baixar a mídia inteira
+        media_preview: mediaPreview || null,
         created_at: messageTimestamp
       }
 
@@ -197,12 +209,13 @@ serve(async (req) => {
         .from('messages')
         .insert([msgPayload])
 
-      // Resiliência: colunas novas (sender_* / quoted_*) ainda não migradas
-      // → remove a coluna citada pelo erro e tenta de novo, sem perder a mensagem.
+      // Resiliência: colunas novas (sender_* / quoted_* / media_preview) ainda
+      // não migradas → remove a coluna citada pelo erro e tenta de novo,
+      // sem perder a mensagem.
       let guard = 0
       while (msgError && guard < 8) {
         guard++
-        const missing = /(sender_jid|sender_name|sender_phone|sender_avatar_url|quoted_message_id|quoted_content|quoted_sender)/.exec(msgError.message || '')
+        const missing = /(sender_jid|sender_name|sender_phone|sender_avatar_url|quoted_message_id|quoted_content|quoted_sender|media_preview)/.exec(msgError.message || '')
         if (!missing) break
         console.warn('[webhook] Coluna opcional indisponível — inserindo sem ela:', missing[1])
         delete msgPayload[missing[1]]
@@ -548,13 +561,14 @@ function extractMessageContent(message: Record<string, any>): {
   contentText: string
   mediaUrl: string
   mimeType: string
+  mediaPreview: string
 } {
   if (message.conversation) {
-    return { contentType: 'text', contentText: message.conversation, mediaUrl: '', mimeType: '' }
+    return { contentType: 'text', contentText: message.conversation, mediaUrl: '', mimeType: '', mediaPreview: '' }
   }
 
   if (message.extendedTextMessage?.text) {
-    return { contentType: 'text', contentText: message.extendedTextMessage.text, mediaUrl: '', mimeType: '' }
+    return { contentType: 'text', contentText: message.extendedTextMessage.text, mediaUrl: '', mimeType: '', mediaPreview: '' }
   }
 
   if (message.imageMessage) {
@@ -562,7 +576,8 @@ function extractMessageContent(message: Record<string, any>): {
       contentType: 'image',
       contentText: message.imageMessage.caption || '',
       mediaUrl: message.imageMessage.mediaUrl || message.imageMessage.url || '',
-      mimeType: message.imageMessage.mimetype || 'image/jpeg'
+      mimeType: message.imageMessage.mimetype || 'image/jpeg',
+      mediaPreview: normalizeThumb(message.imageMessage.jpegThumbnail)
     }
   }
 
@@ -571,7 +586,9 @@ function extractMessageContent(message: Record<string, any>): {
       contentType: 'video',
       contentText: message.videoMessage.caption || '',
       mediaUrl: message.videoMessage.mediaUrl || message.videoMessage.url || '',
-      mimeType: message.videoMessage.mimetype || 'video/mp4'
+      mimeType: message.videoMessage.mimetype || 'video/mp4',
+      // vídeo também traz jpegThumbnail — é o quadro de capa
+      mediaPreview: normalizeThumb(message.videoMessage.jpegThumbnail)
     }
   }
 
@@ -580,7 +597,8 @@ function extractMessageContent(message: Record<string, any>): {
       contentType: 'audio',
       contentText: '',
       mediaUrl: message.audioMessage.mediaUrl || message.audioMessage.url || '',
-      mimeType: message.audioMessage.mimetype || 'audio/ogg; codecs=opus'
+      mimeType: message.audioMessage.mimetype || 'audio/ogg; codecs=opus',
+      mediaPreview: ''
     }
   }
 
@@ -589,7 +607,8 @@ function extractMessageContent(message: Record<string, any>): {
       contentType: 'document',
       contentText: message.documentMessage.fileName || '',
       mediaUrl: message.documentMessage.mediaUrl || message.documentMessage.url || '',
-      mimeType: message.documentMessage.mimetype || 'application/octet-stream'
+      mimeType: message.documentMessage.mimetype || 'application/octet-stream',
+      mediaPreview: ''
     }
   }
 
@@ -598,7 +617,8 @@ function extractMessageContent(message: Record<string, any>): {
       contentType: 'sticker',
       contentText: '',
       mediaUrl: message.stickerMessage.mediaUrl || message.stickerMessage.url || '',
-      mimeType: message.stickerMessage.mimetype || 'image/webp'
+      mimeType: message.stickerMessage.mimetype || 'image/webp',
+      mediaPreview: normalizeThumb(message.stickerMessage.jpegThumbnail)
     }
   }
 
@@ -607,11 +627,54 @@ function extractMessageContent(message: Record<string, any>): {
       contentType: 'location',
       contentText: message.locationMessage.name || '',
       mediaUrl: '',
-      mimeType: ''
+      mimeType: '',
+      mediaPreview: ''
     }
   }
 
-  return { contentType: 'text', contentText: '', mediaUrl: '', mimeType: '' }
+  return { contentType: 'text', contentText: '', mediaUrl: '', mimeType: '', mediaPreview: '' }
+}
+
+// ── normalizeThumb: jpegThumbnail vira base64 puro para messages.media_preview ──
+// Depende do formato em que a Evolution serializou o Buffer do Baileys:
+// string base64, array de bytes, {"type":"Buffer","data":[...]} ou objeto com
+// chaves numéricas (Uint8Array JSON). Qualquer coisa fora disso → '' (sem
+// quebrar a mensagem por causa de uma miniatura).
+const THUMB_MAX_CHARS = 80_000 // ~60KB de JPEG — folga bem o thumbnail
+
+function bytesToBase64(bytes: number[]): string {
+  let bin = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.slice(i, i + chunk))
+  }
+  try { return btoa(bin) } catch { return '' }
+}
+
+function normalizeThumb(raw: any): string {
+  try {
+    if (!raw) return ''
+    if (typeof raw === 'string') {
+      const s = raw.trim().replace(/^data:[^,]*,/, '')
+      if (!s || s.length > THUMB_MAX_CHARS) return ''
+      return /^[A-Za-z0-9+/]+={0,2}$/.test(s) ? s : ''
+    }
+    let bytes: number[] | null = null
+    if (Array.isArray(raw)) {
+      bytes = raw
+    } else if (raw.type === 'Buffer' && Array.isArray(raw.data)) {
+      bytes = raw.data
+    } else if (typeof raw === 'object') {
+      const keys = Object.keys(raw)
+      if (keys.length && keys.every(k => /^\d+$/.test(k))) {
+        bytes = keys.map(k => raw[k]).filter(n => typeof n === 'number')
+      }
+    }
+    if (!bytes || bytes.length < 64 || bytes.length > 60_000) return ''
+    return bytesToBase64(bytes)
+  } catch {
+    return ''
+  }
 }
 
 // ── extractQuotedInfo: extrai vínculo de resposta encadeada (quoted reply) ──

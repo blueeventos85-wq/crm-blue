@@ -8320,6 +8320,8 @@ textarea:focus-visible,
 .conv-media-doc{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px;text-decoration:none;color:var(--gray-700);font-size:12px;margin-bottom:4px;transition:background 0.15s}
 .conv-media-doc:hover{background:var(--gray-100)}
 .conv-media-doc i{width:16px;height:16px;flex-shrink:0}
+.conv-media-failed{cursor:pointer;opacity:0.85;outline:1px dashed var(--gray-300)}
+.conv-media-audio.conv-media-failed,.conv-media-video.conv-media-failed{opacity:0.5}
 .conv-media-caption{font-size:13px;line-height:1.4}
 
 /* ---- Menu de opções da mensagem (hover) ---- */
@@ -8976,6 +8978,24 @@ textarea:focus-visible,
   flex-shrink: 0;
 }
 
+.contratos-add-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.contratos-add-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.contratos-add-hint {
+  margin-top: 0;
+  max-width: 340px;
+  text-align: right;
+}
+
 /* =============================================
    CONTRATOS — Filtros Compactos
    ============================================= */
@@ -9063,6 +9083,17 @@ textarea:focus-visible,
 /* =============================================
    CONTRATOS — Tabela
    ============================================= */
+.contratos-lista-resumo {
+  margin: 0 0 10px;
+  font-size: 0.8125rem;
+  color: var(--muted-text);
+}
+
+.contratos-lista-resumo--pendente {
+  color: var(--warning);
+  font-weight: 600;
+}
+
 .contratos-table-wrapper {
   overflow-x: auto;
   border: 1px solid var(--gray-200);
@@ -9072,7 +9103,7 @@ textarea:focus-visible,
 
 .contratos-table {
   width: 100%;
-  min-width: 1040px;
+  min-width: 1200px;
   border-collapse: collapse;
 }
 
@@ -9163,6 +9194,15 @@ textarea:focus-visible,
   .contratos-add-button {
     width: 100%;
     justify-content: center;
+  }
+
+  .contratos-add-block {
+    align-items: stretch;
+  }
+
+  .contratos-add-hint {
+    text-align: center;
+    max-width: none;
   }
 }
 
@@ -10502,4 +10542,58 @@ textarea:focus-visible,
   font-size: 11px;
   font-weight: 500;
   color: var(--text-secondary);
+}
+
+/* ============================================
+   CONTRATOS · Empresa por contrato e modelo por empresa
+   ============================================ */
+.contract-empresa {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.form-hint {
+  font-size: 0.78rem;
+  color: var(--muted-text);
+  margin-top: 6px;
+}
+
+.cc-modelo-section {
+  margin-top: 24px;
+}
+
+.cc-modelo-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.cc-modelo-arquivo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cc-modelo-arquivo-nome {
+  font-size: 0.82rem;
+  color: var(--muted-text);
+}
+
+.cc-modelo-acoes {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.cc-modelo-excluir {
+  color: var(--error);
 }

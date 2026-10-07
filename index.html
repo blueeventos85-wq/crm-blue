@@ -625,10 +625,13 @@
               <h1>Contratos</h1>
               <p>Gerencie e gere os contratos em PDF dos seus leads.</p>
             </div>
-            <button class="btn btn-primary contratos-add-button" id="btnNovoContrato">
-              <i data-lucide="plus"></i>
-              Adicionar contrato
-            </button>
+            <div class="contratos-add-block">
+              <button class="btn btn-primary contratos-add-button" id="btnNovoContrato" disabled>
+                <i data-lucide="plus"></i>
+                Adicionar contrato
+              </button>
+              <p class="form-hint contratos-add-hint" id="contratosAddHint" style="display:none;"></p>
+            </div>
           </section>
 
           <!-- Filtros -->
@@ -671,6 +674,9 @@
             </div>
           </section>
 
+          <!-- Recorte efetivamente aplicado na lista -->
+          <p class="contratos-lista-resumo" id="contratosListaResumo" style="display:none;"></p>
+
           <!-- Tabela -->
           <div class="contratos-table-wrapper">
             <table class="contratos-table" id="tableContratos">
@@ -678,6 +684,7 @@
                 <tr>
                   <th>Número</th>
                   <th>Contratante</th>
+                  <th>Empresa</th>
                   <th>Serviço(s)</th>
                   <th>Data do evento</th>
                   <th>Valor total</th>
@@ -1280,7 +1287,7 @@
                 </button>
                 <div class="filter-dropdown" id="convCompanyDropdownMenu"></div>
               </div>
-              <button class="btn-ghost btn-sm" id="btnConvRefresh" title="Sincronizar contatos e grupos"><i data-lucide="refresh-cw"></i></button>
+              <button class="btn-ghost btn-sm" id="btnConvRefresh" title="Sincronizar contatos, grupos e histórico de mensagens"><i data-lucide="refresh-cw"></i></button>
               <button class="btn btn-primary btn-sm" id="btnConvNew"><i data-lucide="plus"></i> Nova conversa</button>
             </div>
           </div>
@@ -2504,6 +2511,89 @@
           <div class="cc-detail-content" id="ccDashboardWrapper">
             <!-- A inteligência vai mover a seção do dashboard para cá dinamicamente -->
           </div>
+
+          <!-- Modelo de contrato desta empresa -->
+          <section class="cc-detail-content cc-modelo-section" id="ccContratoModeloSection" style="display:none;">
+            <div class="cc-modelo-head">
+              <div>
+                <h3 class="cc-title"><i data-lucide="file-text"></i> Modelo de Contrato</h3>
+                <p class="cc-subtitle" id="ccModeloStatus">Carregando…</p>
+              </div>
+              <button type="button" class="btn-ghost" id="ccModeloPreviewBtn"><i data-lucide="eye"></i> Pré-visualizar</button>
+            </div>
+
+            <div class="admin-form-section">
+              <h4 class="admin-form-section-title">Identidade contratada</h4>
+              <div class="form-grid-2">
+                <div class="form-group full">
+                  <label>Título do documento</label>
+                  <input type="text" id="ccModeloTitulo" placeholder="Contrato de Prestação de Serviços" />
+                </div>
+                <div class="form-group full">
+                  <label>Razão social da contratada</label>
+                  <input type="text" id="ccModeloRazaoSocial" />
+                </div>
+                <div class="form-group">
+                  <label>CNPJ da contratada</label>
+                  <input type="text" id="ccModeloCnpj" />
+                </div>
+                <div class="form-group">
+                  <label>CEP da contratada</label>
+                  <input type="text" id="ccModeloCep" />
+                </div>
+                <div class="form-group full">
+                  <label>Endereço da contratada</label>
+                  <input type="text" id="ccModeloEndereco" />
+                </div>
+              </div>
+            </div>
+
+            <div class="admin-form-section">
+              <h4 class="admin-form-section-title">Cabeçalho e marca d'água</h4>
+              <div class="form-grid-2">
+                <div class="form-group">
+                  <label>Nome exibido</label>
+                  <input type="text" id="ccModeloCabNome" />
+                </div>
+                <div class="form-group">
+                  <label>Site</label>
+                  <input type="text" id="ccModeloCabSite" />
+                </div>
+                <div class="form-group">
+                  <label>Instagram</label>
+                  <input type="text" id="ccModeloCabInstagram" />
+                </div>
+                <div class="form-group">
+                  <label>WhatsApp</label>
+                  <input type="text" id="ccModeloCabWhats" />
+                </div>
+                <div class="form-group full">
+                  <label>Logo do cabeçalho (PNG/JPG até 400 KB)</label>
+                  <div class="cc-modelo-arquivo">
+                    <button type="button" class="btn-ghost" id="ccModeloLogoBtn"><i data-lucide="upload"></i> Selecionar logo</button>
+                    <input type="file" id="ccModeloLogoInput" accept="image/png,image/jpeg" style="display:none;" />
+                    <span class="cc-modelo-arquivo-nome" id="ccModeloLogoName">Padrão do sistema</span>
+                    <button type="button" class="btn-ghost" id="ccModeloLogoRemove" style="display:none;"><i data-lucide="x"></i> Remover</button>
+                  </div>
+                </div>
+                <div class="form-group full">
+                  <label>Marca d'água (PNG/JPG até 400 KB)</label>
+                  <div class="cc-modelo-arquivo">
+                    <button type="button" class="btn-ghost" id="ccModeloMarcaBtn"><i data-lucide="upload"></i> Selecionar imagem</button>
+                    <input type="file" id="ccModeloMarcaInput" accept="image/png,image/jpeg" style="display:none;" />
+                    <span class="cc-modelo-arquivo-nome" id="ccModeloMarcaName">Padrão do sistema</span>
+                    <button type="button" class="btn-ghost" id="ccModeloMarcaRemove" style="display:none;"><i data-lucide="x"></i> Remover</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="cc-modelo-acoes">
+              <button type="button" class="btn-primary" id="ccModeloSaveBtn"><i data-lucide="save"></i> Salvar modelo</button>
+              <button type="button" class="btn-ghost" id="ccModeloRestoreBtn"><i data-lucide="rotate-ccw"></i> Restaurar padrão</button>
+              <button type="button" class="btn-ghost cc-modelo-excluir" id="ccModeloDeleteBtn"><i data-lucide="trash-2"></i> Remover modelo desta empresa</button>
+            </div>
+          </section>
         </section>
 
       </div>
@@ -2718,7 +2808,7 @@
 
           <div class="form-group">
             <label>Número (telefone) <span class="req">*</span></label>
-            <input type="tel" name="telefone" required placeholder="(11) 98765-4321" />
+            <input type="tel" name="telefone" required inputmode="numeric" placeholder="5585999999999" />
             <span class="form-error" data-error="telefone"></span>
           </div>
           <div class="form-group">
@@ -3258,6 +3348,19 @@
         </div>
 
         <div class="admin-form-section">
+          <h3 class="admin-form-section-title">Dados do Contrato</h3>
+          <div class="form-grid-2">
+            <div class="form-group full">
+              <label>Empresa <span class="req">*</span></label>
+              <select id="contratoEmpresa" class="form-control">
+                <option value="">Selecione a empresa</option>
+              </select>
+              <p class="form-hint" id="contratoEmpresaHint">O contrato e o modelo utilizado pertencem a esta empresa.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-form-section">
           <h3 class="admin-form-section-title">Dados da Contratante</h3>
           <div class="form-grid-2">
             <div class="form-group full">
@@ -3403,6 +3506,7 @@
   <!-- Tela de Prévia do Contrato (A4 full-screen) -->
   <section id="contratoPreviewModal" class="contrato-preview-modal">
     <div class="contrato-preview-toolbar">
+      <button type="button" id="btnContratoPreviewClose" class="btn-ghost" style="display:none;"><i data-lucide="x"></i> Fechar pré-visualização</button>
       <button type="button" id="btnContratoBackToEdit" class="btn-ghost"><i data-lucide="arrow-left"></i> Voltar para edição</button>
       <button type="button" id="btnContratoSaveDraftPreview" class="btn-ghost"><i data-lucide="save"></i> Salvar rascunho</button>
       <button type="button" id="btnContratoGeneratePdf" class="btn-primary"><i data-lucide="file-text"></i> Gerar PDF</button>

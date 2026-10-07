@@ -209,6 +209,9 @@ async function waSendMedia(membroId, conversationId, mediaUrl, contentType = 'im
   if (extra?.mimeType) body.mimeType = extra.mimeType
   if (extra?.fileName) body.fileName = extra.fileName
   if (extra?.mediaPath) body.mediaPath = extra.mediaPath
+  // Miniatura da imagem (base64 JPEG) → messages.media_preview, para a
+  // conversa pintar a foto na hora em vez de esperar o proxy baixar tudo
+  if (extra?.preview) body.preview = extra.preview
 
   const result = await waInvokeFunction('evolution-send', body)
 
@@ -298,6 +301,26 @@ async function waSyncContacts(centrosCustoId) {
   if (result && result.success === false) {
     const err = new Error(result.error || 'Erro ao sincronizar contatos e grupos')
     err.code = result.error
+    err.triedRoutes = result.triedRoutes || null
+    throw err
+  }
+
+  return result
+}
+
+async function waSyncHistory(centrosCustoId, action = 'messages', page = 1) {
+  if (!centrosCustoId) {
+    throw new Error('centros_custo_id é obrigatório para sincronizar o histórico')
+  }
+
+  const result = await waInvokeFunction('wa-sync-history', {
+    centros_custo_id: centrosCustoId,
+    action,
+    page
+  })
+
+  if (result && result.success === false) {
+    const err = new Error(result.error || 'Erro ao sincronizar histórico de mensagens')
     err.triedRoutes = result.triedRoutes || null
     throw err
   }
@@ -519,6 +542,7 @@ window.waSendMedia = waSendMedia
 window.waSendVoiceNote = waSendVoiceNote
 window.waDeleteMessage = waDeleteMessage
 window.waSyncContacts = waSyncContacts
+window.waSyncHistory = waSyncHistory
 window.waFetchContacts = waFetchContacts
 window.waFetchConversations = waFetchConversations
 window.waFetchMessages = waFetchMessages
