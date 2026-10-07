@@ -12804,42 +12804,48 @@ async function loadConversasChats() {
 
     if (contactIds.length > 0) {
       let contactCols = 'id, phone, name, push_name, avatar_url, profile_pic_url, is_group, group_jid';
-      let { data: contactsData, error: contactsErr } = await _supabase
-        .from('contacts')
-        .select(contactCols)
-        .in('id', contactIds);
-      // Resiliência: migrações de push_name/avatar_url pendentes →
-      // repetir a query sem as colunas ausentes (nunca perder os nomes).
-      if (contactsErr && /(push_name|avatar_url)/.test(contactsErr.message || '')) {
-        const contactErrMsg = contactsErr.message || '';
-        if (/\bpush_name\b/.test(contactErrMsg)) contactCols = contactCols.replace(/,\s*push_name\b/, '');
-        if (/\bavatar_url\b/.test(contactErrMsg)) contactCols = contactCols.replace(/,\s*avatar_url\b/, '');
-        console.warn('[Conversas] colunas de contato indisponíveis — repetindo select reduzido:', contactErrMsg.substring(0, 140));
-        const retry = await _supabase
+      const CHUNK_SIZE = 50;
+      contactsMap = {};
+      conversasState.contactsByPhone = {};
+      let contactsProcessed = 0;
+      for (let i = 0; i < contactIds.length; i += CHUNK_SIZE) {
+        const chunk = contactIds.slice(i, i + CHUNK_SIZE);
+        let { data: chunkData, error: chunkErr } = await _supabase
           .from('contacts')
           .select(contactCols)
-          .in('id', contactIds);
-        contactsData = retry.data;
-        contactsErr = retry.error;
+          .in('id', chunk);
+        if (chunkErr && /(push_name|avatar_url)/.test(chunkErr.message || '')) {
+          const chunkErrMsg = chunkErr.message || '';
+          if (/\bpush_name\b/.test(chunkErrMsg)) contactCols = contactCols.replace(/,\s*push_name\b/, '');
+          if (/\bavatar_url\b/.test(chunkErrMsg)) contactCols = contactCols.replace(/,\s*avatar_url\b/, '');
+          console.warn('[Conversas] colunas de contato indisponíveis — repetindo select reduzido:', chunkErrMsg.substring(0, 140));
+          const retry = await _supabase
+            .from('contacts')
+            .select(contactCols)
+            .in('id', chunk);
+          ;({ data: chunkData, error: chunkErr } = retry);
+        }
+        if (chunkErr) console.error('[Conversas] Erro ao buscar contatos (chunk):', chunkErr.message, chunkErr.code);
+        else {
+          (chunkData || []).forEach(c => {
+            contactsMap[c.id] = c;
+            const digits = String(c.phone || '').replace(/\D/g, '');
+            const nm = String(c.name || '').trim();
+            if (digits && nm && !/^\d{6,}$/.test(nm)) {
+              conversasState.contactsByPhone[digits] = nm;
+              if (digits.startsWith('55')) conversasState.contactsByPhone[digits.slice(2)] = nm;
+              else conversasState.contactsByPhone['55' + digits] = nm;
+            }
+            const av = String(c.avatar_url || c.profile_pic_url || '').trim();
+            if (digits && /^https?:\/\//i.test(av)) {
+              conversasState.avatarsByPhone[digits] = av;
+              if (digits.startsWith('55')) conversasState.avatarsByPhone[digits.slice(2)] = av;
+              else conversasState.avatarsByPhone['55' + digits] = av;
+            }
+          });
+          contactsProcessed += chunkData?.length || 0;
+        }
       }
-      if (contactsErr) console.error('[Conversas] Erro ao buscar contatos:', contactsErr.message, contactsErr.code);
-      (contactsData || []).forEach(c => {
-        contactsMap[c.id] = c;
-        const digits = String(c.phone || '').replace(/\D/g, '');
-        const nm = String(c.name || '').trim();
-        if (digits && nm && !/^\d{6,}$/.test(nm)) {
-          // indexar nos dois formatos (com e sem DDI 55) para o lookup do remetente
-          conversasState.contactsByPhone[digits] = nm;
-          if (digits.startsWith('55')) conversasState.contactsByPhone[digits.slice(2)] = nm;
-          else conversasState.contactsByPhone['55' + digits] = nm;
-        }
-        const av = String(c.avatar_url || c.profile_pic_url || '').trim();
-        if (digits && /^https?:\/\//i.test(av)) {
-          conversasState.avatarsByPhone[digits] = av;
-          if (digits.startsWith('55')) conversasState.avatarsByPhone[digits.slice(2)] = av;
-          else conversasState.avatarsByPhone['55' + digits] = av;
-        }
-      });
     }
 
     if (signal.aborted) return;
@@ -12868,14 +12874,6 @@ async function loadConversasChats() {
     // Mapear para formato compativel com a UI
     const operatorName = (currentUser?.nome || '').trim();
     const _t = v => (v == null ? '' : String(v).trim()); // trim à prova de null/undefined
-    const isGenericConvName = (n, digits) => {
-      const s = _t(n);
-      if (!s) return true;
-      if (digits && s === digits) return true;               // só o telefone
-      if (/^\d{6,}$/.test(s)) return true;                    // só dígitos
-      if (operatorName && s.toLowerCase() === operatorName.toLowerCase()) return true; // nome do atendente (poluição fromMe)
-      return false;
-    };
     conversasState.allChats = (convData || []).map(c => {
       const contact = contactsMap[c.contact_id] || {};
       const lead = leadsMap[c.lead_id] || null;
@@ -12964,6 +12962,16 @@ async function loadConversasChats() {
     console.error('[Conversas] Erro ao carregar chats:', err);
     list.innerHTML = '<div class="conv-empty-state"><p>Erro ao carregar conversas</p></div>';
   }
+}
+
+/* ---------- isGenericConvName: verifica se nome eh apenas telefone/ddd (utilitário compartilhado) ---------- */
+const isGenericConvName = (n, digits) => {
+  const s = String(n == null ? '' : n).trim();
+  if (!s) return true;
+  if (digits && s === digits) return true;               // só o telefone
+  if (/^\d{6,}$/.test(s)) return true;                    // só dígitos
+  if (operatorName && s.toLowerCase() === operatorName.toLowerCase()) return true; // nome do atendente (poluição fromMe)
+  return false;
 }
 
 /* ---------- recover pushName from contact/message ---------- */
