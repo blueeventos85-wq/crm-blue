@@ -12643,7 +12643,13 @@ const conversasState = {
   instanceName: null,
   avatarsByPhone: {}, // dígitos → URL da foto de perfil (WhatsApp)
   replyingTo: null,   // mensagem selecionada para resposta encadeada (quoted reply)
-  _loadAbortController: null
+  _loadAbortController: null,
+  _msgConvId: null,
+  _msgHasMore: false,
+  _msgLoadingOlder: false,
+  _msgOldestAt: null,
+  _msgRenderScrollTop: null,
+  _msgRenderScrollHeight: null
 };
 
 /* Navegação pendente: CRM → Conversas (deep-link) */
@@ -12768,14 +12774,14 @@ async function loadConversasChats() {
       if (ccId) q = q.eq('centros_custo_id', ccId);
       return q.order('last_message_at', { ascending: false, nullsFirst: false });
     };
-    let result = await doConvQuery('id, membro_id, contact_id, centros_custo_id, lead_id, status, is_archived, unread_count, last_message_text, last_message_at, created_at, updated_at, group_name, group_jid, title, is_group, avatar_url, metadata');
+    let result = await doConvQuery('id, membro_id, contact_id, centros_custo_id, lead_id, status, is_archived, unread_count, last_message_text, last_message_at, created_at, updated_at, group_name, group_jid, title, is_group, avatar_url, metadata, remote_jid');
     // Resiliência: migrações pendentes (title/is_group/avatar_url/metadata/is_archived)
     // → repetir o select removendo apenas as colunas ausentes.
-    if (result.error && /(title|is_group|avatar_url|metadata|is_archived)/.test(result.error.message || '')) {
+    if (result.error && /(title|is_group|avatar_url|metadata|is_archived|remote_jid)/.test(result.error.message || '')) {
       const convColsMsg = result.error.message || '';
       console.warn('[Conversas] colunas de conversa indisponíveis — repetindo select reduzido:', convColsMsg.substring(0, 140));
-      let convCols = 'id, membro_id, contact_id, centros_custo_id, lead_id, status, is_archived, unread_count, last_message_text, last_message_at, created_at, updated_at, group_name, group_jid, title, is_group, avatar_url, metadata';
-      for (const col of ['avatar_url', 'metadata', 'title', 'is_group', 'is_archived']) {
+      let convCols = 'id, membro_id, contact_id, centros_custo_id, lead_id, status, is_archived, unread_count, last_message_text, last_message_at, created_at, updated_at, group_name, group_jid, title, is_group, avatar_url, metadata, remote_jid';
+      for (const col of ['avatar_url', 'metadata', 'title', 'is_group', 'is_archived', 'remote_jid']) {
         if (new RegExp(`\\b${col}\\b`).test(convColsMsg)) convCols = convCols.replace(new RegExp(`,\\s*${col}\\b`), '');
       }
       result = await doConvQuery(convCols);
@@ -12874,16 +12880,18 @@ async function loadConversasChats() {
       const contact = contactsMap[c.contact_id] || {};
       const lead = leadsMap[c.lead_id] || null;
       const isGroup = contact.is_group === true || c.is_group === true || !!c.group_jid || !!contact.group_jid || String(contact.phone || '').includes('@g.us');
-      const phoneDigits = String(contact.phone || '').replace(/\D/g, '');
+      const remoteJidDigits = isGroup ? '' : String(c.remote_jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+      const phoneDigits = String(contact.phone || '').replace(/\D/g, '') || remoteJidDigits;
       // GRUPO: group_name || title || name do contato-grupo || 'Grupo sem nome'.
       // NUNCA usar o preview da última mensagem (last_message_text) como título.
       let groupName = _t(c.group_name) || _t(c.title) || _t(contact.name);
       if (groupName && groupName === _t(c.last_message_text)) groupName = ''; // legado: group_name poluído com o texto da mensagem
-      // INDIVIDUAL: contact.name || contact.push_name || telefone formatado.
+      // INDIVIDUAL: contact.name || contact.push_name || nome do lead || telefone formatado.
       // Cadeia à prova de nulos/vazios — o título NUNCA renderiza em branco.
       const individualTitle = (!isGenericConvName(contact.name, phoneDigits) && _t(contact.name))
         || (!isGenericConvName(contact.push_name, phoneDigits) && _t(contact.push_name))
-        || _convFormatPhone(phoneDigits)
+        || (!isGenericConvName(lead?.nome, phoneDigits) && _t(lead?.nome))
+        || ((phoneDigits.length >= 10 && phoneDigits.length <= 13) ? _convFormatPhone(phoneDigits) : '')
         || 'Contato sem identificação';
       const contactName = isGroup ? (groupName || 'Grupo sem nome') : individualTitle;
       let parsedNotes = [];
@@ -12893,7 +12901,7 @@ async function loadConversasChats() {
       return {
         id: c.id,
         contact_name: contactName,
-        contact_phone: isGroup ? (c.group_jid || contact.group_jid || contact.phone || '') : (lead?.telefone || contact.phone || ''),
+        contact_phone: isGroup ? (c.group_jid || contact.group_jid || contact.phone || '') : (lead?.telefone || contact.phone || remoteJidDigits || ''),
         contact_email: lead?.email || '',
         contact_location: '',
         status: c.status,
@@ -12994,8 +13002,10 @@ function _convApplyFilter() {
     else if (f === 'unidentified') list = list.filter(c => !c.is_group && !c.lead_id);
   }
 
+  list.sort((a, b) => String(b.last_message_at || '').localeCompare(String(a.last_message_at || '')));
   conversasState.chats = list;
   _renderConvChatList();
+  _convUpdateStats();
 }
 
 function _renderConvChatList() {
@@ -13116,12 +13126,20 @@ function _convUpdateStats() {
   hot($('#convStatHot'));
   online($('#convStatOnline'));
   groups($('#convStatGroups'));
-  const uid = getCurrentUserId();
   const unassigned = all.filter(c => !c.is_group && !c.lead_id).length;
+  const archived = all.filter(c => c.is_archived === true).length;
   const el = $('#convUnidentifiedCount');
   if (el) el.textContent = unassigned;
   const arch = $('#convArchivedCount');
-  if (arch) arch.textContent = all.filter(c => c.is_archived === true).length;
+  if (arch) arch.textContent = archived;
+  console.log('[Conversas] Stats:', {
+    naoLidas: all.filter(c => (c.unread_count || 0) > 0).length,
+    quentes: all.filter(c => c.temperature === 'quente').length,
+    online: all.filter(c => c.status === 'open').length,
+    grupos: all.filter(c => c.is_group === true).length,
+    naoIdentificadas: unassigned,
+    arquivadas: archived
+  });
 }
 function _convUpdateSyncTime() {
   const el = $('#convSyncTime');
@@ -13489,47 +13507,113 @@ async function _convLoadMessages(chatId) {
     _convMediaPerf.failed = 0;
     _convMediaPerf.resolveMs = 0;
     _convMediaPerf.images = 0;
-    let msgCols = 'id, conversation_id, membro_id, sender_type, sender_jid, sender_name, sender_phone, content_type, content_text, media_url, mime_type, message_id, status, is_deleted, quoted_message_id, quoted_content, quoted_sender, created_at, media_preview';
-    let { data, error } = await _supabase
-      .from('messages')
-      .select(msgCols)
-      .eq('conversation_id', chatId)
-      .order('created_at', { ascending: true });
+    conversasState._msgConvId = chatId;
+    conversasState._msgHasMore = false;
+    conversasState._msgLoadingOlder = false;
+    conversasState._msgOldestAt = null;
+    conversasState._msgRenderScrollTop = null;
+    conversasState._msgRenderScrollHeight = null;
 
-    // Resiliência: migrações quoted_* / media_preview ainda não aplicadas →
-    // repetir select sem as colunas ausentes (o resto carrega normal)
-    let retries = 0;
-    while (error && retries < 2 && /quoted_|media_preview/.test(error.message || '')) {
-      retries++;
-      if (/quoted_/.test(error.message || '') && /quoted_message_id/.test(msgCols)) {
-        msgCols = msgCols.replace(/,\s*quoted_message_id,\s*quoted_content,\s*quoted_sender/, '');
-      } else if (/media_preview/.test(error.message || '') && /media_preview/.test(msgCols)) {
-        msgCols = msgCols.replace(/,\s*media_preview/, '');
-      } else {
-        break;
-      }
-      console.warn('[Conversas] Colunas indisponíveis — select reduzido:', error.message);
-      ({ data, error } = await _supabase
-        .from('messages')
-        .select(msgCols)
-        .eq('conversation_id', chatId)
-        .order('created_at', { ascending: true }));
-    }
+    const rows = await _convQueryMsgPage(chatId, null);
+    conversasState.messages = rows.slice().reverse();
+    conversasState._msgHasMore = rows.length === CONV_MSG_PAGE;
+    conversasState._msgOldestAt = conversasState.messages.length ? conversasState.messages[0].created_at : null;
 
-    if (error) {
-      console.error('[Conversas] Erro na query messages:', error);
-      throw error;
-    }
-    conversasState.messages = data || [];
     const t1 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     _convMediaPerf.queryMs = Math.round(t1 - t0);
     _convMediaPerf.msgs = conversasState.messages.length;
-    console.log('[Conversas] Mensagens carregadas:', conversasState.messages.length, `(${_convMediaPerf.queryMs}ms)`);
+    console.log('[Conversas] Mensagens carregadas:', conversasState.messages.length, `(${_convMediaPerf.queryMs}ms)`, conversasState._msgHasMore ? '+ mais antigas via rolagem' : '');
     _renderConvMessages();
   } catch (err) {
     console.error('[Conversas] Erro ao carregar mensagens:', err);
     container.innerHTML = `<div class="conv-empty-state"><p>Erro ao carregar mensagens</p><p style="font-size:12px;color:#999;margin-top:8px;">${escapeHtml(String(err.message || err))}</p></div>`;
   }
+}
+
+const CONV_MSG_PAGE = 80;
+let CONV_MSG_COLS = 'id, conversation_id, membro_id, sender_type, sender_jid, sender_name, sender_phone, content_type, content_text, media_url, mime_type, message_id, status, is_deleted, quoted_message_id, quoted_content, quoted_sender, created_at, media_preview';
+
+async function _convQueryMsgPage(chatId, before) {
+  const run = () => {
+    let q = _supabase
+      .from('messages')
+      .select(CONV_MSG_COLS)
+      .eq('conversation_id', chatId)
+      .order('created_at', { ascending: false })
+      .limit(CONV_MSG_PAGE);
+    if (before) q = q.lt('created_at', before);
+    return q;
+  };
+  let { data, error } = await run();
+  let retries = 0;
+  while (error && retries < 2 && /quoted_|media_preview/.test(error.message || '')) {
+    retries++;
+    if (/quoted_/.test(error.message || '') && CONV_MSG_COLS.includes('quoted_message_id')) {
+      CONV_MSG_COLS = CONV_MSG_COLS.replace(/,\s*quoted_message_id,\s*quoted_content,\s*quoted_sender/, '');
+    } else if (/media_preview/.test(error.message || '') && CONV_MSG_COLS.includes('media_preview')) {
+      CONV_MSG_COLS = CONV_MSG_COLS.replace(/,\s*media_preview/, '');
+    } else {
+      break;
+    }
+    console.warn('[Conversas] Colunas indisponíveis — select reduzido:', error.message);
+    ({ data, error } = await run());
+  }
+  if (error) {
+    console.error('[Conversas] Erro na query messages:', error);
+    throw error;
+  }
+  return data || [];
+}
+
+async function _convLoadOlderMessages() {
+  const st = conversasState;
+  if (!st._msgConvId || !st._msgHasMore || st._msgLoadingOlder || !st._msgOldestAt) return;
+  st._msgLoadingOlder = true;
+  const container = $('#convMessages');
+  try {
+    const rows = await _convQueryMsgPage(st._msgConvId, st._msgOldestAt);
+    if (!rows.length) {
+      st._msgHasMore = false;
+      return;
+    }
+    const older = rows.slice().reverse();
+    st.messages = [...older, ...st.messages];
+    st._msgHasMore = rows.length === CONV_MSG_PAGE;
+    st._msgOldestAt = st.messages.length ? st.messages[0].created_at : null;
+    if (container) {
+      st._msgRenderScrollTop = container.scrollTop;
+      st._msgRenderScrollHeight = container.scrollHeight;
+    }
+    console.log('[Conversas] Mensagens antigas carregadas:', older.length, '| total:', st.messages.length);
+    _renderConvMessages();
+  } catch (err) {
+    console.error('[Conversas] Erro ao carregar mensagens antigas:', err);
+  } finally {
+    st._msgLoadingOlder = false;
+  }
+}
+
+async function _convReloadOpenChat(force) {
+  const st = conversasState;
+  if (!st._msgConvId || !st.selectedChatId) return;
+  if (!force) {
+    try {
+      const { data, error } = await _supabase
+        .from('messages')
+        .select('id')
+        .eq('conversation_id', st._msgConvId)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (error) return;
+      const remote = data && data[0] ? data[0].id : null;
+      const local = st.messages.length ? st.messages[st.messages.length - 1].id : null;
+      if (remote === local) return;
+    } catch (_) {
+      return;
+    }
+  }
+  console.log('[Conversas] Recarregando conversa aberta:', st._msgConvId, force ? '(manual)' : '(fallback)');
+  await _convLoadMessages(st._msgConvId);
 }
 
 /* ---------- media: resolver URL de mídia ---------- */
@@ -14050,7 +14134,15 @@ function _renderConvMessages() {
     }
   });
   container.innerHTML = html;
-  container.scrollTop = container.scrollHeight;
+  if (conversasState._msgRenderScrollHeight) {
+    const prevTop = conversasState._msgRenderScrollTop || 0;
+    const prevHeight = conversasState._msgRenderScrollHeight;
+    conversasState._msgRenderScrollTop = null;
+    conversasState._msgRenderScrollHeight = null;
+    container.scrollTop = prevTop + (container.scrollHeight - prevHeight);
+  } else {
+    container.scrollTop = container.scrollHeight;
+  }
   initIcons();
 
   // Resolver mídias assincronamente (NÃO bloquear renderização)
@@ -15743,6 +15835,7 @@ function _convSubscribeRealtime() {
   _convRefreshInterval = setInterval(() => {
     if (activePage === 'conversas') {
       loadConversasChats();
+      _convReloadOpenChat(false);
     }
   }, 15000);
 }
@@ -15823,6 +15916,10 @@ async function _initConvCentroCustoDropdown() {
     conversasState.chats = [];
     conversasState.selectedChatId = null;
     conversasState.messages = [];
+    conversasState._msgConvId = null;
+    conversasState._msgHasMore = false;
+    conversasState._msgLoadingOlder = false;
+    conversasState._msgOldestAt = null;
     conversasState.instanceName = null;
     const chatEmpty = document.getElementById('convChatEmpty');
     const chatContent = document.getElementById('convChatContent');
@@ -15973,6 +16070,7 @@ async function _convSyncContactsAndReload() {
     }
 
     await loadConversasChats();
+    await _convReloadOpenChat(true);
 
     const g = res?.groupsCount ?? 0;
     const c = res?.contactsCount ?? 0;
@@ -16010,6 +16108,14 @@ function initConversas() {
   const refreshBtn = $('#btnConvRefresh');
   const unidentifiedBtn = $('#convUnidentifiedBtn');
   const archivedBtn = $('#convArchivedBtn');
+
+  const msgBox = $('#convMessages');
+  if (msgBox && !msgBox._convScrollBound) {
+    msgBox._convScrollBound = true;
+    msgBox.addEventListener('scroll', () => {
+      if (msgBox.scrollTop <= 120) _convLoadOlderMessages();
+    });
+  }
 
   if (searchInput) {
     let debounce;

@@ -136,11 +136,26 @@ serve(async (req) => {
         contactId = await findOrCreateGroupContact(supabase, membroId, centrosCustoId, remoteJid, contactName)
       } else {
         // === CONTATO INDIVIDUAL ===
-        // Limpar phone do remoteJid
-        phone = remoteJid.replace(/@.*$/, '')
+        // LID (addressingMode=lid): remoteJid é "<lid>@lid" → o telefone real
+        // está em key.remoteJidAlt. Sem ele, mantemos os dígitos do próprio jid
+        // como chave estável (a mensagem não pode se perder) e o nome vem do pushName.
+        const directJid = (remoteJid.endsWith('@s.whatsapp.net') || !remoteJid.includes('@')) ? remoteJid : ''
+        const altJid = String(key.remoteJidAlt || '')
+        const phoneJid = directJid || (altJid.endsWith('@s.whatsapp.net') ? altJid : '')
+        phone = phoneJid
+          ? phoneJid.replace(/@.*$/, '')
+          : (remoteJid.includes('@') ? remoteJid.replace(/@.*$/, '') : '')
+        if (!phone || !/\d{8,}/.test(phone)) {
+          console.warn('[webhook] Jid não resolvível — ignorando mensagem:', remoteJid)
+          return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'unresolvable_jid' }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
         // Em mensagens enviadas (fromMe) o pushName é o próprio operador (ex: "Pedro
         // Henrique") — jamais sobrescrever o nome do contato com ele.
-        contactName = fromMe ? '' : (pushName || '')
+        // pushName só-dígitos é poluição de LID — não vira nome de contato.
+        contactName = fromMe ? '' : (pushName && !/^\d{4,}$/.test(pushName) ? pushName : '')
         // Buscar ou criar contato individual
         contactId = await findOrCreateContact(supabase, membroId, centrosCustoId, phone, contactName, null)
       }
@@ -170,11 +185,14 @@ serve(async (req) => {
         : new Date().toISOString()
 
       // Identificação do remetente em mensagens de GRUPO (recebidas):
-      // participant = JID de quem enviou (ex: 558599999999@s.whatsapp.net)
+      // participant = JID de quem enviou (ex: 558599999999@s.whatsapp.net).
+      // Quando o payload não traz participant (registros lid antigos), o
+      // pushName ainda identifica quem enviou → guardamos como sender_name.
       const participantJid = (isGroup && !fromMe)
         ? String(key.participant || msgData.participant || '')
         : ''
-      const senderName = participantJid ? (pushName || '') : '' // pushName do remetente || null
+      const usablePushName = (pushName && !/^\d{4,}$/.test(pushName) && pushName !== 'Você') ? pushName : ''
+      const senderName = isGroup && !fromMe ? usablePushName : ''
       const senderPhone = participantJid
         ? participantJid.split('@')[0].split(':')[0].replace(/\D/g, '')
         : ''
@@ -420,7 +438,7 @@ serve(async (req) => {
           : []
 
         for (const g of items) {
-          const rawId = g?.id || g?.jid || g?.remoteJid || ''
+          const rawId = g?.remoteJid || g?.jid || g?.id || ''
           const jid = String(rawId).includes('@g.us')
             ? String(rawId)
             : rawId ? `${rawId}@g.us` : ''
@@ -509,10 +527,14 @@ serve(async (req) => {
           : []
         const now = new Date().toISOString()
         for (const it of items) {
-          const jid = String(it?.id || it?.jid || it?.remoteJid || '')
+          const jid = String(it?.remoteJid || it?.jid || it?.id || '')
+          const alt = String(it?.remoteJidAlt || '')
+          const useJid = (jid.endsWith('@s.whatsapp.net') || !jid.includes('@'))
+            ? jid
+            : (alt.endsWith('@s.whatsapp.net') ? alt : '')
           const url = it?.profilePictureUrl || it?.avatarUrl || it?.pictureUrl || null
-          if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) continue
-          const digits = jid.split('@')[0].split(':')[0].replace(/\D/g, '')
+          if (!useJid || !url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) continue
+          const digits = useJid.split('@')[0].split(':')[0].replace(/\D/g, '')
           if (!digits) continue
           const { error } = await supabase
             .from('contacts')
@@ -898,7 +920,7 @@ async function findOrCreateConversation(
     // Fallback legado: quando não há membro_id (não deveria acontecer)
     query = query.eq('centros_custo_id', centrosCustoId)
   }
-  const { data: existing } = await query.maybeSingle()
+  const { data: existing } = await query.select('id, lead_id, remote_jid').maybeSingle()
 
   if (existing) {
     // Vincular lead se necessário
@@ -907,6 +929,14 @@ async function findOrCreateConversation(
         .from('conversations')
         .update({ lead_id: leadId, updated_at: new Date().toISOString() })
         .eq('id', existing.id)
+    }
+    if (!isGroup && groupJid && existing.remote_jid !== groupJid) {
+      let { error: rjErr } = await supabase
+        .from('conversations')
+        .update({ remote_jid: groupJid, updated_at: new Date().toISOString() })
+        .eq('id', existing.id)
+      if (rjErr && /remote_jid/.test(rjErr.message || '')) rjErr = null
+      if (rjErr) console.error('[webhook] Erro ao gravar remote_jid da conversa:', rjErr.message)
     }
     // Atualizar group_jid da conversa se for grupo.
     // NUNCA gravar lastMessageText em group_name — o texto da última mensagem
@@ -952,6 +982,8 @@ async function findOrCreateConversation(
     insertPayload.group_jid = groupJid
     insertPayload.group_name = ''
     insertPayload.is_group = true
+    insertPayload.remote_jid = groupJid
+  } else if (groupJid) {
     insertPayload.remote_jid = groupJid
   }
 

@@ -155,9 +155,11 @@ describe('app.js · resolução de mídia (lazy, cache, pool)', () => {
 
   it('mensagem exibida registra as métricas de mídia (para medir o ganho)', () => {
     const load = extractFn(appJs, 'async function _convLoadMessages(chatId)');
-    assert.ok(load.includes('media_preview'), 'media_preview não é selecionada');
+    assert.ok(load.includes('_convQueryMsgPage'), 'não usa a query paginada compartilhada');
+    const query = extractFn(appJs, 'async function _convQueryMsgPage');
+    assert.ok(query.includes('media_preview'), 'media_preview não é selecionada');
     assert.ok(load.includes('_convMediaPerf.queryMs'), 'sem instrumentação não dá para medir');
-    assert.ok(/media_preview/.test(load) && /quoted_/.test(load),
+    assert.ok(/media_preview/.test(query) && /quoted_/.test(query),
       'resiliência para colunas ainda não migradas');
     assert.ok(appJs.includes('window.__convMediaPerf'), 'hook de medição ausente');
   });
