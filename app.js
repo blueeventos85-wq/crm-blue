@@ -12880,15 +12880,34 @@ async function loadConversasChats() {
       const contact = contactsMap[c.contact_id] || {};
       const lead = leadsMap[c.lead_id] || null;
       const isGroup = contact.is_group === true || c.is_group === true || !!c.group_jid || !!contact.group_jid || String(contact.phone || '').includes('@g.us');
-      const remoteJidDigits = isGroup ? '' : String(c.remote_jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
-      const phoneDigits = String(contact.phone || '').replace(/\D/g, '') || remoteJidDigits;
+      const resolveRealPhone = (contactPhone, remoteJid, remoteJidAlt) => {
+      let digits = String(contactPhone || '').replace(/\D/g, '');
+      if (!digits || digits.length >= 14) {
+        // Provável LID identifier — tentar resolver do remoteJidAlt
+        const altDigits = String(remoteJidAlt || '').replace(/\D/g, '');
+        if (altDigits && altDigits.length >= 8 && altDigits.length <= 15) {
+          digits = altDigits;
+        } else {
+          // Tentar do remoteJid principal (removendo @lid ou @s.whatsapp.net)
+          const mainDigits = String(remoteJid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+          if (mainDigits && mainDigits.length >= 8 && mainDigits.length <= 15 && !mainDigits.includes('lid')) {
+            digits = mainDigits;
+          }
+        }
+      }
+      return digits;
+    };
+    const remoteJidDigits = isGroup ? '' : resolveRealPhone(contact.phone, c.remote_jid, c.remote_jid_alt || '');
+    const phoneDigits = String(contact.phone || '').replace(/\D/g, '') || remoteJidDigits;
       // GRUPO: group_name || title || name do contato-grupo || 'Grupo sem nome'.
       // NUNCA usar o preview da última mensagem (last_message_text) como título.
       let groupName = _t(c.group_name) || _t(c.title) || _t(contact.name);
       if (groupName && groupName === _t(c.last_message_text)) groupName = ''; // legado: group_name poluído com o texto da mensagem
       // INDIVIDUAL: contact.name || contact.push_name || nome do lead || telefone formatado.
       // Cadeia à prova de nulos/vazios — o título NUNCA renderiza em branco.
-      const individualTitle = (!isGenericConvName(contact.name, phoneDigits) && _t(contact.name))
+      const recoveredPushName = recoverPushNameFromContact(contact, c.last_message_text);
+      const individualTitle = (!isGenericConvName(recoveredPushName, phoneDigits) && _t(recoveredPushName))
+        || (!isGenericConvName(contact.name, phoneDigits) && _t(contact.name))
         || (!isGenericConvName(contact.push_name, phoneDigits) && _t(contact.push_name))
         || (!isGenericConvName(lead?.nome, phoneDigits) && _t(lead?.nome))
         || ((phoneDigits.length >= 10 && phoneDigits.length <= 13) ? _convFormatPhone(phoneDigits) : '')
@@ -12947,6 +12966,17 @@ async function loadConversasChats() {
   }
 }
 
+/* ---------- recover pushName from contact/message ---------- */
+function recoverPushNameFromContact(contact, lastMessageText) {
+  const name = String(contact.name || '').trim();
+  const pushName = String(contact.push_name || '').trim();
+  // Se o nome salvo for genérico (apenas telefone), tentar usar pushName da última mensagem
+  if (name && /^\d+$/.test(name.replace(/\D/g, '')) && pushName && !/^\d{4,}$/.test(pushName) && pushName !== 'Você') return pushName;
+  // Se o pushName salvo for genérico, usar o da última mensagem se for válido
+  if (!isGenericConvName(pushName, lastMessageText || '')) return pushName;
+  return name || pushName || '';
+}
+
 /* ---------- filter & render list ---------- */
 function _convSearchMessagesContent(term) {
   const q = String(term == null ? '' : term).trim();
@@ -12958,7 +12988,7 @@ function _convSearchMessagesContent(term) {
   const escaped = q.replace(/([%_\\])/g, '\\$1');
   return _supabase
     .from('messages')
-    .select('conversation_id')
+    .select('conversation_id, conversation:conversations!inner(membro_id)')
     .ilike('content_text', `%${escaped}%`)
     .limit(1000)
     .then(({ data, error }) => {
@@ -12967,7 +12997,23 @@ function _convSearchMessagesContent(term) {
         return;
       }
       if (seq !== conversasState._searchSeq) return;
-      conversasState._searchContentIds = new Set((data || []).map(r => r.conversation_id).filter(Boolean));
+      // Filtrar conversas pelo RLS: usuario so pode ver mensagens de conversas que ele tem acesso
+      const validConvIds = new Set();
+      (data || []).forEach(r => {
+        const convId = r.conversation_id;
+        if (convId) {
+          const convIndex = conversasState.allChats.findIndex(c => c._conversationId === convId);
+          if (convIndex >= 0) {
+            const conv = conversasState.allChats[convIndex];
+            const isAssignedToUser = conv.assigned_to === userId;
+            const isGisele = userId === '66b4a30e-bc9e-4190-af2e-ef89b730b8f5';
+            if (isAssignedToUser || isGisele) {
+              validConvIds.add(convId);
+            }
+          }
+        }
+      });
+      conversasState._searchContentIds = validConvIds;
       _convApplyFilter();
     })
     .catch(err => console.warn('[Conversas] Busca em mensagens exceção:', err));
@@ -12984,6 +13030,9 @@ function _convApplyFilter() {
       !!(contentIds && contentIds.has(c._conversationId))
     );
   }
+
+  // Oculte conversas que realmente tenham 0 mensagens (sem last_message_text e sem lead)
+  list = list.filter(c => !(c.last_message_text === '' || c.last_message_text === null) || c.lead_id || c.is_group);
 
   const f = conversasState.filter;
   // Conversas arquivadas ficam fora da lista principal (visíveis só na pasta Arquivadas)
