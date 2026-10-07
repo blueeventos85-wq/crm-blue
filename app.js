@@ -13316,6 +13316,7 @@ function _renderConvChatHeader(chat) {
       </div>
     </div>
     <div class="conv-chat-header-actions">
+      ${!isGroup && !chat.lead_id ? `<button id="btnConvCriarLead" title="Criar lead para este contato" style="width:auto;height:30px;padding:0 10px;background:var(--primary);color:#fff;display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;border-radius:8px;"><i data-lucide="user-plus"></i> Criar lead</button>` : ''}
       ${isGroup ? '<button id="btnConvGroupInfo" title="Informações do grupo e participantes" style="display:inline-flex;align-items:center;"><i data-lucide="info"></i></button>' : ''}
       <button id="btnConvEditName" title="Editar nome ${isGroup ? 'do grupo' : 'do contato'}" style="display:inline-flex;align-items:center;"><i data-lucide="edit-2"></i></button>
       ${!isGroup && chat.contact_phone ? `<button title="Telefone" onclick="window.open('https://wa.me/${chat.contact_phone}','_blank')"><i data-lucide="phone"></i></button>` : ''}
@@ -13325,6 +13326,7 @@ function _renderConvChatHeader(chat) {
   initIcons();
   header.querySelector('#btnConvEditName')?.addEventListener('click', convEditContactName);
   header.querySelector('#btnConvGroupInfo')?.addEventListener('click', _convOpenGroupInfoModal);
+  header.querySelector('#btnConvCriarLead')?.addEventListener('click', _convOpenCriarLeadModal);
 }
 
 /* ---------- informações do grupo / lista de participantes ---------- */
@@ -15302,17 +15304,10 @@ function _renderConvCrmPanel(chat) {
         ${leadId
           ? `<a class="conv-btn-link" href="#" onclick="event.preventDefault();window._convVerLeadNoCRM('${leadId}');">Ver lead no CRM</a>`
           : `<div class="conv-sync-lead" style="margin-top:10px;">
-              <div class="conv-crm-field">
-                <label>Empresa</label>
-                <select id="convSyncLeadCC" onchange="document.getElementById('convSyncLeadBtn').disabled = !this.value">
-                  <option value="">Selecione a empresa...</option>
-                  ${(conversasState.centrosCustoList || []).map(cc => `<option value="${cc.id}"${cc.id === centrosCustoId ? ' selected' : ''}>${_convHtmlEscape(cc.nome)}</option>`).join('')}
-                </select>
-              </div>
               <button class="btn btn-primary btn-sm" id="convSyncLeadBtn" style="width:100%;margin-top:6px;"
                 ${contactId && centrosCustoId ? '' : 'disabled'}
-                onclick="convSyncContactToLead('${contactId}', document.getElementById('convSyncLeadCC').value, '${membroId}')">
-                <i data-lucide="user-plus"></i> Sincronizar como Lead
+                onclick="window._convOpenCriarLeadModal()">
+                <i data-lucide="user-plus"></i> Criar lead
               </button>
               ${!contactId ? `<span class="conv-hint-text" style="display:block;margin-top:6px;font-size:11px;">Aguarde o contato ser criado para sincronizar</span>` : ''}
             </div>`
@@ -15474,6 +15469,83 @@ async function convAddNote(chatId, leadId) {
 }
 
 /* ---------- Sync Contact to Lead ---------- */
+/* ---------- criar lead a partir da conversa (contato não identificado) ---------- */
+function _convOpenCriarLeadModal() {
+  const chat = conversasState.allChats.find(c => c.id === conversasState.selectedChatId);
+  if (!chat || chat.is_group || chat.lead_id) return;
+  const rawPhone = String(chat.contact_phone || '').replace(/\D/g, '');
+  const phoneOk = rawPhone.length >= 10 && rawPhone.length <= 13;
+  const genericName = !chat.contact_name
+    || chat.contact_name === 'Contato sem identificação'
+    || /^\d+$/.test(chat.contact_name);
+  const nameEl = $('#convCriarLeadName');
+  const phoneEl = $('#convCriarLeadPhone');
+  const emailEl = $('#convCriarLeadEmail');
+  if (nameEl) nameEl.value = genericName ? '' : String(chat.contact_name || '');
+  if (phoneEl) phoneEl.value = phoneOk ? rawPhone : '';
+  if (emailEl) emailEl.value = '';
+  const overlay = $('#convCriarLeadOverlay');
+  const modal = $('#convCriarLeadModal');
+  if (overlay) overlay.classList.add('open');
+  if (modal) { modal.classList.add('open'); modal.scrollTop = 0; }
+  initIcons();
+  setTimeout(() => nameEl?.focus(), 60);
+}
+
+function _convCloseCriarLeadModal() {
+  const overlay = $('#convCriarLeadOverlay');
+  const modal = $('#convCriarLeadModal');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+  ['convCriarLeadName', 'convCriarLeadEmail', 'convCriarLeadPhone'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+}
+
+async function convCriarLeadFromModal() {
+  const chat = conversasState.allChats.find(c => c.id === conversasState.selectedChatId);
+  if (!chat) return;
+  const contactId = chat._contactId;
+  if (!contactId) { toast('Contato ainda não sincronizado — tente novamente em instantes', 'error'); return; }
+
+  const nome = ($('#convCriarLeadName')?.value || '').trim();
+  const email = ($('#convCriarLeadEmail')?.value || '').trim();
+  const telefone = ($('#convCriarLeadPhone')?.value || '').replace(/\D/g, '');
+  if (!nome) { toast('Informe o nome do lead', 'error'); return; }
+  if (telefone.length < 10 || telefone.length > 13) { toast('Telefone inválido', 'error'); return; }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('E-mail inválido', 'error'); return; }
+
+  const centrosCustoId = chat._centroCustoId || conversasState.selectedCentroCustoId || null;
+  const membroId = currentUser?.id || null;
+  const btn = $('#btnConvCriarLeadConfirm');
+  const btnOriginal = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="auth-spinner"></span> Criando...'; }
+
+  try {
+    const { data, error } = await _supabase.functions.invoke('sync-contact-to-lead', {
+      body: { contactId, centrosCustoId, membroId, nome, email, telefone }
+    });
+    if (error) throw new Error(error.message);
+    if (!data?.ok) throw new Error(data?.error || 'Erro ao criar lead');
+    chat.lead_id = data.leadId;
+    chat._leadData = { id: data.leadId, nome, email, telefone, temperatura: 'frio' };
+    chat.contact_email = email || '';
+    chat.temperature = 'frio';
+    _convCloseCriarLeadModal();
+    toast(data.message || 'Lead criado e conversa vinculada!');
+    _renderConvChatHeader(chat);
+    _renderConvCrmPanel(chat);
+    _convApplyFilter();
+    if (typeof refreshLeadsEClientsCache === 'function') refreshLeadsEClientsCache();
+  } catch (err) {
+    console.error('[Conversas] Erro ao criar lead:', err);
+    toast(err.message || 'Erro ao criar lead', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = btnOriginal; initIcons(); }
+  }
+}
+
 async function convSyncContactToLead(contactId, centrosCustoId, membroId) {
   const btn = event?.target?.closest('button');
   if (btn) {
@@ -16157,6 +16229,15 @@ function initConversas() {
   if (newSubmitBtn) newSubmitBtn.addEventListener('click', _convCreateChat);
   const newCancelBtn = document.getElementById('btnConvNewCancel');
   if (newCancelBtn) newCancelBtn.addEventListener('click', _convCloseNewModal);
+
+  const criarLeadClose = $('#btnConvCriarLeadClose');
+  const criarLeadCancel = $('#btnConvCriarLeadCancel');
+  const criarLeadOverlay = $('#convCriarLeadOverlay');
+  const criarLeadSubmit = $('#btnConvCriarLeadConfirm');
+  if (criarLeadClose) criarLeadClose.addEventListener('click', _convCloseCriarLeadModal);
+  if (criarLeadCancel) criarLeadCancel.addEventListener('click', _convCloseCriarLeadModal);
+  if (criarLeadOverlay) criarLeadOverlay.addEventListener('click', _convCloseCriarLeadModal);
+  if (criarLeadSubmit) criarLeadSubmit.addEventListener('click', convCriarLeadFromModal);
   if (leadSearch) leadSearch.addEventListener('input', _convLeadSearch);
   if (refreshBtn) refreshBtn.addEventListener('click', _convSyncContactsAndReload);
 
@@ -19522,6 +19603,8 @@ window.convSetAssignee = convSetAssignee;
 window.convSetPriority = convSetPriority;
 window.convAddNote = convAddNote;
 window.convSyncContactToLead = convSyncContactToLead;
+window._convOpenCriarLeadModal = _convOpenCriarLeadModal;
+window.convCriarLeadFromModal = convCriarLeadFromModal;
 window._convVerLeadNoCRM = function(leadId) {
   if (!leadId) return;
   setActivePage('crm');

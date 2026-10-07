@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { contactId, membroId, centrosCustoId } = await req.json()
+    const { contactId, membroId, centrosCustoId, nome, email, telefone } = await req.json()
 
     console.log('[sync-contact-to-lead] Payload recebido:', { contactId, membroId, centrosCustoId })
 
@@ -136,9 +136,20 @@ serve(async (req) => {
     }
 
     // 3. Criar o lead
+    const nomeLead = typeof nome === 'string' && nome.trim() ? nome.trim() : (contact.name || contact.phone)
+    const emailLead = typeof email === 'string' ? email.trim() : ''
+    const telefoneDigits = typeof telefone === 'string' ? telefone.replace(/\D/g, '') : ''
+    const finalTelefone = telefoneDigits || String(contact.phone || '').replace(/\D/g, '')
+    if (!finalTelefone) {
+      return new Response(JSON.stringify({ error: 'Telefone é obrigatório para criar o lead' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
     const leadPayload: Record<string, any> = {
-      telefone: contact.phone,
-      nome: contact.name || contact.phone,
+      telefone: finalTelefone,
+      nome: nomeLead,
+      email: emailLead,
       centro_custo_id: effectiveCCId,
       created_at: new Date().toISOString()
     }
@@ -192,12 +203,11 @@ serve(async (req) => {
       // Não falha a operação, apenas loga
     }
 
-    // 5. Atualizar conversa(s) abertas do contato com lead_id
+    // 5. Atualizar conversa(s) do contato com lead_id (todas — abertas, fechadas e arquivadas)
     const { error: updateConvError } = await supabase
       .from('conversations')
       .update({ lead_id: leadId, updated_at: new Date().toISOString() })
       .eq('contact_id', contactId)
-      .eq('status', 'open')
 
     if (updateConvError) {
       console.error('[sync-contact-to-lead] Erro ao atualizar conversa:', JSON.stringify(updateConvError, null, 2))

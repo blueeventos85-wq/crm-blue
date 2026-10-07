@@ -17,6 +17,7 @@ const appSource = readFileSync(join(root, 'app.js'), 'utf8');
 const waSource = readFileSync(join(root, 'src/lib/whatsapp/whatsapp-service.js'), 'utf8');
 const historyFnSource = readFileSync(join(root, 'supabase/functions/wa-sync-history/index.ts'), 'utf8');
 const webhookSource = readFileSync(join(root, 'supabase/functions/evolution-webhook/index.ts'), 'utf8');
+const syncLeadSource = readFileSync(join(root, 'supabase/functions/sync-contact-to-lead/index.ts'), 'utf8');
 
 function extrairFuncao(nome) {
   const inicio = appSource.indexOf(`function ${nome}(`);
@@ -183,6 +184,21 @@ describe('Conversas · sincronização de histórico', () => {
     assert.ok(webhookSource.includes('remoteJidAlt'), 'webhook não consulta remoteJidAlt');
     assert.ok(webhookSource.includes('usablePushName'), 'webhook sem fallback de pushName p/ grupo');
     assert.ok(webhookSource.includes('g?.remoteJid || g?.jid || g?.id'), 'groups.update ainda prefere id interno');
+  });
+
+  it('botão Criar lead existe na conversa e abre modal com nome/e-mail/telefone', () => {
+    assert.ok(appSource.includes('btnConvCriarLead'), 'botão btnConvCriarLead ausente no header');
+    assert.ok(appSource.includes('_convOpenCriarLeadModal'), 'handler de abertura do modal ausente');
+    assert.ok(appSource.includes('convCriarLeadFromModal'), 'função de criação de lead ausente');
+    assert.ok(appSource.includes('convCriarLeadName') && appSource.includes('convCriarLeadEmail') && appSource.includes('convCriarLeadPhone'), 'campos do modal incompletos');
+    assert.ok(appSource.includes("invoke('sync-contact-to-lead'"), 'fluxo não usa a Edge Function sync-contact-to-lead');
+  });
+
+  it('sync-contact-to-lead aceita nome/e-mail/telefone e vincula todas as conversas do contato', () => {
+    assert.ok(syncLeadSource.includes('nome, email, telefone'), 'parâmetros nome/email/telefone ausentes');
+    assert.ok(syncLeadSource.includes('email: emailLead'), 'e-mail não é gravado no lead');
+    assert.ok(/from\('conversations'\)[\s\S]{0,200}?eq\('contact_id', contactId\)/.test(syncLeadSource), 'vínculo de conversa ausente');
+    assert.ok(!/eq\('contact_id', contactId\)\s*\.eq\('status', 'open'\)/.test(syncLeadSource), 'vínculo restrito a conversas abertas');
   });
 });
 
