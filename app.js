@@ -13045,8 +13045,8 @@ function _convApplyFilter() {
     );
   }
 
-  // Oculte conversas que realmente tenham 0 mensagens (sem last_message_text e sem lead)
-  list = list.filter(c => !(c.last_message_text === '' || c.last_message_text === null) || c.lead_id || c.is_group);
+  // Oculte conversas com 0 mensagens e sem lead associado.
+  list = list.filter(c => c.last_message || c.last_message_at || c.lead_id || c.is_group);
 
   const f = conversasState.filter;
   // Conversas arquivadas ficam fora da lista principal (visíveis só na pasta Arquivadas)
@@ -13065,7 +13065,7 @@ function _convApplyFilter() {
     else if (f === 'unidentified') list = list.filter(c => !c.is_group && !c.lead_id);
   }
 
-  list.sort((a, b) => String(b.last_message_at || '').localeCompare(String(a.last_message_at || '')));
+  list.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
   conversasState.chats = list;
   _renderConvChatList();
   _convUpdateStats();
@@ -13180,15 +13180,15 @@ function _convOpenCardMenu(e, chatId) {
 
 function _convUpdateStats() {
   const all = conversasState.allChats;
-  const $ = id => document.getElementById(id);
+  const getEl = id => document.getElementById(id);
   const unread = el => el && (el.textContent = all.filter(c => (c.unread_count || 0) > 0).length);
   const hot = el => el && (el.textContent = all.filter(c => c.temperature === 'quente').length);
   const online = el => el && (el.textContent = all.filter(c => c.status === 'open').length);
   const groups = el => el && (el.textContent = all.filter(c => c.is_group === true).length);
-  unread($('#convStatUnread'));
-  hot($('#convStatHot'));
-  online($('#convStatOnline'));
-  groups($('#convStatGroups'));
+  unread(getEl('convStatUnread'));
+  hot(getEl('convStatHot'));
+  online(getEl('convStatOnline'));
+  groups(getEl('convStatGroups'));
   const unassigned = all.filter(c => !c.is_group && !c.lead_id).length;
   const archived = all.filter(c => c.is_archived === true).length;
   const el = $('#convUnidentifiedCount');
@@ -13596,7 +13596,7 @@ async function _convLoadMessages(chatId) {
 }
 
 const CONV_MSG_PAGE = 80;
-let CONV_MSG_COLS = 'id, conversation_id, membro_id, sender_type, sender_jid, sender_name, sender_phone, content_type, content_text, media_url, mime_type, message_id, status, is_deleted, quoted_message_id, quoted_content, quoted_sender, created_at, media_preview';
+let CONV_MSG_COLS = 'id, conversation_id, membro_id, sender_type, sender_jid, sender_name, sender_phone, content_type, content_text, media_url, mime_type, message_id, status, is_deleted, quoted_message_id, quoted_content, quoted_sender, created_at';
 
 async function _convQueryMsgPage(chatId, before) {
   const run = () => {
