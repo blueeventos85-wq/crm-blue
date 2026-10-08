@@ -71,9 +71,10 @@ describe('Conversas · contatos não identificados', () => {
       `${filterSrc}; return _convApplyFilter;`
     );
     const chats = [
-      { id: '1', is_group: false, lead_id: null, contact_name: 'Sem Lead' },
-      { id: '2', is_group: false, lead_id: 'lead-1', contact_name: 'Com Lead' },
+      { id: '1', is_group: false, lead_id: null, contact_name: 'Sem Lead', last_message: 'oi', last_message_at: '2026-10-07T10:00:00+00:00' },
+      { id: '2', is_group: false, lead_id: 'lead-1', contact_name: 'Com Lead', last_message: 'oi', last_message_at: '2026-10-07T10:00:00+00:00' },
       { id: '3', is_group: true, lead_id: null, contact_name: 'Grupo' },
+      { id: '4', is_group: false, lead_id: null, contact_name: 'Vazia Sem Lead' },
     ];
     const conversasState = { allChats: chats, filter: 'unidentified', searchTerm: '' };
     const apply = makeFilter(conversasState, () => true, () => {}, () => {}, () => null);
