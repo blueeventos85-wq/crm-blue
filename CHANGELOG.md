@@ -227,3 +227,126 @@ com a aba "Lembrete de Reunião" do Dashboard via uma fonte única de verdade (`
 - Calendário grid — usa `meetings` automaticamente, layout idêntico
 - Home, Clientes, Configurações — intactos
 
+
+## v1.5.0 · 10/10/2026 — Módulo Financeiro (extrato · dashboard · n8n/WhatsApp)
+
+### 💰 Novo módulo "Financeiro"
+- **Sidebar**: item "Financeiro" (`circle-dollar-sign`) após Contratos + card na Home
+- **Rota** `/financeiro` (`#page-financeiro`): filtros de período (Mês/Semana/Hoje/Personalizado),
+  filtro por empresa ("Consolidado"), filtro por usuário (admin) e busca
+- **Dashboard**: cards Receitas (verde) / Despesas (vermelho) / Saldo (dinâmico),
+  doughnut Chart.js "Despesas por categoria" e extrato com editar/excluir
+- **Modal de transação**: abas Despesa/Renda, valor com máscara BRL, grade de categorias
+  com `+ Criar Categoria` (mini-modal com nome/tipo/ícone/cor), data Hoje/Ontem/calendário,
+  empresa e observação; validação local (valor > 0, categoria e data obrigatórias)
+- **Permissões**: `can_financeiro` (coluna em `membros_permissoes`, padrão só Administrador)
+  + CRUD granular `can_financeiro_{create,read,update,delete}` na matriz de permissões
+
+### 🔧 Correção (10/10/2026) — admin bloqueado em "Nova Transação"
+- `can()` agora tem bypass de Administrador para `can_financeiro*`
+- `loadUserPermissions()` semeia `merged.permissions` com as chaves CRUD do
+  perfil (`PERFIL_DEFAULTS`/`perfis_permissoes`) — antes só o JSONB individual
+  (stale, sem as chaves novas) alimentava o cache e `can()` retornava false
+- Backfill no banco: `perfis_permissoes` e `membros_permissoes.permissions`
+  dos administradores com `can_financeiro_{create,read,update,delete: true}`
+
+### 🌙 Tema escuro do módulo Financeiro (10/10/2026)
+- `#page-financeiro`, `#finTransacaoModal` e `#finCategoriaModal` reescritos sobre as
+  variáveis do `.theme-dark` (`--surface-bg`, `--card-bg`, `--gray-*`, `--text-*`)
+- Valores monetários com saturação confortável no escuro: receita `#22C55E`,
+  despesa/saldo negativo `#EF4444`
+- Grade de categorias e inputs dos modais em `--surface-bg` (contraste contra o card),
+  segmented Despesa/Renda com estados ativos `#F87171`/`#4ADE80`
+- Extrato com zebra sutil e hover nos dois temas; badges de origem translúcidas
+  (sistema/whatsapp/n8n) legíveis no claro e no escuro
+- Doughnut: legenda e tooltips com cores por tema + re-render automático ao alternar
+  o Dark Mode (`MutationObserver` no `<html>`)
+
+### 🗄 Banco (migration `20261010120000_financeiro_module.sql`)
+- `financeiro_categorias` (+ seed de 8 categorias padrão) e `financeiro_transacoes`
+  (`empresa_id VARCHAR(100)` aceita UUID da UI e slug do n8n, ex.: `"blue_eventos"`)
+- Trigger `financeiro_assoc_categoria`: auto-associa `categoria_id` por `categoria_nome`
+  (case-insensitive, prioriza compartilhadas) — payload simples do n8n funciona direto
+- RLS `TO authenticated`: SELECT = próprias + sistema (`user_id IS NULL`) + admin;
+  INSERT = próprias; UPDATE/DELETE = próprias ou admin. n8n usa SERVICE_ROLE_KEY (bypass)
+- Executada via `supabase db push` (histórico remoto alinhado; dedupe de 12 pares de
+  `contacts` com backup em `backup_*_dedupe_20261010` antes do índice único)
+
+### 🔌 Payload n8n (exemplo)
+```json
+{
+  "tipo": "despesa",
+  "valor": 1200.5,
+  "categoria_nome": "Aluguel",
+  "descricao": "Aluguel do escritório",
+  "data_transacao": "2026-10-10",
+  "empresa_id": "blue_eventos",
+  "origem": "whatsapp"
+}
+```
+Inserção direta na PostgREST com SERVICE_ROLE_KEY; `categoria_id` é resolvido pelo trigger.
+
+### 🗂 Arquivos alterados
+| Arquivo | O que mudou |
+|---|---|
+| `supabase/migrations/20261010120000_financeiro_module.sql` | Tabelas, seed, trigger, RLS e `can_financeiro` |
+| `index.html` | Item de sidebar, `#page-financeiro`, `#finTransacaoModal` e `#finCategoriaModal` |
+| `app.js` | Registros de rota/permissão (8 pontos), `PERM_CRUD_KEYS`/`PERFIL_DEFAULTS`/`PERM_MATRIX_ROWS`, bloco Financeiro (`initFinanceiro`…`saveFinCategoria`) |
+| `supabaseClient.js` | `fetch/insert/update/deleteFinanceiro{Categorias,Transacoes}Supabase` + cache |
+| `styles.css` | Bloco `.fin-*` (toolbar, cards, extrato, chart, modal, tema escuro) |
+| `CHANGELOG.md` | Esta entrada |
+
+## v1.6.0 · 11/10/2026 — Visibilidade dinâmica da Sidebar (matriz de permissões)
+
+### 🔐 Novo grupo "Módulos e Sidebar" na matriz (aba Permissões do Administrador)
+- 12 linhas — um por item de menu — com checkboxes por perfil
+  (Administrador · Atendente · Marketing · Pré Vendas · Membro):
+  Dashboard, CRM / Pipeline, Conversas / WhatsApp, Contratos, Financeiro,
+  Cliente da Base, Calendário, Rotina Blue, Pomodoro, Configurações,
+  Auditoria e Calibragem
+- Coluna **Administrador travada** (`checked disabled`) neste grupo —
+  admin nunca perde acesso a módulos
+- Persistência pelo pipeline existente: JSONB de `perfis_permissoes` +
+  propagação para as colunas booleanas `can_*` de `membros_permissoes`
+  (chaves internas `dashboard`, `crm`… → `can_dashboard`, `can_crm`…)
+
+### 🧭 Filtragem e proteção (pipeline já dinâmico, agora configurável)
+- `renderSidebar()` e `renderHomeModules()` já excluem do DOM os itens sem
+  permissão — agora controlável pela matriz por perfil/setor
+- `setActivePage()` redireciona com toast "Você não tem permissão…" ao
+  acessar módulo restrito (não existe hash-router; toda navegação passa por ele)
+- Bypass explícito de Administrador em `isPageAllowed()` e no guard de
+  `setActivePage()` — garantia de acesso irrestrito mesmo se a coluna
+  Admin da matriz for desmarcada
+
+### 🗂 Arquivos alterados
+| Arquivo | O que mudou |
+|---|---|
+| `app.js` | `PERM_MATRIX_ROWS` (+grupo), `renderPermMatrix` (coluna Admin travada), `isPageAllowed` e guard de `setActivePage` (bypass admin) |
+| `CHANGELOG.md` | Esta entrada |
+
+## v1.6.1 · 11/10/2026 — Correção: coluna "Equipe" na tabela de Membros
+
+### 🐛 Bug
+- A aba **Membros** do Administrador exibia apenas o Cargo; a equipe salva no
+  modal de edição não aparecia — `loadMembersFromSupabase()` não selecionava a
+  coluna `equipe` do Supabase (`m.equipe` era sempre `undefined` na tabela)
+
+### 🔧 Correções
+- `select` de membros agora inclui `equipe` (causa raiz)
+- Nova coluna **"Equipe"** entre Cargo e Status no cabeçalho (`index.html`)
+- `renderMemberRow()`: célula da Equipe com badge neutro `admin-badge-team`
+  (cinza sutil), distinto do badge colorido do Cargo (perfil de permissões);
+  equipe vazia exibe "—"
+- `colspan` do estado vazio atualizado de 6 para 7
+- Badge com override de tema escuro (`#94A3B8` sobre translúcido)
+- Atualização reativa já existente (`handleMemberSave` → `loadMembersFromSupabase`)
+  agora reflete a equipe alterada ao fechar o modal
+
+### 🗂 Arquivos alterados
+| Arquivo | O que mudou |
+|---|---|
+| `app.js` | `select` com `equipe`, `renderMemberRow` (+célula Equipe), colspan 7 |
+| `index.html` | `<th>Equipe</th>` na tabela de membros |
+| `styles.css` | `.admin-badge-team` (+ override dark) |
+| `CHANGELOG.md` | Esta entrada |

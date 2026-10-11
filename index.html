@@ -133,6 +133,12 @@
             </a>
           </li>
           <li>
+            <a href="#" class="nav-item" data-page="financeiro">
+              <i data-lucide="circle-dollar-sign"></i>
+              <span>Financeiro</span>
+            </a>
+          </li>
+          <li>
             <a href="#" class="nav-item" data-page="calendario">
               <i data-lucide="calendar-days"></i>
               <span>Calendário</span>
@@ -747,6 +753,74 @@
           </div>
         </section>
 
+        <!-- ============ FINANCEIRO ============ -->
+        <section class="page" id="page-financeiro">
+          <div class="fin-toolbar">
+            <div class="seg-control" id="finPeriodSeg" role="tablist" aria-label="Filtro de período">
+              <button class="seg active" data-period="month" role="tab" aria-selected="true">Mês</button>
+              <button class="seg" data-period="week" role="tab" aria-selected="false">Semana</button>
+              <button class="seg" data-period="today" role="tab" aria-selected="false">Hoje</button>
+              <button class="seg" data-period="custom" role="tab" aria-selected="false">Personalizado</button>
+            </div>
+            <div class="fin-custom-range" id="finCustomRange" style="display:none">
+              <input type="date" id="finStartDate" aria-label="Data início">
+              <span>até</span>
+              <input type="date" id="finEndDate" aria-label="Data fim">
+            </div>
+            <select id="finEmpresaFilter" class="fin-select" aria-label="Filtrar por empresa">
+              <option value="all">Consolidado (todas empresas)</option>
+            </select>
+            <select id="finUserFilter" class="fin-select" aria-label="Filtrar por usuário" hidden>
+              <option value="all">Todos os usuários</option>
+            </select>
+            <div class="fin-search-wrap">
+              <i data-lucide="search"></i>
+              <input type="search" id="finSearch" placeholder="Buscar descrição ou categoria..." aria-label="Buscar transações" autocomplete="off" />
+            </div>
+            <button class="btn-primary fin-new-btn" id="finNewBtn" type="button">
+              <i data-lucide="plus"></i> Nova Transação
+            </button>
+          </div>
+
+          <div class="fin-cards" id="finCards">
+            <div class="fin-card fin-card-receitas">
+              <span class="fin-card-label"><i data-lucide="trending-up"></i> Receitas</span>
+              <strong id="finCardReceitas">R$ 0,00</strong>
+            </div>
+            <div class="fin-card fin-card-despesas">
+              <span class="fin-card-label"><i data-lucide="trending-down"></i> Despesas</span>
+              <strong id="finCardDespesas">R$ 0,00</strong>
+            </div>
+            <div class="fin-card fin-card-saldo" id="finCardSaldoWrap">
+              <span class="fin-card-label"><i data-lucide="wallet"></i> Saldo</span>
+              <strong id="finCardSaldo">R$ 0,00</strong>
+            </div>
+          </div>
+
+          <div class="fin-main">
+            <div class="fin-list-wrap">
+              <div class="fin-list-head">
+                <h3>Extrato</h3>
+                <span class="fin-count" id="finCount">0 transações</span>
+              </div>
+              <div class="fin-list" id="finList"></div>
+            </div>
+            <div class="fin-chart-wrap">
+              <div class="fin-chart-head">
+                <div class="seg-control fin-chart-tabs" id="finChartTabs" role="tablist" aria-label="Tipo do gráfico de categorias">
+                  <button class="seg active" data-tipo="despesa" role="tab" aria-selected="true">Despesas</button>
+                  <button class="seg" data-tipo="receita" role="tab" aria-selected="false">Receitas</button>
+                </div>
+              </div>
+              <div class="fin-chart-box">
+                <canvas id="finChartCategorias"></canvas>
+              </div>
+              <p class="fin-chart-empty" id="finChartEmpty">Nenhuma despesa registrada neste período</p>
+              <div class="fin-chart-legend" id="finChartLegend"></div>
+            </div>
+          </div>
+        </section>
+
         <!-- ============ ROTINA BLUE ============ -->
         <section class="page" id="page-rotina">
           <div class="rotina-layout">
@@ -1255,7 +1329,7 @@
         </section>
 
         <!-- ============ CONVERSAS ============ -->
-        <section class="page" id="page-conversas">
+        <section class="page mobile-show-list" id="page-conversas">
           <!-- Cabeçalho da Central -->
           <div class="conv-header">
             <div class="conv-header-left">
@@ -1351,6 +1425,11 @@
               <div class="conv-crm-content" id="convCrmContent" style="display:none;"></div>
             </div>
           </div>
+
+          <!-- FAB: nova conversa (somente mobile, visão lista) -->
+          <button class="conv-fab" id="btnConvFabNew" type="button" aria-label="Nova conversa" title="Nova conversa">
+            <i data-lucide="message-circle"></i>
+          </button>
         </section>
 
         <!-- Modal: Nova Conversa -->
@@ -1753,6 +1832,7 @@
                     <th>Nome</th>
                     <th>E-mail</th>
                     <th>Cargo</th>
+                    <th>Equipe</th>
                     <th>Status</th>
                     <th>Cadastro</th>
                     <th>Ações</th>
@@ -2844,7 +2924,7 @@
 
           <div class="form-group">
             <label>Número (telefone) <span class="req">*</span></label>
-            <input type="tel" name="telefone" required inputmode="numeric" placeholder="5585999999999" />
+            <input type="tel" name="telefone" required inputmode="tel" maxlength="25" placeholder="5585999999999" />
             <span class="form-error" data-error="telefone"></span>
           </div>
           <div class="form-group">
@@ -3109,6 +3189,7 @@
           <label>Hora de término</label>
           <input type="time" name="calTimeEnd" id="calEventTimeEnd" />
           <span class="form-error" data-error="calTimeEnd"></span>
+          <span class="cal-overnight-badge" id="calOvernightHint" hidden>+1 dia / termina na madrugada seguinte</span>
         </div>
 
         <div class="form-group">
@@ -3336,6 +3417,165 @@
       <div class="modal-foot-actions">
         <button type="button" class="btn-ghost" id="contratoDeleteBack">Cancelar</button>
         <button type="button" class="btn-primary" style="background:#E14C4C" id="contratoDeleteConfirm"><i data-lucide="trash-2"></i> Excluir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MODAL: TRANSAÇÃO FINANCEIRA ============ -->
+  <div class="modal-overlay" id="finTransacaoOverlay"></div>
+  <div class="modal" id="finTransacaoModal" role="dialog" aria-labelledby="finTransacaoTitle">
+    <div class="modal-head">
+      <div class="modal-head-left">
+        <div class="modal-avatar" id="finTransacaoAvatar"><i data-lucide="circle-dollar-sign"></i></div>
+        <div>
+          <h2 id="finTransacaoTitle">Nova transação</h2>
+          <p class="modal-meta">Registro manual de receita ou despesa</p>
+        </div>
+      </div>
+      <div class="modal-head-right">
+        <button class="btn-ghost small" id="finTransacaoDeleteBtn" style="display:none" title="Excluir">
+          <i data-lucide="trash-2"></i> Excluir
+        </button>
+        <button class="icon-btn small" id="finTransacaoCloseBtn" title="Fechar">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="modal-body">
+      <div class="fin-type-tabs" id="finTypeTabs" role="tablist" aria-label="Tipo de transação">
+        <button type="button" class="fin-type-tab active" data-tipo="despesa" role="tab" aria-selected="true">
+          <i data-lucide="trending-down"></i> Despesa
+        </button>
+        <button type="button" class="fin-type-tab" data-tipo="receita" role="tab" aria-selected="false">
+          <i data-lucide="trending-up"></i> Renda
+        </button>
+      </div>
+
+      <div class="form-group fin-valor-group">
+        <label>Valor <span class="req">*</span></label>
+        <input type="text" id="finValor" class="fin-valor-input" placeholder="R$ 0,00" inputmode="decimal" autocomplete="off" />
+        <span class="form-error" data-error="finValor"></span>
+      </div>
+
+      <div class="form-group">
+        <label>Categoria <span class="req">*</span></label>
+        <div class="fin-cat-grid" id="finCategorias" role="radiogroup" aria-label="Categoria"></div>
+        <span class="form-error" data-error="finCategoria"></span>
+      </div>
+
+      <div class="form-grid-2">
+        <div class="form-group">
+          <label>Data <span class="req">*</span></label>
+          <div class="fin-date-quick">
+            <button type="button" class="chip-toggle" data-quick="today">Hoje</button>
+            <button type="button" class="chip-toggle" data-quick="yesterday">Ontem</button>
+            <input type="date" id="finData" aria-label="Data da transação" />
+          </div>
+          <span class="form-error" data-error="finData"></span>
+        </div>
+
+        <div class="form-group">
+          <label>Empresa</label>
+          <select id="finEmpresa">
+            <option value="">Sem empresa</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group full">
+        <label>Observação</label>
+        <textarea id="finObservacao" rows="3" placeholder="Descrição adicional da transação..."></textarea>
+      </div>
+      <input type="hidden" id="finTransacaoId" />
+    </div>
+
+    <div class="modal-foot">
+      <div class="modal-foot-meta"></div>
+      <div class="modal-foot-actions">
+        <button class="btn-ghost" id="finTransacaoCancelBtn">Cancelar</button>
+        <button class="btn-primary" id="finTransacaoSaveBtn">
+          <i data-lucide="save"></i> Salvar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MODAL: CRIAR CATEGORIA ============ -->
+  <div class="modal-overlay" id="finCategoriaOverlay"></div>
+  <div class="modal modal-sm" id="finCategoriaModal" role="dialog" aria-labelledby="finCategoriaTitle">
+    <div class="modal-head">
+      <div class="modal-head-left">
+        <div class="modal-avatar"><i data-lucide="tag"></i></div>
+        <div>
+          <h2 id="finCategoriaTitle">Criar categoria</h2>
+          <p class="modal-meta">Nova categoria para despesas ou receitas</p>
+        </div>
+      </div>
+      <div class="modal-head-right">
+        <button class="icon-btn small" id="finCategoriaCloseBtn" title="Fechar">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Nome <span class="req">*</span></label>
+        <input type="text" id="finCatNome" placeholder="Ex: Marketing" maxlength="100" autocomplete="off" />
+        <span class="form-error" data-error="finCatNome"></span>
+      </div>
+
+      <div class="form-group">
+        <label>Tipo <span class="req">*</span></label>
+        <select id="finCatTipo">
+          <option value="despesa">Despesa</option>
+          <option value="receita">Receita</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Ícone</label>
+        <select id="finCatIcone">
+          <option value="Tag">Etiqueta</option>
+          <option value="Home">Casa</option>
+          <option value="Utensils">Alimentação</option>
+          <option value="Car">Carro</option>
+          <option value="HeartPulse">Saúde</option>
+          <option value="Smile">Lazer</option>
+          <option value="GraduationCap">Educação</option>
+          <option value="TrendingUp">Receita</option>
+          <option value="Briefcase">Trabalho</option>
+          <option value="Wrench">Manutenção</option>
+          <option value="Gift">Presente</option>
+          <option value="Plane">Viagem</option>
+          <option value="Smartphone">Tecnologia</option>
+          <option value="MoreHorizontal">Outros</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Cor</label>
+        <div class="color-picker" id="finCatCorPicker" role="radiogroup" aria-label="Cor da categoria">
+          <button type="button" class="color-swatch active" data-color="#3b82f6" style="background:#3b82f6" role="radio" aria-checked="true" aria-label="Azul"></button>
+          <button type="button" class="color-swatch" data-color="#10b981" style="background:#10b981" role="radio" aria-checked="false" aria-label="Verde"></button>
+          <button type="button" class="color-swatch" data-color="#ef4444" style="background:#ef4444" role="radio" aria-checked="false" aria-label="Vermelho"></button>
+          <button type="button" class="color-swatch" data-color="#eab308" style="background:#eab308" role="radio" aria-checked="false" aria-label="Amarelo"></button>
+          <button type="button" class="color-swatch" data-color="#8b5cf6" style="background:#8b5cf6" role="radio" aria-checked="false" aria-label="Roxo"></button>
+          <button type="button" class="color-swatch" data-color="#6366f1" style="background:#6366f1" role="radio" aria-checked="false" aria-label="Índigo"></button>
+          <button type="button" class="color-swatch" data-color="#ec4899" style="background:#ec4899" role="radio" aria-checked="false" aria-label="Rosa"></button>
+          <button type="button" class="color-swatch" data-color="#64748b" style="background:#64748b" role="radio" aria-checked="false" aria-label="Cinza"></button>
+        </div>
+        <input type="hidden" id="finCatCor" value="#3b82f6" />
+      </div>
+    </div>
+
+    <div class="modal-foot">
+      <div class="modal-foot-actions">
+        <button class="btn-ghost" id="finCategoriaCancelBtn">Cancelar</button>
+        <button class="btn-primary" id="finCategoriaSaveBtn">
+          <i data-lucide="save"></i> Salvar
+        </button>
       </div>
     </div>
   </div>

@@ -876,6 +876,7 @@ function renderMemberRow(m) {
     <td><div class="admin-user-cell"><span class="admin-avatar">${escapeHtml(initials)}</span> ${escapeHtml(m.nome || '')}</div></td>
     <td>${escapeHtml(m.email || '')}</td>
     <td><span class="admin-badge ${badgeClass}">${escapeHtml(m.cargo || '—')}</span></td>
+    <td><span class="admin-badge admin-badge-team">${escapeHtml(m.equipe || '—')}</span></td>
     <td><span class="admin-status admin-status-ativo">${escapeHtml(m.status || 'Ativo')}</span></td>
     <td>${m.created_at ? new Date(m.created_at).toLocaleDateString('pt-BR') : '—'}</td>
     <td class="admin-actions-cell">
@@ -891,7 +892,7 @@ async function loadMembersFromSupabase() {
   console.log('[Admin] loadMembersFromSupabase called');
   if (!_supabase) { console.error('[Admin] _supabase é null!'); return; }
   try {
-    const { data, error } = await _supabase.from('membros').select('id, nome, email, cargo, foto_url, centro_custo_id, auth_user_id, created_at').order('created_at', { ascending: false });
+    const { data, error } = await _supabase.from('membros').select('id, nome, email, cargo, equipe, foto_url, centro_custo_id, auth_user_id, created_at').order('created_at', { ascending: false });
     if (error) {
       console.error('[Admin] Erro ao buscar membros:', error.message, error.code, error.details, error.hint);
       return;
@@ -920,7 +921,7 @@ async function loadMembersFromSupabase() {
     tbody.innerHTML = '';
 
     if (_adminMembersCache.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted-text)">Nenhum membro cadastrado</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted-text)">Nenhum membro cadastrado</td></tr>';
       return;
     }
 
@@ -949,6 +950,8 @@ const PERM_CRUD_KEYS = [
   'can_conversas_transferir', 'can_conversas_delete_msg', 'can_conversas_sync_lead',
   // Calendário
   'can_calendario_create', 'can_calendario_read', 'can_calendario_update', 'can_calendario_delete',
+  // Financeiro
+  'can_financeiro_create', 'can_financeiro_read', 'can_financeiro_update', 'can_financeiro_delete',
   // Rotina
   'can_rotina_create', 'can_rotina_read', 'can_rotina_update', 'can_rotina_delete',
   // Config
@@ -965,7 +968,7 @@ const PERM_CRUD_KEYS = [
 /* ── Perfil defaults globais (expandido com CRUD) ── */
 const PERFIL_DEFAULTS = {
   'Administrador': {
-    home: true, dashboard: true, crm: true, contratos: true, cliente_base: true, calendario: true,
+    home: true, dashboard: true, crm: true, contratos: true, financeiro: true, cliente_base: true, calendario: true,
     rotina_blue: true, pomodoro: true, conversas: true, configuracoes: true,
     auditoria: true, administrador: true,
     calibragem: true,
@@ -1055,6 +1058,10 @@ function can(permKey) {
   if (!cache) return true; // fallback permissivo se cache não carregado
   // Colunas booleanas (sidebar/modules)
   if (cache[permKey] === true) return true;
+  // Administrador tem permissão total no módulo Financeiro (bypass)
+  if (typeof permKey === 'string' && permKey.startsWith('can_financeiro') && isCurrentUserAdmin()) {
+    return true;
+  }
   // JSONB granular (CRUD)
   return cache.permissions?.[permKey] === true;
 }
@@ -1104,6 +1111,20 @@ async function loadPermissionsFromSupabase() {
 }
 
 const PERM_MATRIX_ROWS = [
+  { group: 'Módulos e Sidebar', perms: [
+    { key: 'dashboard', label: 'Dashboard' },
+    { key: 'crm', label: 'CRM / Pipeline' },
+    { key: 'conversas', label: 'Conversas / WhatsApp' },
+    { key: 'contratos', label: 'Contratos' },
+    { key: 'financeiro', label: 'Financeiro' },
+    { key: 'cliente_base', label: 'Cliente da Base' },
+    { key: 'calendario', label: 'Calendário' },
+    { key: 'rotina_blue', label: 'Rotina Blue' },
+    { key: 'pomodoro', label: 'Pomodoro' },
+    { key: 'configuracoes', label: 'Configurações' },
+    { key: 'auditoria', label: 'Auditoria' },
+    { key: 'calibragem', label: 'Calibragem' },
+  ]},
   { group: 'Contratos', perms: [
     { key: 'can_contratos_create', label: 'Criar Contrato' },
     { key: 'can_contratos_read', label: 'Visualizar Contratos' },
@@ -1136,6 +1157,12 @@ const PERM_MATRIX_ROWS = [
     { key: 'can_calendario_read', label: 'Visualizar Calendário' },
     { key: 'can_calendario_update', label: 'Editar Evento' },
     { key: 'can_calendario_delete', label: 'Apagar Evento' },
+  ]},
+  { group: 'Financeiro', perms: [
+    { key: 'can_financeiro_create', label: 'Criar Transação' },
+    { key: 'can_financeiro_read', label: 'Visualizar Financeiro' },
+    { key: 'can_financeiro_update', label: 'Editar Transação' },
+    { key: 'can_financeiro_delete', label: 'Apagar Transação' },
   ]},
   { group: 'Rotina Blue', perms: [
     { key: 'can_rotina_create', label: 'Criar Tarefa' },
@@ -1183,10 +1210,16 @@ function renderPermMatrix(permMap, profilePermsFromDB = {}) {
   let html = '';
   PERM_MATRIX_ROWS.forEach(({ group, perms }) => {
     html += `<tr class="perm-group-header"><td colspan="7" class="perm-group-label">${group}</td></tr>`;
+    const isSidebarGroup = group === 'Módulos e Sidebar';
     perms.forEach(({ key, label }) => {
       html += `<tr data-perm-key="${key}">`;
       html += `<td class="perm-name">${escapeHtml(label)}</td>`;
       PERM_MATRIX_COLS.forEach(col => {
+        // Administrador tem acesso irrestrito aos módulos: coluna travada e marcada
+        if (isSidebarGroup && col.key === 'administrador') {
+          html += `<td style="text-align:center"><input type="checkbox" class="perm-matrix-check" data-perm="${key}" data-profile="${col.key}" checked disabled title="Administrador sempre acessa todos os módulos"></td>`;
+          return;
+        }
         const checked = profilePerms[col.key]?.[key] === true;
         html += `<td style="text-align:center"><input type="checkbox" class="perm-matrix-check" data-perm="${key}" data-profile="${col.key}"${checked ? ' checked' : ''}></td>`;
       });
@@ -3242,6 +3275,7 @@ const _sidebarMenuItems = [
     { page: 'crm', icon: 'kanban-square', label: 'CRM' },
     { page: 'conversas', icon: 'message-circle', label: 'Conversas' },
     { page: 'contratos', icon: 'file-text', label: 'Contratos' },
+    { page: 'financeiro', icon: 'circle-dollar-sign', label: 'Financeiro' },
     { page: 'clientes', icon: 'users', label: 'Cliente da Base' },
     { page: 'calendario', icon: 'calendar-days', label: 'Calendário' },
     { page: 'rotina', icon: 'clipboard-list', label: 'Rotina Blue' },
@@ -3257,7 +3291,7 @@ const _sidebarMenuItems = [
 
 const _permKeyMap = {
   home: 'can_home', dashboard: 'can_dashboard', crm: 'can_crm',
-  contratos: 'can_contratos', clientes: 'can_cliente_base', calendario: 'can_calendario',
+  contratos: 'can_contratos', financeiro: 'can_financeiro', clientes: 'can_cliente_base', calendario: 'can_calendario',
   rotina: 'can_rotina_blue', pomodoro: 'can_pomodoro',
   conversas: 'can_conversas', configuracoes: 'can_configuracoes',
   auditoria: 'can_auditoria', administrador: 'can_administrador',
@@ -3265,14 +3299,14 @@ const _permKeyMap = {
 };
 
 const _sidebarPermKeys = [
-  'can_home','can_dashboard','can_crm','can_contratos','can_cliente_base',
+  'can_home','can_dashboard','can_crm','can_contratos','can_financeiro','can_cliente_base',
   'can_calendario','can_rotina_blue','can_pomodoro','can_conversas','can_configuracoes',
   'can_auditoria','can_administrador','can_obrigacoes','can_documentos','can_suporte','can_calibragem'
 ];
 
 const _profileToPermKey = {
   home: 'can_home', dashboard: 'can_dashboard', crm: 'can_crm',
-  contratos: 'can_contratos', cliente_base: 'can_cliente_base', calendario: 'can_calendario',
+  contratos: 'can_contratos', financeiro: 'can_financeiro', cliente_base: 'can_cliente_base', calendario: 'can_calendario',
   rotina_blue: 'can_rotina_blue', pomodoro: 'can_pomodoro', conversas: 'can_conversas',
   configuracoes: 'can_configuracoes', auditoria: 'can_auditoria', administrador: 'can_administrador',
   calibragem: 'can_calibragem', delete_telefone: 'can_delete_cliente_telefone',
@@ -3388,6 +3422,15 @@ async function loadUserPermissions() {
   // Use authoritative perfil from membros.cargo — never override with membros_permissoes.perfil
   merged.perfil = authoritativePerfil;
 
+  // Step 5b: CRUD granular — defaults do perfil (PERFIL_DEFAULTS) alimentam o
+  // JSONB merged. Sem isso, chaves novas (ex.: can_financeiro_*) só existiriam
+  // em memberPerm.permissions depois de um save manual na matriz, e can()
+  // retornava false para perfis que as têm true por padrão (Administrador).
+  merged.permissions = {};
+  PERM_CRUD_KEYS.forEach(k => {
+    merged.permissions[k] = profilePerms[k] === true;
+  });
+
   // Step 6: Overlay individual overrides from membros_permissoes
   if (memberPerm) {
     // Keep authoritative perfil; do NOT override with memberPerm.perfil
@@ -3455,6 +3498,8 @@ async function loadUserPermissions() {
 
 function isPageAllowed(page, perm) {
   if (!perm) return true;
+  // Administrador tem acesso irrestrito a todos os módulos/menus
+  if (perm.perfil === 'Administrador') return true;
   const key = _permKeyMap[page];
   if (!key) return true;
   return perm[key] !== false;
@@ -3599,6 +3644,7 @@ function renderHomeModules(filter = '') {
     dashboard: _userPermCache.can_dashboard,
     crm: _userPermCache.can_crm,
     contratos: _userPermCache.can_contratos,
+    financeiro: _userPermCache.can_financeiro,
     clientes: _userPermCache.can_cliente_base,
     calendario: _userPermCache.can_calendario,
     configuracoes: _userPermCache.can_configuracoes,
@@ -3737,6 +3783,7 @@ const homeModules = [
   { id: 'crm', title: 'CRM', desc: 'Centralize o relacionamento com clientes.', icon: 'kanban-square', route: '/crm', section: 'Principal' },
   { id: 'conversas', title: 'Conversas', desc: 'Central de conversas e mensagens da equipe.', icon: 'message-circle', route: '/conversas', section: 'Principal' },
   { id: 'contratos', title: 'Contratos', desc: 'Gere e gerencie contratos de prestação de serviços.', icon: 'file-text', route: '/contratos', section: 'Principal' },
+  { id: 'financeiro', title: 'Financeiro', desc: 'Receitas, despesas e fluxo de caixa do negócio.', icon: 'circle-dollar-sign', route: '/financeiro', section: 'Principal' },
   { id: 'clientes', title: 'Cliente da Base', desc: 'Organize e qualifique os clientes.', icon: 'users', route: '/cliente-da-base', section: 'Principal' },
   { id: 'calendario', title: 'Calendário', desc: 'Organize as datas dos eventos.', icon: 'calendar-days', route: '/calendario', section: 'Principal' },
   { id: 'rotina', title: 'Rotina Blue', desc: 'Organize tarefas, reuniões e lembretes do dia a dia.', icon: 'clipboard-list', route: '/rotina', section: 'Principal' },
@@ -3747,7 +3794,7 @@ const homeModules = [
   { id: 'calibragem', title: 'Calibragem', desc: 'Calibre e ajuste parâmetros do sistema.', icon: 'gauge', route: '/calibragem', section: 'Ferramentas' }
 ];
 
-const knownPages = new Set(['home', 'dashboard', 'crm', 'clientes', 'contratos', 'calendario', 'configuracoes', 'rotina', 'pomodoro', 'conversas', 'auditoria', 'administrador', 'obrigacoes', 'documentos', 'suporte', 'calibragem', 'centros-custo', 'centro-custo-detail']);
+const knownPages = new Set(['home', 'dashboard', 'crm', 'clientes', 'contratos', 'financeiro', 'calendario', 'configuracoes', 'rotina', 'pomodoro', 'conversas', 'auditoria', 'administrador', 'obrigacoes', 'documentos', 'suporte', 'calibragem', 'centros-custo', 'centro-custo-detail']);
 
 const pageConfig = {
   home: {
@@ -3779,6 +3826,12 @@ const pageConfig = {
     subtitle: 'Compromissos e obrigações contábeis',
     primary: 'Novo evento',
     primaryIcon: 'plus'
+  },
+  financeiro: {
+    title: 'Financeiro',
+    subtitle: 'Receitas, despesas e fluxo de caixa',
+    primary: '',
+    primaryIcon: 'circle-dollar-sign'
   },
   configuracoes: {
     title: 'Configurações',
@@ -3876,15 +3929,15 @@ function setActivePage(page) {
   }
 
   // Verificação de permissão: bloquear acesso a módulos sem permissão
-  if (_userPermCache) {
+  // (Administrador nunca é bloqueado — acesso irrestrito)
+  if (_userPermCache && !isCurrentUserAdmin()) {
     const permPageMap = {
       home: 'can_home', dashboard: 'can_dashboard', crm: 'can_crm',
-      contratos: 'can_contratos', clientes: 'can_cliente_base', calendario: 'can_calendario',
+      contratos: 'can_contratos', financeiro: 'can_financeiro', clientes: 'can_cliente_base', calendario: 'can_calendario',
       rotina: 'can_rotina_blue', pomodoro: 'can_pomodoro',
       conversas: 'can_conversas', configuracoes: 'can_configuracoes',
       auditoria: 'can_auditoria', administrador: 'can_administrador',
-      obrigacoes: 'can_obrigacoes', documentos: 'can_documentos',
-      suporte: 'can_suporte', calibragem: 'can_calibragem'
+      calibragem: 'can_calibragem'
     };
     const permKey = permPageMap[page];
     if (permKey && _userPermCache[permKey] === false) {
@@ -3905,7 +3958,7 @@ function setActivePage(page) {
       pomodoro: 'Pomodoro', conversas: 'Conversas', auditoria: 'Auditoria',
       administrador: 'Administrador', obrigacoes: 'Obrigações',
       documentos: 'Documentos', suporte: 'Suporte',
-      calibragem: 'Calibragem'
+      calibragem: 'Calibragem', financeiro: 'Financeiro'
     };
     registrarAuditoria({
       acao: 'Acessos',
@@ -3994,7 +4047,7 @@ function setActivePage(page) {
   // Ocultar botões de ação do topbar na Home, Dashboard, Calendário, Rotina e Pomodoro
   const chatBtn = $('#topbarChatBtn');
   const primaryBtn = $('#primaryAction');
-  const hideTopbarActions = page === 'home' || page === 'dashboard' || page === 'calendario' || page === 'rotina' || page === 'pomodoro' || page === 'conversas' || page === 'configuracoes' || page === 'auditoria' || page === 'administrador' || page === 'calibragem' || page === 'contratos';
+  const hideTopbarActions = page === 'home' || page === 'dashboard' || page === 'calendario' || page === 'rotina' || page === 'pomodoro' || page === 'conversas' || page === 'configuracoes' || page === 'auditoria' || page === 'administrador' || page === 'calibragem' || page === 'contratos' || page === 'financeiro';
   if (chatBtn) chatBtn.style.display = hideTopbarActions ? 'none' : '';
   if (primaryBtn) primaryBtn.style.display = hideTopbarActions ? 'none' : '';
 
@@ -4041,6 +4094,9 @@ function setActivePage(page) {
   }
   if (page === 'contratos') {
     initContratos();
+  }
+  if (page === 'financeiro') {
+    initFinanceiro();
   }
   if (page === 'conversas') {
     console.log('[Nav] Conversas page, pending:', !!_pendingConvNavigation);
@@ -4952,14 +5008,44 @@ let calNavBusy = false;
 let calEmpresaFilter = 'all';     // empresa filter for calendar
 
 let calendarEvents = {};
+function sortDayEvents(list) {
+  // Eventos sem horário (dia inteiro) vêm primeiro; demais em ordem crescente (HH:mm).
+  return list.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+}
 function rebuildCalendarEvents() {
   calendarEvents = {};
   meetings.forEach(m => {
     if (!calendarEvents[m.iso]) calendarEvents[m.iso] = [];
-    calendarEvents[m.iso].push({ id: m.id, color: m.color || meetingColor(m.type), title: m.title });
+    calendarEvents[m.iso].push({ id: m.id, color: m.color || meetingColor(m.type), title: m.title, time: m.time || '' });
   });
+  Object.values(calendarEvents).forEach(sortDayEvents);
 }
 rebuildCalendarEvents();
+
+/* ---- Eventos overnight (viram a noite) ---- */
+function isOvernightEvent(time, timeEnd) {
+  return !!(time && timeEnd && timeEnd < time);
+}
+function calcDurationMinutes(time, timeEnd) {
+  if (!time || !timeEnd) return null;
+  const [sh, sm] = time.split(':').map(Number);
+  const [eh, em] = timeEnd.split(':').map(Number);
+  if ([sh, sm, eh, em].some(isNaN)) return null;
+  let diff = (eh * 60 + em) - (sh * 60 + sm);
+  if (diff < 0) diff += 24 * 60; // término na madrugada seguinte
+  return diff;
+}
+function fmtDurationInput(mins) {
+  return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+}
+function updateCalOvernightHint() {
+  const hint = $('#calOvernightHint');
+  if (!hint) return;
+  const start = $('#calEventTimeStart');
+  const end = $('#calEventTimeEnd');
+  const overnight = start && end && isOvernightEvent(start.value, end.value);
+  hint.hidden = !overnight;
+}
 
 function getFilteredMeetings() {
   if (calEmpresaFilter === 'all') return meetings;
@@ -5101,12 +5187,13 @@ function renderCalendar() {
   const filteredEvents = {};
   filteredMs.forEach(m => {
     if (!filteredEvents[m.iso]) filteredEvents[m.iso] = [];
-    filteredEvents[m.iso].push({ id: m.id, color: m.color || meetingColor(m.type), title: m.title });
+    filteredEvents[m.iso].push({ id: m.id, color: m.color || meetingColor(m.type), title: m.title, time: m.time || '' });
   });
+  Object.values(filteredEvents).forEach(sortDayEvents);
 
   if (calView === 'month') renderMonthView(grid, weekdays, filteredEvents);
-  else if (calView === 'week') renderWeekView(grid, weekdays, filteredEvents, filteredMs);
-  else renderDayView(grid, weekdays, filteredEvents, filteredMs);
+  else if (calView === 'week') renderWeekView(grid, weekdays, filteredEvents);
+  else renderDayView(grid, weekdays, filteredEvents);
 }
 
 /* -- Month View -- */
@@ -5136,7 +5223,7 @@ function renderMonthView(grid, weekdays, eventsMap) {
     const visibleEvents = events.slice(0, MAX_VISIBLE);
     const remaining = events.length - MAX_VISIBLE;
     const eventsHtml = visibleEvents.map(e =>
-      `<span class="cal-event" role="button" tabindex="0" data-iso="${c.iso}" data-meeting-id="${e.id}" style="background:${e.color}">${e.title}</span>`
+      `<span class="cal-event" role="button" tabindex="0" data-iso="${c.iso}" data-meeting-id="${e.id}" style="background:${e.color}">${e.time ? e.time + ' - ' : ''}${e.title}</span>`
     ).join('');
     const moreHtml = remaining > 0
       ? `<span class="cal-day-more" data-iso="${c.iso}">+${remaining} mais</span>`
@@ -5149,7 +5236,7 @@ function renderMonthView(grid, weekdays, eventsMap) {
 }
 
 /* -- Week View -- */
-function renderWeekView(grid, weekdays, eventsMap, ms) {
+function renderWeekView(grid, weekdays, eventsMap) {
   weekdays.style.display = 'none';
   const weekStart = getWeekStart(calCurrentDate);
   const todayIso = getTodayIso();
@@ -5166,7 +5253,6 @@ function renderWeekView(grid, weekdays, eventsMap, ms) {
   html += '</div><div class="cal-week-body">';
 
   const evtSource = eventsMap || calendarEvents;
-  const meetingSource = ms || meetings;
 
   for (const h of hours) {
     html += `<div class="cal-week-row"><div class="cal-week-time-gutter">${h}</div>`;
@@ -5175,11 +5261,10 @@ function renderWeekView(grid, weekdays, eventsMap, ms) {
       const iso = isoFromDate(d);
       const hourNum = parseInt(h);
       const evts = (evtSource[iso] || []).filter(e => {
-        const meeting = meetingSource.find(m => iso === m.iso && m.title === e.title);
-        if (!meeting || !meeting.time) return hourNum === 9;
-        return parseInt(meeting.time.split(':')[0]) === hourNum;
+        if (!e.time) return hourNum === 9;
+        return parseInt(e.time.split(':')[0]) === hourNum;
       });
-      const evtHtml = evts.map(e => `<span class="cal-event cal-event-week" role="button" tabindex="0" data-iso="${iso}" data-meeting-id="${e.id}" style="background:${e.color}">${e.title}</span>`).join('');
+      const evtHtml = evts.map(e => `<span class="cal-event cal-event-week" role="button" tabindex="0" data-iso="${iso}" data-meeting-id="${e.id}" style="background:${e.color}">${e.time ? e.time + ' - ' : ''}${e.title}</span>`).join('');
       html += `<div class="cal-week-cell" role="button" tabindex="0" data-iso="${iso}" data-hour="${hourNum}">${evtHtml}</div>`;
     }
     html += '</div>';
@@ -5189,12 +5274,11 @@ function renderWeekView(grid, weekdays, eventsMap, ms) {
 }
 
 /* -- Day View -- */
-function renderDayView(grid, weekdays, eventsMap, ms) {
+function renderDayView(grid, weekdays, eventsMap) {
   weekdays.style.display = 'none';
   const iso = isoFromDate(calCurrentDate);
   const evtSource = eventsMap || calendarEvents;
   const events = evtSource[iso] || [];
-  const meetingSource = ms || meetings;
   const hours = HOUR_LABELS;
 
   grid.className = 'cal-grid cal-grid-day';
@@ -5202,11 +5286,10 @@ function renderDayView(grid, weekdays, eventsMap, ms) {
   for (const h of hours) {
     const hourNum = parseInt(h);
     const evts = events.filter(e => {
-      const meeting = meetingSource.find(m => m.iso === iso && m.title === e.title);
-      if (!meeting || !meeting.time) return hourNum === 9;
-      return parseInt(meeting.time.split(':')[0]) === hourNum;
+      if (!e.time) return hourNum === 9;
+      return parseInt(e.time.split(':')[0]) === hourNum;
     });
-    const evtHtml = evts.map(e => `<span class="cal-event cal-event-day" role="button" tabindex="0" data-iso="${iso}" data-meeting-id="${e.id}" style="background:${e.color}">${e.title}</span>`).join('');
+    const evtHtml = evts.map(e => `<span class="cal-event cal-event-day" role="button" tabindex="0" data-iso="${iso}" data-meeting-id="${e.id}" style="background:${e.color}">${e.time ? e.time + ' - ' : ''}${e.title}</span>`).join('');
     html += `<div class="cal-day-row"><div class="cal-week-time-gutter">${h}</div><div class="cal-week-cell" role="button" tabindex="0" data-iso="${iso}" data-hour="${hourNum}">${evtHtml}</div></div>`;
   }
   html += '</div>';
@@ -5884,7 +5967,10 @@ async function loadServiceChips(empresaId) {
       lead._tipoServicoIds = activeIds;
 
       try {
-        await updateLeadSupabase(lead.id, { tipo_servico_id: activeIds });
+        await updateLeadSupabase(lead.id, {
+          tipo_servico_id: activeIds,
+          servicos_selecionados: activeNames.join(', ') || null
+        });
         console.log('[Supabase] tipo_servico_id salvo (array):', activeIds);
       } catch (err) {
         console.error('[Chips] Erro ao salvar tipo_servico_id:', err);
@@ -6046,6 +6132,24 @@ function populateLeadEmpresaSelect() {
     opt.textContent = cc.nome;
     select.appendChild(opt);
   });
+}
+
+function onLeadEmpresaChange() {
+  const select = document.getElementById('leadEmpresa');
+  if (!select) return;
+  loadServiceChips(select.value || undefined);
+
+  // Edição: remove da seleção os serviços que não pertencem à nova empresa
+  if (!currentLeadId || !select.value) return;
+  const leadToFix = leads.find(l => String(l.id) === String(currentLeadId));
+  if (!leadToFix) return;
+  const allowedIds = new Set(
+    vinculosServicos.filter(v => v.centro_custo_id === select.value).map(v => v.servico_id)
+  );
+  leadToFix.tiposServico = (leadToFix.tiposServico || []).filter(
+    name => allowedIds.has(_servicosByName[name]?.id)
+  );
+  leadToFix._tipoServicoIds = (leadToFix._tipoServicoIds || []).filter(id => allowedIds.has(id));
 }
 
 let activeCadenceFilter = null;
@@ -6479,6 +6583,10 @@ function leadCardHTML(l) {
       <div class="lead-card-head">
         <span class="lead-card-avatar">${initials}</span>
         <span class="lead-card-name">${l.empresa}</span>
+        <button type="button" class="lead-card-move-btn" data-action="move-lead" data-id="${l.id}"
+                aria-label="Mover ${l.empresa} para outra cadência" title="Mover para...">
+          <i data-lucide="more-vertical"></i>
+        </button>
         <span class="lead-card-thermal ${l.thermal}" title="Status térmico: ${l.thermal}"></span>
       </div>
       <div class="lead-card-meta">
@@ -6512,11 +6620,15 @@ function bindLeadCards() {
   $$('.lead-card [data-action]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const id = parseInt(btn.dataset.id, 10);
+      // Ids do Supabase são UUIDs — passa o valor cru (não parseInt)
+      const id = btn.dataset.id;
       const action = btn.dataset.action;
-      handleLeadAction(action, id);
+      handleLeadAction(action, id, btn);
     });
   });
+
+  // Arraste por toque (long-press) + clique seguro
+  bindLeadTouchDrag();
 
   let touchMoved = false;
 
@@ -6530,7 +6642,8 @@ function bindLeadCards() {
     }, { passive: true });
 
     card.addEventListener('click', (e) => {
-      if (touchMoved) return;
+      // Se houve arraste por toque logo antes, não abre o modal no clique sintético
+      if (touchMoved || _touchDrag.suppressClick) return;
       if (e.detail === 0) return;
       openLeadModal(card.dataset.leadId);
     });
@@ -6546,13 +6659,14 @@ function bindDropZones() {
   });
 }
 
-function handleLeadAction(action, id) {
+function handleLeadAction(action, id, sourceEl) {
   const lead = leads.find(l => String(l.id) === String(id));
   if (!lead) return;
   switch (action) {
     case 'open-lead': openLeadModal(id); break;
     case 'call-lead': recordInteraction(id, 'Ligação', 'phone'); break;
     case 'schedule-lead': recordInteraction(id, 'Reunião agendada', 'calendar'); break;
+    case 'move-lead': openLeadMoveMenu(id, sourceEl); break;
     case 'note-lead': {
       const note = prompt('Adicionar nota rápida:');
       if (note) recordInteraction(id, 'Nota', 'sticky-note', note);
@@ -6689,25 +6803,29 @@ async function onDrop(e) {
   col.classList.remove('drag-over');
   _dragCounters.delete(col);
   const id = e.dataTransfer.getData('text/plain') || draggedId;
-  const newStatus = this.dataset.dropZone; // This is now the UUID from database
+  const newStatus = this.dataset.dropZone; // UUID da cadência no banco
+  await updateLeadCadencia(id, newStatus);
+}
+
+/**
+ * Move um lead para outra cadência.
+ * Compartilhado por: drag & drop nativo (desktop), arraste por toque
+ * (mobile) e menu "Mover para..." — mesma persistência em todos.
+ */
+async function updateLeadCadencia(id, newStatus) {
   const lead = leads.find(l => String(l.id) === String(id));
-  if (!lead || !newStatus || lead.status === newStatus) return;
+  if (!lead || !newStatus || lead.status === newStatus) return false;
 
   const oldStatus = lead.status;
   lead.status = newStatus;
   lead.lastTouch = new Date().toLocaleDateString('pt-BR');
   invalidateDashCache();
 
-  // newStatus is now the UUID from the database cadencias
-  // We can use it directly as cadencia_id
-  const newCadenciaUuid = newStatus;
-
-  if (newCadenciaUuid) {
-    lead._cadenciaId = newCadenciaUuid;
-    updateLeadSupabase(lead.id, { cadencia_id: newCadenciaUuid })
-      .then(() => console.log('[Supabase] cadencia_id salvo:', newCadenciaUuid))
-      .catch(err => console.error('[Supabase] Erro ao salvar cadencia_id:', err));
-  }
+  // newStatus é o UUID da cadência — salva direto como cadencia_id
+  lead._cadenciaId = newStatus;
+  updateLeadSupabase(lead.id, { cadencia_id: newStatus })
+    .then(() => console.log('[Supabase] cadencia_id salvo:', newStatus))
+    .catch(err => console.error('[Supabase] Erro ao salvar cadencia_id:', err));
 
   // visual feedback
   const card = $(`.lead-card[data-lead-id="${id}"]`);
@@ -6729,6 +6847,285 @@ async function onDrop(e) {
     registrarAuditoria({ acao: 'Atualizações', caminho_url: '/crm', modulo: 'CRM' });
   }
   renderAll();
+  return true;
+}
+
+/* ============================================
+   CRM · DRAG & DROP POR TOQUE (mobile)
+   A API nativa de DnD não dispara em telas touch.
+   Long-press inicia o arrasto; antes disso o
+   movimento continua sendo rolagem normal.
+   ============================================ */
+const TOUCH_DRAG_DELAY = 180;  // ms de long-press para iniciar o arrasto
+const TOUCH_DRAG_SLOP = 10;    // px de movimento que cancela o long-press (rolagem)
+const TOUCH_EDGE_ZONE = 40;    // px da borda que dispara auto-scroll horizontal
+
+const _touchDrag = {
+  pending: null,   // { card, leadId, startX, startY, timer }
+  active: false,
+  leadId: null,
+  card: null,
+  ghost: null,
+  offsetX: 0,
+  offsetY: 0,
+  clientX: 0,
+  clientY: 0,
+  targetCol: null,
+  raf: null,
+  suppressClick: false  // evita abrir o modal no clique sintético pós-arraste
+};
+
+function bindLeadTouchDrag() {
+  $$('.lead-card').forEach(card => {
+    card.addEventListener('touchstart', onLeadTouchStart, { passive: true });
+    card.addEventListener('touchmove', onLeadTouchMove, { passive: false });
+    card.addEventListener('touchend', onLeadTouchEnd, { passive: false });
+    card.addEventListener('touchcancel', onLeadTouchEnd, { passive: false });
+  });
+}
+
+function onLeadTouchStart(e) {
+  if (e.touches.length !== 1) return;
+  // Menu "Mover para..." aberto não pode interceptar um novo gesto
+  _closeLeadMoveMenu();
+  // O botão "Mover para..." tem fluxo próprio (menu de 1 toque)
+  if (e.target.closest('.lead-card-move-btn')) return;
+
+  _cancelTouchDrag();
+  _touchDrag.suppressClick = false;
+
+  const card = e.currentTarget;
+  const t = e.touches[0];
+  const pending = {
+    card,
+    leadId: card.dataset.leadId,
+    startX: t.clientX,
+    startY: t.clientY
+  };
+  pending.timer = setTimeout(() => {
+    _startTouchDrag(pending, t.clientX, t.clientY);
+  }, TOUCH_DRAG_DELAY);
+  _touchDrag.pending = pending;
+}
+
+function onLeadTouchMove(e) {
+  const t = e.touches[0];
+
+  if (_touchDrag.active) {
+    e.preventDefault(); // bloqueia a rolagem enquanto arrasta
+    _touchDrag.clientX = t.clientX;
+    _touchDrag.clientY = t.clientY;
+    _moveTouchGhost(t.clientX, t.clientY);
+    _updateTouchDropTarget(t.clientX, t.clientY);
+    return;
+  }
+
+  const pending = _touchDrag.pending;
+  if (pending) {
+    const dx = Math.abs(t.clientX - pending.startX);
+    const dy = Math.abs(t.clientY - pending.startY);
+    if (dx > TOUCH_DRAG_SLOP || dy > TOUCH_DRAG_SLOP) {
+      // Movimento antes do long-press = rolagem da página/coluna
+      clearTimeout(pending.timer);
+      _touchDrag.pending = null;
+    }
+  }
+}
+
+function onLeadTouchEnd(e) {
+  const pending = _touchDrag.pending;
+  if (pending) clearTimeout(pending.timer);
+  _touchDrag.pending = null;
+
+  if (!_touchDrag.active) return;
+  e.preventDefault();
+
+  const leadId = _touchDrag.leadId;
+  let newCadenciaId = null;
+  if (_touchDrag.targetCol) {
+    const zone = _touchDrag.targetCol.querySelector('.kanban-col-list');
+    newCadenciaId = zone ? zone.dataset.dropZone : null;
+  }
+
+  _endTouchDrag();
+  _touchDrag.suppressClick = true; // suprime o clique sintético do toque
+
+  if (newCadenciaId) updateLeadCadencia(leadId, newCadenciaId);
+}
+
+function _startTouchDrag(pending, x, y) {
+  const card = pending.card;
+  if (!card || !card.isConnected) return;
+
+  _touchDrag.pending = null;
+  _touchDrag.active = true;
+  _touchDrag.leadId = pending.leadId;
+  _touchDrag.card = card;
+  _touchDrag.clientX = x;
+  _touchDrag.clientY = y;
+  _touchDrag.suppressClick = true;
+
+  // Card de origem esmaecido + clone flutuante acompanhando o dedo
+  card.classList.add('is-dragging');
+  const board = $('#kanbanBoard');
+  if (board) board.classList.add('is-dragging');
+
+  const rect = card.getBoundingClientRect();
+  const ghost = card.cloneNode(true);
+  ghost.classList.remove('is-dragging', 'dragging');
+  ghost.classList.add('lead-card-touch-ghost');
+  ghost.removeAttribute('draggable');
+  ghost.style.width = rect.width + 'px';
+  ghost.style.left = rect.left + 'px';
+  ghost.style.top = rect.top + 'px';
+  document.body.appendChild(ghost);
+
+  _touchDrag.ghost = ghost;
+  _touchDrag.offsetX = x - rect.left;
+  _touchDrag.offsetY = y - rect.top;
+
+  // Feedback háptico onde suportado (iOS silencia, Android vibra)
+  if (navigator.vibrate) {
+    try { navigator.vibrate(10); } catch (_) { /* noop */ }
+  }
+
+  _updateTouchDropTarget(x, y);
+  _touchDrag.raf = requestAnimationFrame(_touchAutoScrollTick);
+}
+
+function _moveTouchGhost(x, y) {
+  const ghost = _touchDrag.ghost;
+  if (!ghost) return;
+  ghost.style.left = (x - _touchDrag.offsetX) + 'px';
+  ghost.style.top = (y - _touchDrag.offsetY) + 'px';
+}
+
+function _updateTouchDropTarget(x, y) {
+  // O ghost tem pointer-events: none, então o ponto retorna o elemento real
+  const el = document.elementFromPoint(x, y);
+  const col = el ? el.closest('.kanban-col') : null;
+  if (col === _touchDrag.targetCol) return;
+  if (_touchDrag.targetCol) _touchDrag.targetCol.classList.remove('drag-over');
+  _touchDrag.targetCol = col;
+  if (col) col.classList.add('drag-over');
+}
+
+function _touchAutoScrollTick() {
+  if (!_touchDrag.active) return;
+  const board = $('#kanbanBoard');
+  if (board) {
+    const rect = board.getBoundingClientRect();
+    const x = _touchDrag.clientX;
+    let scrolled = false;
+    if (x < rect.left + TOUCH_EDGE_ZONE) {
+      board.scrollBy({ left: -15, behavior: 'auto' });
+      scrolled = true;
+    } else if (x > rect.right - TOUCH_EDGE_ZONE) {
+      board.scrollBy({ left: 15, behavior: 'auto' });
+      scrolled = true;
+    }
+    // Com a coluna se movendo sob o dedo, reavalia o alvo a cada frame
+    if (scrolled) _updateTouchDropTarget(x, _touchDrag.clientY);
+  }
+  _touchDrag.raf = requestAnimationFrame(_touchAutoScrollTick);
+}
+
+function _endTouchDrag() {
+  if (_touchDrag.raf) {
+    cancelAnimationFrame(_touchDrag.raf);
+    _touchDrag.raf = null;
+  }
+  if (_touchDrag.ghost) {
+    _touchDrag.ghost.remove();
+    _touchDrag.ghost = null;
+  }
+  if (_touchDrag.card) _touchDrag.card.classList.remove('is-dragging');
+  if (_touchDrag.targetCol) {
+    _touchDrag.targetCol.classList.remove('drag-over');
+    _touchDrag.targetCol = null;
+  }
+  const board = $('#kanbanBoard');
+  if (board) board.classList.remove('is-dragging');
+  _touchDrag.active = false;
+  _touchDrag.card = null;
+  _touchDrag.leadId = null;
+}
+
+function _cancelTouchDrag() {
+  if (_touchDrag.pending) {
+    clearTimeout(_touchDrag.pending.timer);
+    _touchDrag.pending = null;
+  }
+  if (_touchDrag.active) _endTouchDrag();
+}
+
+/* ============================================
+   CRM · MENU "MOVER PARA..." (1 toque)
+   Alternativa ao arraste em telas pequenas.
+   ============================================ */
+function _closeLeadMoveMenu() {
+  const menu = document.getElementById('leadMoveMenu');
+  if (menu) menu.remove();
+  document.removeEventListener('pointerdown', _onDocPointerDownCloseMoveMenu, true);
+  document.removeEventListener('keydown', _onLeadMoveMenuKeydown);
+}
+
+function _onDocPointerDownCloseMoveMenu(e) {
+  const menu = document.getElementById('leadMoveMenu');
+  if (menu && menu.contains(e.target)) return; // clique dentro do menu
+  _closeLeadMoveMenu();
+}
+
+function _onLeadMoveMenuKeydown(e) {
+  if (e.key === 'Escape') _closeLeadMoveMenu();
+}
+
+function openLeadMoveMenu(leadId, anchorEl) {
+  _closeLeadMoveMenu();
+  const lead = leads.find(l => String(l.id) === String(leadId));
+  if (!lead || !anchorEl) return;
+
+  const cadences = getVisibleCadences(currentCrmEmpresaFilter);
+  const menu = document.createElement('div');
+  menu.id = 'leadMoveMenu';
+  menu.className = 'lead-move-menu';
+  menu.setAttribute('role', 'menu');
+  menu.innerHTML = `
+    <div class="lead-move-menu-title">Mover para...</div>
+    ${cadences.map(c => `
+      <button type="button" role="menuitem" class="lead-move-menu-item${c.id === lead.status ? ' current' : ''}" data-cadencia="${escapeHtml(c.id)}">
+        <span class="lead-move-menu-dot" style="background: ${c.color || '#3B82F6'}"></span>
+        <span class="lead-move-menu-label">${escapeHtml(c.label)}</span>
+        ${c.id === lead.status ? '<i data-lucide="check"></i>' : ''}
+      </button>`).join('')}
+  `;
+  document.body.appendChild(menu);
+  initIcons();
+
+  // Posiciona junto ao botão, sem sair da viewport
+  const rect = anchorEl.getBoundingClientRect();
+  const mw = menu.offsetWidth;
+  const mh = menu.offsetHeight;
+  const left = Math.max(8, Math.min(rect.right - mw, window.innerWidth - mw - 8));
+  let top = rect.bottom + 6;
+  if (top + mh > window.innerHeight - 8) top = Math.max(8, rect.top - mh - 6);
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
+
+  menu.addEventListener('click', (e) => {
+    const item = e.target.closest('.lead-move-menu-item');
+    if (!item) return;
+    e.stopPropagation();
+    const targetId = item.dataset.cadencia;
+    _closeLeadMoveMenu();
+    if (targetId && targetId !== lead.status) updateLeadCadencia(lead.id, targetId);
+  });
+
+  // Fecha ao tocar/clicar fora ou no Escape
+  setTimeout(() => {
+    document.addEventListener('pointerdown', _onDocPointerDownCloseMoveMenu, true);
+    document.addEventListener('keydown', _onLeadMoveMenuKeydown);
+  }, 0);
 }
 
 function labelOf(id) {
@@ -6808,9 +7205,7 @@ function openNewLeadModal() {
     }
     if (!empresaSelect._leadEmpresaBound) {
       empresaSelect._leadEmpresaBound = true;
-      empresaSelect.addEventListener('change', () => {
-        loadServiceChips(empresaSelect.value || undefined);
-      });
+      empresaSelect.addEventListener('change', onLeadEmpresaChange);
     }
   }
 
@@ -7049,21 +7444,24 @@ function openLeadModal(id) {
   // Popula dropdown de empresa e seleciona a do lead
   populateLeadEmpresaSelect();
   const empresaSelect = $('#leadEmpresa');
+  let leadEmpresaId = lead._centroCustoId || '';
+  // Lead sem empresa definida: derivar a empresa a partir dos serviços já associados
+  if (!leadEmpresaId && Array.isArray(lead._tipoServicoIds) && lead._tipoServicoIds.length > 0) {
+    const vinc = vinculosServicos.find(v => lead._tipoServicoIds.includes(v.servico_id));
+    if (vinc) leadEmpresaId = vinc.centro_custo_id || '';
+  }
   if (empresaSelect) {
-    const leadEmpresaId = lead._centroCustoId || '';
     if (leadEmpresaId && [...empresaSelect.options].some(o => o.value === leadEmpresaId)) {
       empresaSelect.value = leadEmpresaId;
     }
     if (!empresaSelect._leadEmpresaBound) {
       empresaSelect._leadEmpresaBound = true;
-      empresaSelect.addEventListener('change', () => {
-        loadServiceChips(empresaSelect.value || undefined);
-      });
+      empresaSelect.addEventListener('change', onLeadEmpresaChange);
     }
   }
 
-  // Chip groups — serviços dinâmicos (recarrega com filtro de empresa)
-  loadServiceChips().then(() => {
+  // Chip groups — serviços dinâmicos (recarrega filtrando pela empresa do lead)
+  loadServiceChips(leadEmpresaId || undefined).then(() => {
     const svcValues = lead.tiposServico || [];
     setServiceChipsActive(svcValues);
   });
@@ -7736,6 +8134,7 @@ async function saveLead() {
       toast('Você não tem permissão para apagar o telefone do cliente.', 'error');
     }
     Object.assign(lead, fields);
+    lead._centroCustoId = fields.empresaId || null;
     lead.lastTouch = today;
     if (!lead.history) lead.history = [];
     lead.history.unshift({
@@ -7779,6 +8178,7 @@ async function saveLead() {
       const payload = {
         nome: fields.empresa,
         telefone: fields.telefone,
+        centro_custo_id: fields.empresaId || null,
         data_evento: fields.dataEvento || null,
         hora_inicio: fields.horaInicio || null,
         hora_final: fields.horaFinal || null,
@@ -7801,7 +8201,7 @@ async function saveLead() {
 
       if (fields.tiposServico) {
         const ids = fields.tiposServico.map(name => _servicosByName[name]?.id).filter(Boolean);
-        if (ids.length > 0) payload.tipo_servico_id = ids;
+        payload.tipo_servico_id = ids;
       }
 
       const cadUuid = lead.status || lead._cadenciaId;
@@ -7845,10 +8245,8 @@ function validarCNPJ(v) {
 }
 
 function validarTelefone(v) {
-  v = v.replace(/\D/g, '');
-  if (v.length === 10 || v.length === 11) return true;
-  if ((v.length === 12 || v.length === 13) && v.startsWith('55')) return true;
-  return false;
+  const d = String(v == null ? '' : v).replace(/\D/g, '');
+  return d.length >= 7 && d.length <= 20;
 }
 
 function normalizarTelefoneBusca(v) {
@@ -8500,8 +8898,10 @@ function initCRM() {
   const leadTelInput = $('#leadModal [name="telefone"]');
   if (leadTelInput) {
     leadTelInput.addEventListener('input', () => {
+      const hasPlus = leadTelInput.value.startsWith('+');
       const digits = leadTelInput.value.replace(/\D/g, '');
-      if (digits !== leadTelInput.value) leadTelInput.value = digits;
+      const v = hasPlus ? '+' + digits : digits;
+      if (v !== leadTelInput.value) leadTelInput.value = v;
     });
   }
 
@@ -9847,21 +10247,14 @@ function openCalEventModal(isoDate, meetingId) {
       });
       // Duration
       if (m.time && m.timeEnd) {
-        const [sh, sm] = m.time.split(':').map(Number);
-        const [eh, em] = m.timeEnd.split(':').map(Number);
-        const dur = (eh * 60 + em) - (sh * 60 + sm);
-        if (dur > 0) {
-          const h = Math.floor(dur / 60);
-          const min = dur % 60;
-          $('#calEventDuration').value = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-        } else {
-          $('#calEventDuration').value = '';
-        }
+        const dur = calcDurationMinutes(m.time, m.timeEnd);
+        $('#calEventDuration').value = dur > 0 ? fmtDurationInput(dur) : '';
       } else if (m.duration) {
         $('#calEventDuration').value = m.duration;
       } else {
         $('#calEventDuration').value = '';
       }
+      updateCalOvernightHint();
       // Services chips — resolve UUIDs to names (deferred to after loadCalServiceChips)
       const rawServices = m.servicos || m.services || [];
       window._calEventEditSvcNames = rawServices.map(s => window._servicosById && window._servicosById[s] ? window._servicosById[s].nome : s);
@@ -9877,6 +10270,7 @@ function openCalEventModal(isoDate, meetingId) {
     $$('#calEventServices .chip-toggle').forEach(c => c.classList.remove('active'));
     window._calEventEditSvcNames = [];
     $('#calEventDuration').value = '';
+    updateCalOvernightHint();
     // Reset color to default
     $('#calEventColor').value = '#2F80ED';
     $$('#calEventColorPicker .color-swatch').forEach(s => {
@@ -9931,24 +10325,13 @@ function openCalEventModal(isoDate, meetingId) {
   const durEl = $('#calEventDuration');
 
   const calcDurFromTimes = () => {
-    if (timeStart.value && timeEnd.value) {
-      const [sh, sm] = timeStart.value.split(':').map(Number);
-      const [eh, em] = timeEnd.value.split(':').map(Number);
-      const dur = (eh * 60 + em) - (sh * 60 + sm);
-      if (dur > 0) {
-        const h = Math.floor(dur / 60);
-        const m = dur % 60;
-        durEl.value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-      } else {
-        durEl.value = '';
-      }
-    } else {
-      durEl.value = '';
-    }
+    const dur = calcDurationMinutes(timeStart.value, timeEnd.value);
+    durEl.value = dur > 0 ? fmtDurationInput(dur) : '';
+    updateCalOvernightHint();
   };
 
   const calcEndFromDuration = () => {
-    if (!timeStart.value || !durEl.value) return;
+    if (!timeStart.value || !durEl.value) { updateCalOvernightHint(); return; }
     const parts = durEl.value.split(':');
     const dur = parts.length === 2 ? (parseInt(parts[0], 10) || 0) * 60 + (parseInt(parts[1], 10) || 0) : parseInt(durEl.value, 10);
     if (isNaN(dur) || dur < 0) return;
@@ -9957,12 +10340,14 @@ function openCalEventModal(isoDate, meetingId) {
     const eh = Math.floor(totalMin / 60) % 24;
     const em = totalMin % 60;
     timeEnd.value = `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`;
+    updateCalOvernightHint();
   };
 
   timeStart.onchange = () => { calcDurFromTimes(); };
   timeEnd.onchange = () => { calcDurFromTimes(); };
   durEl.oninput = () => { calcEndFromDuration(); };
   durEl.onchange = () => { calcEndFromDuration(); };
+  updateCalOvernightHint();
 
   // Bind client autocomplete
   bindCalClientAutocomplete();
@@ -10058,7 +10443,7 @@ function openCalEventPopup(iso, meetingId) {
   $('#calPopupTimeStart').textContent = timeStart || '--:--';
   const endEl = $('#calPopupTimeEnd');
   if (timeEnd) {
-    endEl.textContent = ` até ${timeEnd}`;
+    endEl.textContent = ` até ${timeEnd}${isOvernightEvent(timeStart, timeEnd) ? ' (+1 dia)' : ''}`;
   } else {
     endEl.textContent = '';
   }
@@ -10352,8 +10737,8 @@ function saveCalEvent() {
 
   const timeStart = $('#calEventTimeStart').value;
   const timeEnd = $('#calEventTimeEnd').value;
-  if (timeStart && timeEnd && timeEnd <= timeStart) {
-    errors.calTimeEnd = 'Hora de término deve ser depois da hora de início';
+  if (timeStart && timeEnd && timeEnd === timeStart) {
+    errors.calTimeEnd = 'Hora de término deve ser diferente da hora de início';
   }
 
   $$('#calEventModal .form-error').forEach(e => e.textContent = '');
@@ -10398,6 +10783,7 @@ function saveCalEvent() {
     iso: date,
     time: timeStart || '',
     timeEnd: timeEnd || '',
+    overnight: isOvernightEvent(timeStart, timeEnd),
     duration,
     services: serviceNames,
     servicos_ids: serviceIds.length > 0 ? serviceIds : null,
@@ -13297,6 +13683,41 @@ function _convRenderArchivedRow() {
 }
 
 /* ---------- select chat ---------- */
+/* ---------- Master/Detail mobile (estilo WhatsApp) ----------
+   Em telas ≤768px a tela alterna entre a lista de conversas e o chat.
+   Classes aplicadas em #page-conversas: .mobile-show-list | .mobile-show-chat.
+   No desktop as classes existem mas não têm efeito (grid 3 colunas fixo). */
+const _convMobileMq = () => window.matchMedia('(max-width:768px)');
+
+function _convIsMobileView() {
+  return _convMobileMq().matches;
+}
+
+function _convSetMobileView(view) {
+  const page = document.getElementById('page-conversas');
+  if (!page) return;
+  if (!_convIsMobileView()) {
+    // Desktop: garante que nenhuma classe mobile forçada permaneça
+    page.classList.remove('mobile-show-list', 'mobile-show-chat');
+    return;
+  }
+  const showChat = view === 'chat';
+  page.classList.toggle('mobile-show-chat', showChat);
+  page.classList.toggle('mobile-show-list', !showChat);
+}
+
+function _convBackToList() {
+  conversasState.selectedChatId = null;
+  conversasState.replyingTo = null;
+  _convRenderReplyPreview();
+  const chatEmpty = $('#convChatEmpty');
+  const chatContent = $('#convChatContent');
+  if (chatEmpty) chatEmpty.style.display = '';
+  if (chatContent) chatContent.style.display = 'none';
+  _convSetMobileView('list');
+  _renderConvChatList();
+}
+
 async function _convSelectChat(chatId) {
   conversasState.selectedChatId = chatId;
   // Trocar de conversa cancela qualquer resposta pendente
@@ -13348,6 +13769,9 @@ async function _convSelectChat(chatId) {
   }
 
   _convUpdateComposerState();
+
+  // No mobile, ao selecionar uma conversa oculta a lista e exibe o chat em tela cheia
+  _convSetMobileView('chat');
 }
 
 function _renderConvChatHeader(chat) {
@@ -13365,6 +13789,7 @@ function _renderConvChatHeader(chat) {
     : (isGroup ? '<i data-lucide="users" style="width:24px;height:24px;"></i>' : _convInitials(chat.contact_name, chat.contact_phone));
 
   header.innerHTML = `
+    <button class="conv-chat-header-back" id="convChatBackBtn" type="button" aria-label="Voltar para a lista de conversas"><i data-lucide="arrow-left"></i></button>
     <div class="conv-chat-header-avatar">${headerAvatarInner}</div>
     <div class="conv-chat-header-info">
       <div class="conv-chat-header-name">
@@ -13387,6 +13812,7 @@ function _renderConvChatHeader(chat) {
       <button title="Mais opções"><i data-lucide="more-vertical"></i></button>
     </div>`;
   initIcons();
+  header.querySelector('#convChatBackBtn')?.addEventListener('click', _convBackToList);
   header.querySelector('#btnConvEditName')?.addEventListener('click', convEditContactName);
   header.querySelector('#btnConvGroupInfo')?.addEventListener('click', _convOpenGroupInfoModal);
   header.querySelector('#btnConvCriarLead')?.addEventListener('click', _convOpenCriarLeadModal);
@@ -15576,7 +16002,7 @@ async function convCriarLeadFromModal() {
   const email = ($('#convCriarLeadEmail')?.value || '').trim();
   const telefone = ($('#convCriarLeadPhone')?.value || '').replace(/\D/g, '');
   if (!nome) { toast('Informe o nome do lead', 'error'); return; }
-  if (telefone.length < 10 || telefone.length > 13) { toast('Telefone inválido', 'error'); return; }
+  if (!validarTelefone(telefone)) { toast('Telefone inválido', 'error'); return; }
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('E-mail inválido', 'error'); return; }
 
   const centrosCustoId = chat._centroCustoId || conversasState.selectedCentroCustoId || null;
@@ -15680,6 +16106,11 @@ async function convToggleArchive(chatId) {
     label: 'Desfazer',
     onClick: () => convToggleArchive(chatId)
   });
+
+  // No mobile, arquivar a conversa aberta retorna para a lista
+  if (next && chatId === conversasState.selectedChatId && _convIsMobileView()) {
+    _convBackToList();
+  }
 }
 
 /* ---------- new conversation modal ---------- */
@@ -16060,6 +16491,7 @@ async function _initConvCentroCustoDropdown() {
     const chatContent = document.getElementById('convChatContent');
     if (chatEmpty) chatEmpty.style.display = '';
     if (chatContent) chatContent.style.display = 'none';
+    _convSetMobileView('list');
 
     // 6. Buscar instanceName e carregar conversas
     _convSubscribeRealtime();
@@ -16400,6 +16832,21 @@ function initConversas() {
 
   _renderConvFilterChips();
   _loadConvMembers();
+
+  // Master/Detail mobile: voltar à lista e FAB de nova conversa
+  const backBtn = $('#convChatBackBtn');
+  if (backBtn && !backBtn._convBound) {
+    backBtn._convBound = true;
+    backBtn.addEventListener('click', _convBackToList);
+  }
+  const fabNew = $('#btnConvFabNew');
+  if (fabNew && !fabNew._convBound) {
+    fabNew._convBound = true;
+    fabNew.addEventListener('click', _convOpenNewModal);
+  }
+  // Estado inicial da visão mobile (lista) ao entrar na tela
+  _convSetMobileView('list');
+
   _initConvCentroCustoDropdown().then(() => _processConvDeepLink());
   _convSubscribeRealtime();
 }
@@ -19677,3 +20124,854 @@ window._convVerLeadNoCRM = function(leadId) {
 // Expose Permission functions (called from onclick in generated HTML)
 window.applyPerfilDefaults = applyPerfilDefaults;
 window.can = can;
+
+/* ============================================
+   FINANCEIRO
+   ============================================ */
+let _finInited = false;
+let _finPeriodBound = false;
+let _finChart = null;
+let _finChartTipo = 'despesa';   // aba ativa do gráfico de categorias: 'despesa' | 'receita'
+let _finCategorias = [];
+let _finTransacoes = [];
+let _finMembros = [];
+let _finSelectedCategoriaId = null;
+let _finSelectedTipo = 'despesa';
+const finState = {
+  period: 'month',
+  startDate: null,
+  endDate: null,
+  empresaId: 'all',
+  userId: 'all',
+  search: ''
+};
+
+function finSlugify(s) {
+  return String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function finFormatBRL(v) {
+  return Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function finFormatDate(isoDate) {
+  if (!isoDate) return '';
+  const [y, m, d] = String(isoDate).slice(0, 10).split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function finParseValor(str) {
+  if (typeof str === 'number') return str;
+  const s = String(str || '').trim().replace(/[^\d,.-]/g, '');
+  if (!s) return NaN;
+  let normalized;
+  if (s.includes(',')) normalized = s.replace(/\./g, '').replace(',', '.');
+  else normalized = s;
+  const n = parseFloat(normalized);
+  return isNaN(n) ? NaN : n;
+}
+
+function finTodayIso(offsetDays) {
+  const d = new Date();
+  if (offsetDays) d.setDate(d.getDate() + offsetDays);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function getFinPeriodRange() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  if (finState.period === 'today') return { start: iso(now), end: iso(now) };
+  if (finState.period === 'week') {
+    const day = now.getDay();
+    const diff = (day === 0 ? 6 : day - 1);
+    const mon = new Date(now);
+    mon.setDate(now.getDate() - diff);
+    return { start: iso(mon), end: iso(now) };
+  }
+  if (finState.period === 'custom' && finState.startDate) {
+    return { start: finState.startDate, end: finState.endDate || finState.startDate };
+  }
+  const first = new Date(now.getFullYear(), now.getMonth(), 1);
+  return { start: iso(first), end: iso(now) };
+}
+
+async function initFinanceiro() {
+  if (_finInited) {
+    populateFinEmpresaSelects();
+    await refreshFinanceiro();
+    return;
+  }
+  _finInited = true;
+
+  populateFinEmpresaSelects();
+  if (isCurrentUserAdmin()) {
+    await loadFinMembrosFilter();
+  }
+  bindFinControls();
+  await refreshFinanceiro();
+}
+
+function populateFinEmpresaSelects() {
+  const isAdmin = isCurrentUserAdmin();
+  const empresas = isAdmin
+    ? centrosCustoData
+    : centrosCustoData.filter(cc => (currentUser.centro_custo_ids || []).includes(cc.id));
+
+  const toolbarSel = document.getElementById('finEmpresaFilter');
+  if (toolbarSel) {
+    const current = toolbarSel.value || finState.empresaId || 'all';
+    toolbarSel.innerHTML = '<option value="all">Consolidado (todas empresas)</option>';
+    empresas.forEach(cc => {
+      const opt = document.createElement('option');
+      opt.value = cc.id;
+      opt.textContent = cc.nome;
+      toolbarSel.appendChild(opt);
+    });
+    toolbarSel.value = empresas.some(e => e.id === current) || current === 'all' ? current : 'all';
+    finState.empresaId = toolbarSel.value;
+  }
+
+  const modalSel = document.getElementById('finEmpresa');
+  if (modalSel) {
+    const current = modalSel.value;
+    modalSel.innerHTML = '<option value="">Sem empresa</option>';
+    empresas.forEach(cc => {
+      const opt = document.createElement('option');
+      opt.value = cc.id;
+      opt.textContent = cc.nome;
+      modalSel.appendChild(opt);
+    });
+    if (current && empresas.some(e => e.id === current)) modalSel.value = current;
+  }
+}
+
+async function loadFinMembrosFilter() {
+  if (!_supabase) return;
+  const { data, error } = await _supabase
+    .from('membros')
+    .select('id, nome, auth_user_id')
+    .order('nome');
+  if (error) {
+    console.error('[Financeiro] Erro ao buscar membros:', error.message);
+    return;
+  }
+  _finMembros = data || [];
+  const sel = document.getElementById('finUserFilter');
+  if (!sel) return;
+  sel.hidden = false;
+  sel.innerHTML = '<option value="all">Todos os usuários</option><option value="sistema">Sistema (n8n/WhatsApp)</option>';
+  _finMembros.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m.auth_user_id || m.id;
+    opt.textContent = m.nome;
+    sel.appendChild(opt);
+  });
+}
+
+function bindFinControls() {
+  if (_finPeriodBound) return;
+  _finPeriodBound = true;
+
+  const segBtns = document.querySelectorAll('#finPeriodSeg .seg');
+  segBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      finState.period = btn.dataset.period;
+      segBtns.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
+      btn.classList.add('active');
+      btn.setAttribute('aria-selected', 'true');
+      const cr = document.getElementById('finCustomRange');
+      if (cr) cr.style.display = finState.period === 'custom' ? '' : 'none';
+      refreshFinanceiro();
+    });
+  });
+  const si = document.getElementById('finStartDate');
+  const ei = document.getElementById('finEndDate');
+  if (si) si.addEventListener('change', () => { finState.startDate = si.value; refreshFinanceiro(); });
+  if (ei) ei.addEventListener('change', () => { finState.endDate = ei.value; refreshFinanceiro(); });
+
+  // Abas do gráfico de categorias: Despesas | Receitas
+  document.querySelectorAll('#finChartTabs .seg').forEach(tab => {
+    tab.addEventListener('click', () => {
+      _finChartTipo = tab.dataset.tipo === 'receita' ? 'receita' : 'despesa';
+      document.querySelectorAll('#finChartTabs .seg').forEach(b => {
+        const active = b === tab;
+        b.classList.toggle('active', active);
+        b.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      renderFinanceiro();
+    });
+  });
+
+  const empresaSel = document.getElementById('finEmpresaFilter');
+  if (empresaSel) empresaSel.addEventListener('change', () => { finState.empresaId = empresaSel.value; refreshFinanceiro(); });
+
+  const userSel = document.getElementById('finUserFilter');
+  if (userSel) userSel.addEventListener('change', () => { finState.userId = userSel.value; refreshFinanceiro(); });
+
+  const search = document.getElementById('finSearch');
+  if (search) {
+    let deb = null;
+    search.addEventListener('input', () => {
+      clearTimeout(deb);
+      deb = setTimeout(() => {
+        finState.search = search.value.trim().toLowerCase();
+        renderFinanceiro();
+      }, 250);
+    });
+  }
+
+  const newBtn = document.getElementById('finNewBtn');
+  if (newBtn) newBtn.addEventListener('click', () => openFinTransacaoModal());
+
+  document.getElementById('finTransacaoCloseBtn')?.addEventListener('click', closeFinTransacaoModal);
+  document.getElementById('finTransacaoCancelBtn')?.addEventListener('click', closeFinTransacaoModal);
+  document.getElementById('finTransacaoOverlay')?.addEventListener('click', closeFinTransacaoModal);
+  document.getElementById('finTransacaoSaveBtn')?.addEventListener('click', saveFinTransacao);
+  document.getElementById('finTransacaoDeleteBtn')?.addEventListener('click', deleteFinTransacao);
+
+  document.querySelectorAll('#finTypeTabs .fin-type-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      _finSelectedTipo = tab.dataset.tipo === 'receita' ? 'receita' : 'despesa';
+      document.querySelectorAll('#finTypeTabs .fin-type-tab').forEach(t => {
+        const active = t === tab;
+        t.classList.toggle('active', active);
+        t.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      renderFinCategorias();
+    });
+  });
+
+  document.querySelectorAll('.fin-date-quick .chip-toggle').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const input = document.getElementById('finData');
+      if (input) input.value = finTodayIso(chip.dataset.quick === 'yesterday' ? -1 : 0);
+      clearFinError('finData');
+    });
+  });
+
+  const valorInput = document.getElementById('finValor');
+  if (valorInput) {
+    valorInput.addEventListener('input', () => {
+      const digits = valorInput.value.replace(/\D/g, '').slice(0, 12);
+      if (!digits) { valorInput.value = ''; return; }
+      const cents = parseInt(digits, 10) / 100;
+      valorInput.value = cents.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      clearFinError('finValor');
+    });
+  }
+
+  // "+ Criar Categoria" é renderizado como card dentro de #finCategorias
+  // (re-renderizado a cada troca de tipo) — delegação sobrevive ao innerHTML.
+  document.getElementById('finCategorias')?.addEventListener('click', (e) => {
+    if (e.target.closest('#finAddCategoriaBtn, .fin-cat-add')) openFinCategoriaModal();
+  });
+  document.getElementById('finCategoriaCloseBtn')?.addEventListener('click', closeFinCategoriaModal);
+  document.getElementById('finCategoriaCancelBtn')?.addEventListener('click', closeFinCategoriaModal);
+  document.getElementById('finCategoriaOverlay')?.addEventListener('click', closeFinCategoriaModal);
+  document.getElementById('finCategoriaSaveBtn')?.addEventListener('click', saveFinCategoria);
+
+  document.querySelectorAll('#finCatCorPicker .color-swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+      document.querySelectorAll('#finCatCorPicker .color-swatch').forEach(s => {
+        s.classList.remove('active');
+        s.setAttribute('aria-checked', 'false');
+      });
+      sw.classList.add('active');
+      sw.setAttribute('aria-checked', 'true');
+      const hidden = document.getElementById('finCatCor');
+      if (hidden) hidden.value = sw.dataset.color;
+    });
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (document.getElementById('finCategoriaModal')?.classList.contains('open')) closeFinCategoriaModal();
+    else if (document.getElementById('finTransacaoModal')?.classList.contains('open')) closeFinTransacaoModal();
+  });
+}
+
+async function refreshFinanceiro() {
+  const { start, end } = getFinPeriodRange();
+  const [cats, txs] = await Promise.all([
+    fetchFinanceiroCategoriasSupabase(),
+    fetchFinanceiroTransacoesSupabase({ start, end })
+  ]);
+  _finCategorias = cats || [];
+  _finTransacoes = txs || [];
+  renderFinanceiro();
+}
+
+function finEmpresaMatches(ccId, tx) {
+  if (!ccId || ccId === 'all') return true;
+  if (tx.empresa_id === ccId) return true;
+  if (tx.empresa_id) {
+    const cc = centrosCustoData.find(c => c.id === ccId);
+    if (cc && finSlugify(cc.nome) === String(tx.empresa_id).toLowerCase()) return true;
+  }
+  return false;
+}
+
+function finCatNomeDe(t) {
+  if (t.categoria_nome) return t.categoria_nome;
+  const cat = _finCategorias.find(c => c.id === t.categoria_id);
+  return cat ? cat.nome : 'Sem categoria';
+}
+
+function getFinFilteredTransacoes() {
+  return _finTransacoes.filter(t => {
+    if (!finEmpresaMatches(finState.empresaId, t)) return false;
+    if (finState.userId !== 'all') {
+      if (finState.userId === 'sistema') {
+        if (t.user_id) return false;
+      } else if (t.user_id !== finState.userId) {
+        return false;
+      }
+    }
+    if (finState.search) {
+      const catNome = finCatNomeDe(t).toLowerCase();
+      const hay = `${t.descricao || ''} ${catNome}`.toLowerCase();
+      if (!hay.includes(finState.search)) return false;
+    }
+    return true;
+  });
+}
+
+function finEmpresaLabel(empresaId) {
+  if (!empresaId) return '';
+  const cc = centrosCustoData.find(c => c.id === empresaId);
+  if (cc) return cc.nome;
+  const bySlug = centrosCustoData.find(c => finSlugify(c.nome) === String(empresaId).toLowerCase());
+  return bySlug ? bySlug.nome : String(empresaId);
+}
+
+function renderFinanceiro() {
+  const list = getFinFilteredTransacoes();
+
+  let receitas = 0;
+  let despesas = 0;
+  list.forEach(t => {
+    const v = Number(t.valor) || 0;
+    if (t.tipo === 'receita') receitas += v;
+    else despesas += v;
+  });
+  const saldo = receitas - despesas;
+
+  const elR = document.getElementById('finCardReceitas');
+  const elD = document.getElementById('finCardDespesas');
+  const elS = document.getElementById('finCardSaldo');
+  const wrapS = document.getElementById('finCardSaldoWrap');
+  if (elR) elR.textContent = finFormatBRL(receitas);
+  if (elD) elD.textContent = finFormatBRL(despesas);
+  if (elS) elS.textContent = finFormatBRL(saldo);
+  if (wrapS) wrapS.classList.toggle('negative', saldo < 0);
+
+  const count = document.getElementById('finCount');
+  if (count) count.textContent = `${list.length} transaç${list.length === 1 ? 'ão' : 'ões'}`;
+
+  renderFinList(list);
+  renderFinChart(list);
+}
+
+function renderFinList(list) {
+  const wrap = document.getElementById('finList');
+  if (!wrap) return;
+
+  if (!list.length) {
+    wrap.innerHTML = '<div class="fin-empty"><i data-lucide="inbox"></i><p>Nenhuma transação no período</p></div>';
+    initIcons();
+    return;
+  }
+
+  const isAdmin = isCurrentUserAdmin();
+  wrap.innerHTML = list.map(t => {
+    const catNome = finCatNomeDe(t);
+    const cat = _finCategorias.find(c => c.id === t.categoria_id);
+    const cor = cat ? cat.cor : '#64748b';
+    const icone = cat ? (cat.icone || 'Tag') : 'Tag';
+    const dataBr = finFormatDate(t.data_transacao);
+    const empresa = finEmpresaLabel(t.empresa_id);
+    const origem = t.origem || 'sistema';
+    const canEdit = can('can_financeiro_update') && (isAdmin || (t.user_id && t.user_id === currentUser.authUserId));
+    const canDel = can('can_financeiro_delete') && (isAdmin || (t.user_id && t.user_id === currentUser.authUserId));
+    return `
+      <div class="fin-row ${t.tipo === 'receita' ? 'receita' : 'despesa'}" data-id="${t.id}">
+        <span class="fin-row-icon" style="background:${cor}20;color:${cor}"><i data-lucide="${icone}"></i></span>
+        <div class="fin-row-main">
+          <strong>${escapeHtml(t.descricao || catNome)}</strong>
+          <span class="fin-row-meta">${escapeHtml(catNome)}${empresa ? ' · ' + escapeHtml(empresa) : ''} · ${dataBr} <span class="fin-badge fin-badge-${escapeHtml(origem)}">${escapeHtml(origem)}</span></span>
+        </div>
+        <span class="fin-row-value ${t.tipo === 'receita' ? 'receita' : 'despesa'}">${t.tipo === 'receita' ? '+' : '−'} ${finFormatBRL(t.valor)}</span>
+        ${(canEdit || canDel) ? `
+        <span class="fin-row-actions">
+          ${canEdit ? `<button class="icon-btn small" data-fin-edit="${t.id}" title="Editar" aria-label="Editar transação"><i data-lucide="pencil"></i></button>` : ''}
+          ${canDel ? `<button class="icon-btn small" data-fin-del="${t.id}" title="Excluir" aria-label="Excluir transação"><i data-lucide="trash-2"></i></button>` : ''}
+        </span>` : ''}
+      </div>`;
+  }).join('');
+  initIcons();
+
+  wrap.querySelectorAll('[data-fin-edit]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = _finTransacoes.find(x => x.id === btn.dataset.finEdit);
+      if (t) openFinTransacaoModal(t);
+    });
+  });
+  wrap.querySelectorAll('[data-fin-del]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const t = _finTransacoes.find(x => x.id === btn.dataset.finDel);
+      if (!t) return;
+      if (!confirm(`Excluir a transação "${t.descricao || finCatNomeDe(t)}" (${finFormatBRL(t.valor)})?`)) return;
+      try {
+        await deleteFinanceiroTransacaoSupabase(t.id);
+        _finTransacoes = _finTransacoes.filter(x => x.id !== t.id);
+        renderFinanceiro();
+        toast('Transação excluída', 'success');
+      } catch (err) {
+        console.error('[Financeiro] Erro ao excluir:', err);
+        toast('Erro ao excluir transação', 'error');
+      }
+    });
+  });
+}
+
+function renderFinChart(list) {
+  const canvas = document.getElementById('finChartCategorias');
+  const empty = document.getElementById('finChartEmpty');
+  const legend = document.getElementById('finChartLegend');
+  if (!canvas) return;
+
+  const isReceita = _finChartTipo === 'receita';
+  const tipoLabel = isReceita ? 'receita' : 'despesa';
+  const emptyMsg = `Nenhuma ${tipoLabel} registrada neste período`;
+
+  const clearChart = () => {
+    if (_finChart) { _finChart.destroy(); _finChart = null; }
+    canvas.style.display = 'none';
+    if (legend) legend.innerHTML = '';
+  };
+
+  if (typeof Chart === 'undefined') {
+    if (empty) { empty.textContent = emptyMsg; empty.style.display = 'block'; }
+    clearChart();
+    return;
+  }
+
+  // Agrupa por categoria filtrando o tipo da aba ativa (despesa | receita)
+  const byCat = {};
+  list.filter(t => t.tipo === _finChartTipo).forEach(t => {
+    const nome = finCatNomeDe(t);
+    byCat[nome] = (byCat[nome] || 0) + (Number(t.valor) || 0);
+  });
+
+  // Maior fatia primeiro (vale para o gráfico e para a legenda)
+  const entries = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+
+  if (!entries.length) {
+    if (empty) { empty.textContent = emptyMsg; empty.style.display = 'block'; }
+    clearChart();
+    return;
+  }
+
+  if (empty) empty.style.display = 'none';
+  canvas.style.display = '';
+
+  const labels = entries.map(e => e[0]);
+  const values = entries.map(e => e[1]);
+  const total = values.reduce((s, v) => s + v, 0);
+
+  const colors = labels.map(nome => {
+    const cat = _finCategorias.find(c => c.nome === nome && c.tipo === _finChartTipo);
+    return cat ? cat.cor : '#64748b';
+  });
+
+  if (_finChart) _finChart.destroy();
+
+  // Legenda rica customizada: cor · nome · valor (R$) · percentual
+  if (legend) {
+    legend.innerHTML = labels.map((nome, i) => {
+      const pct = total ? (values[i] / total) * 100 : 0;
+      const pctTxt = `${pct.toFixed(1).replace('.', ',')}%`;
+      return `<div class="fin-legend-row">
+        <span class="fin-legend-dot" style="background:${colors[i]}"></span>
+        <span class="fin-legend-name">${escapeHtml(nome)}</span>
+        <span class="fin-legend-value">${finFormatBRL(values[i])}</span>
+        <span class="fin-legend-pct">${pctTxt}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Plugin local: total da aba ativa no centro da rosca
+  const finCenterText = {
+    id: 'finCenterText',
+    afterDraw(chart) {
+      const { ctx, chartArea } = chart;
+      if (!chartArea) return;
+      const cx = (chartArea.left + chartArea.right) / 2;
+      const cy = (chartArea.top + chartArea.bottom) / 2;
+      const isDark = document.documentElement.classList.contains('theme-dark');
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = isDark ? '#94A3B8' : '#64748b';
+      ctx.font = '11px system-ui, -apple-system, sans-serif';
+      ctx.fillText('Total', cx, cy - 11);
+      ctx.fillStyle = isDark ? '#F1F5F9' : '#0F172A';
+      const txt = finFormatBRL(total);
+      // Ajusta a fonte se o valor não couber no centro da rosca
+      let size = 15;
+      ctx.font = `700 ${size}px system-ui, -apple-system, sans-serif`;
+      const maxW = (chartArea.right - chartArea.left) * 0.52;
+      while (size > 10 && ctx.measureText(txt).width > maxW) {
+        size -= 1;
+        ctx.font = `700 ${size}px system-ui, -apple-system, sans-serif`;
+      }
+      ctx.fillText(txt, cx, cy + 6);
+      ctx.restore();
+    }
+  };
+
+  // Cores da legenda/tooltips adaptadas ao tema ativo
+  const isDark = document.documentElement.classList.contains('theme-dark');
+  _finChart = new Chart(canvas.getContext('2d'), {
+    type: 'doughnut',
+    plugins: [finCenterText],
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: colors,
+        borderWidth: 0
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '62%',
+      plugins: {
+        legend: { display: false },   // substituída pela legenda rica (#finChartLegend)
+        tooltip: {
+          backgroundColor: isDark ? '#0F172A' : 'rgba(15, 23, 42, 0.92)',
+          titleColor: isDark ? '#F1F5F9' : '#FFFFFF',
+          bodyColor: isDark ? '#CBD5E1' : '#E2E8F0',
+          borderColor: isDark ? '#334155' : 'transparent',
+          borderWidth: isDark ? 1 : 0,
+          callbacks: {
+            label: ctx => {
+              const v = Number(ctx.parsed) || 0;
+              const pct = total ? (v / total) * 100 : 0;
+              return ` ${ctx.label}: ${finFormatBRL(v)} (${pct.toFixed(1).replace('.', ',')}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function clearFinError(name) {
+  const el = document.querySelector(`#finTransacaoModal [data-error="${name}"]`);
+  if (el) { el.textContent = ''; el.style.display = 'none'; }
+  const inputMap = { finValor: 'finValor', finData: 'finData', finCategoria: 'finCategorias' };
+  const input = document.getElementById(inputMap[name] || '');
+  if (input) input.classList.remove('invalid');
+}
+
+function setFinError(name, msg) {
+  const el = document.querySelector(`#finTransacaoModal [data-error="${name}"]`);
+  if (el) { el.textContent = msg; el.style.display = ''; }
+  const inputMap = { finValor: 'finValor', finData: 'finData', finCategoria: 'finCategorias' };
+  const input = document.getElementById(inputMap[name] || '');
+  if (input) input.classList.add('invalid');
+}
+
+function openFinTransacaoModal(transacao) {
+  if (transacao) {
+    if (!can('can_financeiro_update')) { toast('Você não tem permissão para editar transações.', 'error'); return; }
+  } else if (!can('can_financeiro_create')) {
+    toast('Você não tem permissão para criar transações.', 'error');
+    return;
+  }
+
+  const idInput = document.getElementById('finTransacaoId');
+  const title = document.getElementById('finTransacaoTitle');
+  const delBtn = document.getElementById('finTransacaoDeleteBtn');
+  const dataInput = document.getElementById('finData');
+  const valorInput = document.getElementById('finValor');
+  const obs = document.getElementById('finObservacao');
+  const empresaSel = document.getElementById('finEmpresa');
+
+  ['finValor', 'finCategoria', 'finData'].forEach(clearFinError);
+
+  if (transacao) {
+    if (idInput) idInput.value = transacao.id;
+    if (title) title.textContent = 'Editar transação';
+    if (delBtn) delBtn.style.display = can('can_financeiro_delete') ? '' : 'none';
+    _finSelectedTipo = transacao.tipo === 'receita' ? 'receita' : 'despesa';
+    _finSelectedCategoriaId = transacao.categoria_id || null;
+    if (valorInput) valorInput.value = finFormatBRL(transacao.valor);
+    if (dataInput) dataInput.value = String(transacao.data_transacao || '').slice(0, 10);
+    if (obs) obs.value = transacao.descricao || '';
+    if (empresaSel) {
+      const matchesId = transacao.empresa_id && centrosCustoData.some(c => c.id === transacao.empresa_id);
+      empresaSel.value = matchesId ? transacao.empresa_id : '';
+    }
+  } else {
+    if (idInput) idInput.value = '';
+    if (title) title.textContent = 'Nova transação';
+    if (delBtn) delBtn.style.display = 'none';
+    _finSelectedTipo = 'despesa';
+    _finSelectedCategoriaId = null;
+    if (valorInput) valorInput.value = '';
+    if (dataInput) dataInput.value = finTodayIso();
+    if (obs) obs.value = '';
+    if (empresaSel) empresaSel.value = '';
+  }
+
+  document.querySelectorAll('#finTypeTabs .fin-type-tab').forEach(t => {
+    const active = t.dataset.tipo === _finSelectedTipo;
+    t.classList.toggle('active', active);
+    t.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  renderFinCategorias();
+
+  document.getElementById('finTransacaoOverlay')?.classList.add('open');
+  document.getElementById('finTransacaoModal')?.classList.add('open');
+  setTimeout(() => valorInput?.focus(), 80);
+  initIcons();
+}
+
+function closeFinTransacaoModal() {
+  document.getElementById('finTransacaoOverlay')?.classList.remove('open');
+  document.getElementById('finTransacaoModal')?.classList.remove('open');
+}
+
+function renderFinCategorias() {
+  const wrap = document.getElementById('finCategorias');
+  if (!wrap) return;
+
+  const cats = _finCategorias.filter(c => c.tipo === _finSelectedTipo);
+  const addCard = `
+    <button type="button" class="fin-cat fin-cat-add" id="finAddCategoriaBtn" aria-label="Criar nova categoria">
+      <span class="fin-cat-icon fin-cat-add-icon"><i data-lucide="plus"></i></span>
+      <span>Criar</span>
+    </button>`;
+
+  if (!cats.length) {
+    wrap.innerHTML = '<p class="fin-cat-empty">Nenhuma categoria para este tipo ainda.</p>' + addCard;
+    initIcons();
+    return;
+  }
+
+  wrap.innerHTML = cats.map(c => `
+    <button type="button" class="fin-cat ${c.id === _finSelectedCategoriaId ? 'active' : ''}" data-id="${c.id}" role="radio" aria-checked="${c.id === _finSelectedCategoriaId}">
+      ${c.user_id ? `<span class="fin-cat-del" data-del-cat="${c.id}" role="button" tabindex="-1" title="Excluir categoria" aria-label="Excluir categoria ${escapeHtml(c.nome)}"><i data-lucide="trash-2"></i></span>` : ''}
+      <span class="fin-cat-icon" style="background:${c.cor}20;color:${c.cor}"><i data-lucide="${c.icone || 'Tag'}"></i></span>
+      <span>${escapeHtml(c.nome)}</span>
+    </button>`).join('') + addCard;
+  initIcons();
+
+  wrap.querySelectorAll('.fin-cat[data-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _finSelectedCategoriaId = btn.dataset.id;
+      renderFinCategorias();
+      clearFinError('finCategoria');
+    });
+  });
+
+  // Excluir categoria personalizada (user_id IS NOT NULL) — lixeira no card
+  wrap.querySelectorAll('[data-del-cat]').forEach(icon => {
+    icon.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const id = icon.dataset.delCat;
+      const cat = _finCategorias.find(c => c.id === id);
+      if (!cat) return;
+      if (!confirm(`Tem certeza que deseja excluir a categoria '${cat.nome}'?`)) return;
+      try {
+        await deleteFinanceiroCategoriaSupabase(id);
+        invalidateFinanceiroCache();
+        _finCategorias = await fetchFinanceiroCategoriasSupabase(true);
+        if (_finSelectedCategoriaId === id) _finSelectedCategoriaId = null;
+        renderFinCategorias();
+        toast('Categoria excluída com sucesso', 'success');
+      } catch (err) {
+        console.error('[Financeiro] Erro ao excluir categoria:', err);
+        toast('Erro ao excluir categoria', 'error');
+      }
+    });
+  });
+
+  // Destaca/rola até a categoria recém-criada ou pré-selecionada
+  if (_finSelectedCategoriaId) {
+    const active = wrap.querySelector('.fin-cat.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+async function saveFinTransacao() {
+  const idInput = document.getElementById('finTransacaoId');
+  const editingId = idInput?.value || null;
+
+  if (editingId) {
+    if (!can('can_financeiro_update')) { toast('Você não tem permissão para editar transações.', 'error'); return; }
+  } else if (!can('can_financeiro_create')) {
+    toast('Você não tem permissão para criar transações.', 'error');
+    return;
+  }
+
+  const valorInput = document.getElementById('finValor');
+  const dataInput = document.getElementById('finData');
+  const obs = document.getElementById('finObservacao');
+  const empresaSel = document.getElementById('finEmpresa');
+
+  ['finValor', 'finCategoria', 'finData'].forEach(clearFinError);
+
+  const errors = {};
+  const valor = finParseValor(valorInput?.value);
+  if (isNaN(valor) || valor <= 0) errors.finValor = 'Informe um valor maior que zero.';
+  if (!_finSelectedCategoriaId) errors.finCategoria = 'Selecione uma categoria.';
+  if (!dataInput?.value) errors.finData = 'Informe a data.';
+  Object.entries(errors).forEach(([k, msg]) => setFinError(k, msg));
+  if (Object.keys(errors).length) return;
+
+  const cat = _finCategorias.find(c => c.id === _finSelectedCategoriaId);
+  const btn = document.getElementById('finTransacaoSaveBtn');
+  if (btn) btn.disabled = true;
+
+  const payload = {
+    tipo: _finSelectedTipo,
+    valor,
+    categoria_id: _finSelectedCategoriaId,
+    categoria_nome: cat ? cat.nome : null,
+    descricao: (obs?.value || '').trim() || null,
+    data_transacao: dataInput.value,
+    empresa_id: empresaSel?.value || null,
+    user_id: currentUser.authUserId || null,
+    origem: 'sistema'
+  };
+
+  try {
+    if (editingId) {
+      await updateFinanceiroTransacaoSupabase(editingId, payload);
+      toast('Transação atualizada', 'success');
+    } else {
+      await insertFinanceiroTransacaoSupabase(payload);
+      toast('Transação registrada', 'success');
+    }
+    closeFinTransacaoModal();
+    await refreshFinanceiro();
+  } catch (err) {
+    console.error('[Financeiro] Erro ao salvar:', err);
+    toast('Erro ao salvar transação', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function deleteFinTransacao() {
+  const idInput = document.getElementById('finTransacaoId');
+  const id = idInput?.value;
+  if (!id) return;
+  if (!can('can_financeiro_delete')) { toast('Você não tem permissão para excluir transações.', 'error'); return; }
+
+  const t = _finTransacoes.find(x => x.id === id);
+  if (!confirm(`Excluir a transação "${t?.descricao || finCatNomeDe(t || {})}" (${finFormatBRL(t?.valor)})?`)) return;
+
+  try {
+    await deleteFinanceiroTransacaoSupabase(id);
+    closeFinTransacaoModal();
+    toast('Transação excluída', 'success');
+    await refreshFinanceiro();
+  } catch (err) {
+    console.error('[Financeiro] Erro ao excluir:', err);
+    toast('Erro ao excluir transação', 'error');
+  }
+}
+
+function openFinCategoriaModal() {
+  if (!can('can_financeiro_create')) { toast('Você não tem permissão para criar categorias.', 'error'); return; }
+
+  const nome = document.getElementById('finCatNome');
+  const tipo = document.getElementById('finCatTipo');
+  const errEl = document.querySelector('#finCategoriaModal [data-error="finCatNome"]');
+  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+  if (nome) nome.value = '';
+  if (tipo) tipo.value = _finSelectedTipo;
+
+  document.getElementById('finCategoriaOverlay')?.classList.add('open');
+  document.getElementById('finCategoriaModal')?.classList.add('open');
+  setTimeout(() => nome?.focus(), 80);
+}
+
+function closeFinCategoriaModal() {
+  document.getElementById('finCategoriaOverlay')?.classList.remove('open');
+  document.getElementById('finCategoriaModal')?.classList.remove('open');
+}
+
+async function saveFinCategoria() {
+  const nome = document.getElementById('finCatNome');
+  const tipo = document.getElementById('finCatTipo');
+  const icone = document.getElementById('finCatIcone');
+  const cor = document.getElementById('finCatCor');
+  const errEl = document.querySelector('#finCategoriaModal [data-error="finCatNome"]');
+  const nomeVal = (nome?.value || '').trim();
+  const tipoVal = tipo?.value === 'receita' ? 'receita' : 'despesa';
+
+  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+  if (!nomeVal) {
+    if (errEl) { errEl.textContent = 'Informe o nome da categoria.'; errEl.style.display = ''; }
+    return;
+  }
+  const dup = _finCategorias.find(c => c.nome.toLowerCase() === nomeVal.toLowerCase() && c.tipo === tipoVal);
+  if (dup) {
+    if (errEl) { errEl.textContent = 'Já existe uma categoria com esse nome para este tipo.'; errEl.style.display = ''; }
+    return;
+  }
+
+  const btn = document.getElementById('finCategoriaSaveBtn');
+  if (btn) btn.disabled = true;
+
+  try {
+    const created = await insertFinanceiroCategoriaSupabase({
+      nome: nomeVal,
+      tipo: tipoVal,
+      icone: icone?.value || 'Tag',
+      cor: cor?.value || '#3b82f6',
+      user_id: currentUser.authUserId || null
+    });
+    _finCategorias = await fetchFinanceiroCategoriasSupabase(true);
+    if (created && created.id) {
+      _finSelectedCategoriaId = created.id;
+      // Sincroniza a aba do modal com o tipo criado (caso tenha mudado no mini-modal)
+      if (created.tipo) _finSelectedTipo = created.tipo;
+      document.querySelectorAll('#finTypeTabs .fin-type-tab').forEach(t => {
+        const active = t.dataset.tipo === _finSelectedTipo;
+        t.classList.toggle('active', active);
+        t.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+    }
+    closeFinCategoriaModal();
+    renderFinCategorias();
+    clearFinError('finCategoria');
+    toast('Categoria criada e selecionada', 'success');
+  } catch (err) {
+    console.error('[Financeiro] Erro ao criar categoria:', err);
+    toast('Erro ao criar categoria', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// Re-render ao alternar Dark Mode (doughnut + superfícies do extrato)
+if (typeof MutationObserver !== 'undefined' && !window._finThemeObserver) {
+  window._finThemeObserver = true;
+  new MutationObserver(() => {
+    if (_finInited && activePage === 'financeiro') renderFinanceiro();
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+}

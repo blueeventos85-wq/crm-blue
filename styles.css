@@ -2974,7 +2974,8 @@ svg.lucide.lg { width: 22px; height: 22px; }
   border-radius: var(--radius);
   padding: 12px;
   cursor: grab;
-  touch-action: manipulation;
+  /* pan-y: rolagem vertical livre; o arraste por toque usa long-press */
+  touch-action: pan-y;
   transition: all 0.18s ease;
   position: relative;
   box-shadow: var(--shadow-sm);
@@ -2993,6 +2994,113 @@ svg.lucide.lg { width: 22px; height: 22px; }
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18), 0 8px 16px rgba(0, 0, 0, 0.12);
   z-index: 100;
   transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+/* Arraste por toque ativo: sem rolagem nem seleção de texto no card de origem */
+.lead-card.is-dragging {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  opacity: 0.4;
+  border-style: dashed;
+  box-shadow: none;
+}
+
+/* Clone flutuante que acompanha o dedo durante o arraste touch */
+.lead-card-touch-ghost {
+  position: fixed;
+  z-index: 400;
+  margin: 0;
+  pointer-events: none;
+  cursor: grabbing;
+  opacity: 0.96;
+  transform: scale(1.03) rotate(-1.5deg);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2), 0 8px 16px rgba(0, 0, 0, 0.12);
+}
+
+/* Botão "Mover para..." (fallback de acessibilidade no mobile) */
+.lead-card-move-btn {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-text);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.lead-card-move-btn:hover {
+  background: var(--gray-100);
+  color: var(--text-primary);
+}
+.lead-card-move-btn i,
+.lead-card-move-btn svg { width: 14px; height: 14px; }
+
+/* Menu "Mover para..." */
+.lead-move-menu {
+  position: fixed;
+  z-index: 500;
+  min-width: 220px;
+  max-width: min(280px, calc(100vw - 16px));
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--card-bg);
+  border: 1px solid var(--gray-200);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  padding: 6px;
+}
+.lead-move-menu-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-text);
+  padding: 6px 8px 4px;
+}
+.lead-move-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.lead-move-menu-item:hover { background: var(--primary-blue-soft); }
+.lead-move-menu-item.current { opacity: 0.55; }
+.lead-move-menu-item i,
+.lead-move-menu-item svg {
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  color: var(--primary-blue);
+  flex-shrink: 0;
+}
+.lead-move-menu-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.lead-move-menu-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lead-card.just-moved {
@@ -3518,6 +3626,18 @@ svg.lucide.lg { width: 22px; height: 22px; }
   min-height: 14px;
   font-weight: 500;
 }
+
+.cal-overnight-badge {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--amber-600, #C98A00);
+  background: var(--amber-50, #FEF6E0);
+}
+.cal-overnight-badge[hidden] { display: none; }
 
 /* Chip groups */
 .chip-group {
@@ -6978,6 +7098,9 @@ textarea:focus-visible,
 }
 .admin-badge-admin { background: #eff6ff; color: #2563eb; }
 .admin-badge-marketing { background: #f0fdf4; color: #16a34a; }
+/* Equipe = departamento de trabalho (neutro), para diferenciar do Cargo/perfil */
+.admin-badge-team { background: #f1f5f9; color: #475569; }
+.theme-dark .admin-badge-team { background: rgba(148, 163, 184, 0.16); color: #94A3B8; }
 
 /* Status */
 .admin-status { font-size: 0.82rem; font-weight: 500; }
@@ -8140,6 +8263,11 @@ textarea:focus-visible,
 #btnConvRefresh.is-loading i{animation:convRefreshSpin .9s linear infinite}
 @keyframes convRefreshSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 
+/* ---- FAB nova conversa (somente mobile, visão lista) ---- */
+.conv-fab{display:none;position:fixed;right:18px;bottom:22px;width:56px;height:56px;border-radius:50%;border:none;background:var(--primary-blue);color:#fff;cursor:pointer;place-items:center;z-index:950;box-shadow:0 8px 20px rgba(22,91,255,0.4);transition:transform 0.15s,background 0.15s}
+.conv-fab:hover{background:var(--primary-blue-dark);transform:scale(1.05)}
+.conv-fab i,.conv-fab svg{width:26px;height:26px}
+
 /* ---- Layout 3 painéis ---- */
 .conv-layout{display:grid;grid-template-columns:340px 1fr 300px;flex:1;gap:0;background:var(--bg-page);overflow:hidden}
 
@@ -8221,6 +8349,10 @@ textarea:focus-visible,
 .conv-chat-empty p{font-size:13px;color:var(--gray-400);margin:0}
 .conv-chat-content{display:flex;flex-direction:column;height:100%}
 .conv-chat-header{padding:12px 20px;background:var(--card-bg);border-bottom:1px solid var(--gray-200);display:flex;align-items:center;gap:12px;flex-shrink:0}
+/* Botão voltar (master-detail mobile) — oculto no desktop */
+.conv-chat-header-back{display:none;width:36px;height:36px;border-radius:8px;border:none;background:transparent;color:var(--gray-700);cursor:pointer;place-items:center;flex-shrink:0;transition:background 0.15s}
+.conv-chat-header-back:hover{background:var(--gray-100)}
+.conv-chat-header-back i,.conv-chat-header-back svg{width:20px;height:20px}
 .conv-chat-header-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#1E3A5F,#165BFF);color:#fff;display:grid;place-items:center;font-size:13px;font-weight:700;flex-shrink:0;position:relative;overflow:hidden}
 
 /* ---- Modal: informações do grupo / participantes ---- */
@@ -8573,7 +8705,60 @@ textarea:focus-visible,
 
 /* ---- Responsivo ---- */
 @media(max-width:1200px){.conv-layout{grid-template-columns:300px 1fr 0}.conv-crm-panel{display:none}.conv-crm-panel.mobile-open{display:flex;position:fixed;top:0;right:0;bottom:0;width:320px;z-index:1000;box-shadow:-4px 0 24px rgba(0,0,0,0.5)}}
-@media(max-width:768px){#page-conversas.active{margin:-12px -16px -48px -16px}.conv-header{padding:12px 16px}.conv-header-center{display:none}.conv-layout{grid-template-columns:1fr}.conv-sidebar{display:none}.conv-sidebar.mobile-open{display:flex;position:fixed;top:0;left:0;bottom:0;width:100%;z-index:1000}.conv-chat{display:none}.conv-chat.mobile-open{display:flex;position:fixed;top:0;left:0;right:0;bottom:0;z-index:999}.conv-crm-panel.mobile-open{width:100%}}
+/* ============================================
+   CONVERSAS · MOBILE (≤768px) — Master/Detail estilo WhatsApp
+   Estado padrão = lista (.mobile-show-list).
+   .mobile-show-chat exibe o chat em tela cheia e oculta a lista.
+   O desktop (grid 3 colunas) permanece intacto acima de 768px.
+   ============================================ */
+@media (max-width: 768px){
+  #page-conversas.active{
+    height:calc(100dvh - var(--topbar-h));  /* dvh evita overflow com a barra do navegador */
+    margin:-20px -20px -20px -20px;         /* iguala o padding real de .content (≤1024px) */
+    overflow:hidden;
+  }
+
+  /* Header compacto: só título + botões de ação essenciais (uma linha) */
+  .conv-header{padding:10px 14px;gap:8px;flex-wrap:nowrap}
+  .conv-header-center{display:none}
+  .conv-header-subtitle{display:none}
+  .conv-header-title{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .conv-header-left{min-width:0;flex:1}
+  .conv-header-right{flex-shrink:0}
+  .conv-sync-time{display:none}
+  #convCompanyDropdownBtn span{max-width:88px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #btnConvNew{display:none}   /* no mobile a nova conversa é o FAB */
+
+  /* Layout deixa de ser grid: vira coluna de altura restante */
+  .conv-layout{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
+
+  /* Estado padrão (master): lista em largura total; chat oculto.
+     Ao selecionar uma conversa, .mobile-show-chat inverte os dois.
+     flex:1 + min-height:0 fazem o painel ativo ocupar toda a altura restante. */
+  .conv-sidebar{flex:1;min-height:0}
+  .conv-chat{display:none}
+  #page-conversas.mobile-show-chat .conv-sidebar{display:none}
+  #page-conversas.mobile-show-chat .conv-chat{display:flex;flex:1;min-height:0}
+
+  /* Botão voltar visível só no mobile; header do chat colapsa ações */
+  .conv-chat-header-back{display:grid}
+  .conv-chat-header{padding:10px 12px;gap:8px}
+  .conv-chat-header-actions{gap:2px}
+
+  /* Mensagens: balões mais largos, scroll confortável */
+  .conv-msg{max-width:82%}
+  .conv-chat-messages{padding:12px 12px}
+
+  /* Composer colado no rodapé com suporte à barra do teclado */
+  .conv-chat-composer{padding:10px 12px;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+
+  /* FAB visível apenas na visão lista do mobile */
+  #page-conversas.mobile-show-list .conv-fab{display:grid}
+  #page-conversas.mobile-show-chat .conv-fab{display:none}
+
+  /* Painel CRM: em mobile vira drawer de largura total quando aberto */
+  .conv-crm-panel.mobile-open{width:100%}
+}
 
 /* ============================================
    CENTROS DE CUSTO
@@ -10597,3 +10782,870 @@ textarea:focus-visible,
 .cc-modelo-excluir {
   color: var(--error);
 }
+
+/* ============================================
+   FINANCEIRO
+   ============================================ */
+.fin-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.fin-custom-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted-text);
+}
+
+.fin-custom-range input[type="date"] {
+  padding: 7px 10px;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  background: var(--card-bg);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.fin-select {
+  padding: 8px 10px;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  background: var(--card-bg);
+  font-size: 13px;
+  color: var(--text-primary);
+  max-width: 220px;
+}
+
+.fin-search-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 1;
+  min-width: 180px;
+}
+
+.fin-search-wrap i,
+.fin-search-wrap svg {
+  position: absolute;
+  left: 10px;
+  width: 15px;
+  height: 15px;
+  color: var(--muted-text);
+  pointer-events: none;
+}
+
+.fin-search-wrap input {
+  width: 100%;
+  padding: 8px 10px 8px 32px;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  background: var(--card-bg);
+  font-size: 13px;
+}
+
+.fin-new-btn {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.fin-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.fin-card {
+  background: var(--card-bg);
+  border: 1px solid var(--gray-200);
+  border-radius: 14px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fin-card-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-text);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fin-card-label i,
+.fin-card-label svg {
+  width: 15px;
+  height: 15px;
+}
+
+.fin-card strong {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.fin-card-receitas strong { color: var(--success); }
+.fin-card-despesas strong { color: var(--error); }
+.fin-card-saldo strong { color: var(--text-primary); }
+.fin-card-saldo.negative strong { color: var(--error); }
+
+.fin-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(240px, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.fin-list-wrap,
+.fin-chart-wrap {
+  background: var(--card-bg);
+  border: 1px solid var(--gray-200);
+  border-radius: 14px;
+  padding: 16px 18px;
+}
+
+.fin-list-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.fin-list-head h3,
+.fin-chart-wrap h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 10px;
+  color: var(--text-primary);
+}
+
+.fin-list-head h3 { margin-bottom: 0; }
+
+.fin-count {
+  font-size: 12px;
+  color: var(--muted-text);
+}
+
+.fin-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.fin-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 8px;
+  margin: 0 -8px;
+  border-bottom: 1px solid var(--gray-100);
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+
+.fin-row:last-child { border-bottom: none; }
+
+.fin-row:hover { background: var(--gray-50); }
+.fin-list .fin-row:nth-child(even) { background: color-mix(in srgb, var(--gray-50) 55%, transparent); }
+.fin-list .fin-row:nth-child(even):hover { background: var(--gray-50); }
+
+/* Badge de origem (translúcido — legível nos dois temas) */
+.fin-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  margin-left: 4px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: rgba(100, 116, 139, 0.14);
+  color: var(--muted-text);
+  vertical-align: middle;
+}
+
+.fin-badge.whatsapp { background: rgba(16, 185, 129, 0.15); color: #10B981; }
+.fin-badge.n8n { background: rgba(139, 92, 246, 0.15); color: #8B5CF6; }
+
+.fin-row-icon {
+  flex: 0 0 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fin-row-icon i,
+.fin-row-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.fin-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fin-row-main strong {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fin-row-meta {
+  font-size: 12px;
+  color: var(--muted-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fin-row-value {
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.fin-row-value.receita { color: var(--success); }
+.fin-row-value.despesa { color: var(--error); }
+
+.fin-row-actions {
+  display: inline-flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.fin-row:hover .fin-row-actions { opacity: 1; }
+
+.fin-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 36px 12px;
+  color: var(--muted-text);
+  font-size: 13px;
+}
+
+.fin-empty i,
+.fin-empty svg {
+  width: 28px;
+  height: 28px;
+  opacity: 0.5;
+}
+
+.fin-chart-box {
+  position: relative;
+  height: 260px;
+}
+
+.fin-chart-empty {
+  display: none;
+  text-align: center;
+  color: var(--muted-text);
+  font-size: 13px;
+  padding: 40px 0;
+}
+
+/* ---- Gráfico de categorias: abas (Despesas | Receitas) + legenda rica ---- */
+.fin-chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.fin-chart-tabs .seg {
+  padding: 5px 14px;
+  font-size: 12.5px;
+}
+
+/* Legenda customizada: cor · nome · valor (R$) · percentual — ordenada desc */
+.fin-chart-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.fin-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.fin-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.fin-legend-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.fin-legend-value {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fin-legend-pct {
+  width: 48px;
+  text-align: right;
+  color: var(--muted-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- Modal: transação ---- */
+.fin-type-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.fin-type-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+  background: var(--card-bg);
+  color: var(--gray-600);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.fin-type-tab i,
+.fin-type-tab svg {
+  width: 16px;
+  height: 16px;
+}
+
+.fin-type-tab:hover { border-color: var(--gray-300); }
+
+.fin-type-tab.active[data-tipo="despesa"] {
+  border-color: var(--error);
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.fin-type-tab.active[data-tipo="receita"] {
+  border-color: var(--success);
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.fin-valor-group { margin-bottom: 14px; }
+
+.fin-valor-input {
+  width: 100%;
+  text-align: center;
+  font-size: 30px !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em;
+  padding: 14px 12px !important;
+  border-radius: 12px !important;
+}
+
+.fin-cat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
+}
+
+.fin-cat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 8px;
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+  background: var(--card-bg);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+/* Lixeira de categoria personalizada (canto do card) */
+.fin-cat-del {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--gray-400);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+
+.fin-cat:hover .fin-cat-del,
+.fin-cat-del:focus-visible {
+  opacity: 1;
+}
+
+.fin-cat-del:hover {
+  color: var(--error);
+  background: var(--error-soft);
+}
+
+.fin-cat-del i,
+.fin-cat-del svg {
+  width: 12px;
+  height: 12px;
+}
+
+.fin-cat:hover { border-color: var(--gray-300); }
+
+.fin-cat.active {
+  border-color: var(--primary-blue);
+  box-shadow: 0 0 0 3px rgba(22, 91, 255, 0.12);
+  color: var(--text-primary);
+}
+
+.fin-cat-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fin-cat-icon i,
+.fin-cat-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.fin-cat-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--muted-text);
+  font-size: 13px;
+  padding: 10px 0;
+}
+
+.fin-cat-add {
+  border: 1.5px dashed var(--gray-300);
+  background: var(--gray-50);
+  color: var(--primary-blue);
+}
+
+.fin-cat-add:hover,
+.fin-cat-add:focus-visible {
+  border-color: var(--primary-blue);
+  background: var(--primary-blue-soft);
+}
+
+.fin-cat-add-icon {
+  background: transparent !important;
+  color: var(--primary-blue) !important;
+}
+
+/* Mini-modal de categoria acima do modal de transação */
+#finCategoriaOverlay { z-index: 10000; }
+#finCategoriaModal { z-index: 10001; }
+
+.fin-date-quick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.fin-date-quick input[type="date"] {
+  flex: 1;
+  min-width: 140px;
+}
+
+.fin-date-quick .chip-toggle {
+  padding: 6px 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: 999px;
+  background: var(--card-bg);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray-600);
+  cursor: pointer;
+}
+
+.fin-date-quick .chip-toggle:hover {
+  border-color: var(--gray-300);
+  color: var(--text-primary);
+}
+
+#finTransacaoModal .invalid,
+#finCategorias.invalid {
+  border-color: var(--error) !important;
+}
+
+/* ============================================
+   FINANCEIRO · RESPONSIVO (mobile ≤ 768px)
+   ============================================ */
+@media (max-width: 768px) {
+  /* 1 · Barra de ação: busca e botão em linhas próprias, 100% da largura */
+  .fin-toolbar {
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .fin-toolbar .fin-search-wrap {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .fin-toolbar .fin-new-btn {
+    flex: 1 1 100%;
+    width: 100%;
+    margin-left: 0;
+    justify-content: center;
+  }
+
+  .fin-toolbar .fin-select {
+    flex: 1 1 200px;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  /* 4 · Pills de período: rolagem horizontal invisível (360px–390px) */
+  #finPeriodSeg {
+    display: flex;
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  #finPeriodSeg::-webkit-scrollbar { display: none; }
+
+  #finPeriodSeg .seg {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  /* 2 · Cards de resumo: sem colunas espremidas, valores em uma linha */
+  .fin-cards {
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .fin-card {
+    padding: 12px 14px;
+    gap: 6px;
+  }
+
+  .fin-card strong {
+    font-size: 22px;
+    white-space: nowrap;
+  }
+
+  /* 3 · Extrato e gráfico empilhados em coluna única */
+  .fin-main {
+    display: flex !important;
+    flex-direction: column !important;
+    grid-template-columns: 1fr !important;
+    gap: 16px;
+  }
+
+  .fin-list-wrap,
+  .fin-chart-wrap {
+    width: 100%;
+    min-width: 0;
+    padding: 14px;
+  }
+
+  .fin-chart-box {
+    height: 240px;
+    max-width: 320px;
+    margin: 0 auto;
+  }
+
+  .fin-row {
+    gap: 10px;
+    padding: 12px 6px;
+    margin: 0 -6px;
+    align-items: flex-start;
+  }
+
+  /* Descrição e metadados quebram linha em vez de cortar na horizontal */
+  .fin-row-icon { margin-top: 2px; }
+
+  .fin-row-main strong,
+  .fin-row-meta {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .fin-row-value {
+    font-size: 13.5px;
+    margin-left: auto;
+    padding-top: 1px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Cards de resumo totalmente empilhados em telas estreitas */
+  .fin-cards { grid-template-columns: 1fr; }
+}
+
+/* ============================================
+   FINANCEIRO · TEMA ESCURO
+   Superfícies, controles e modais do módulo
+   usando as variáveis do .theme-dark
+   ============================================ */
+
+/* --- Superfícies: cards, extrato e chart --- */
+.theme-dark #page-financeiro .fin-card,
+.theme-dark #page-financeiro .fin-list-wrap,
+.theme-dark #page-financeiro .fin-chart-wrap {
+  background: var(--card-bg);
+  border-color: var(--gray-200);
+  color: var(--text-primary);
+}
+
+/* --- Valores monetários: saturação confortável no escuro --- */
+.theme-dark #page-financeiro .fin-card-receitas strong,
+.theme-dark #page-financeiro .fin-row-value.receita { color: #22C55E; }
+
+.theme-dark #page-financeiro .fin-card-despesas strong,
+.theme-dark #page-financeiro .fin-row-value.despesa,
+.theme-dark #page-financeiro .fin-card-saldo.negative strong { color: #EF4444; }
+
+.theme-dark #page-financeiro .fin-card-saldo strong { color: var(--text-primary); }
+
+/* --- Toolbar: selects, busca, range e chips --- */
+.theme-dark #page-financeiro .fin-select,
+.theme-dark #page-financeiro .fin-search-wrap input,
+.theme-dark #page-financeiro .fin-custom-range input[type="date"],
+.theme-dark #page-financeiro .fin-date-quick .chip-toggle {
+  background: var(--surface-bg);
+  border-color: var(--gray-300);
+  color: var(--text-primary);
+}
+
+.theme-dark #page-financeiro .fin-search-wrap input::placeholder,
+.theme-dark #page-financeiro .fin-custom-range input[type="date"]::placeholder {
+  color: var(--muted-text);
+}
+
+.theme-dark #page-financeiro .fin-search-wrap i,
+.theme-dark #page-financeiro .fin-search-wrap svg,
+.theme-dark #page-financeiro .fin-custom-range { color: var(--muted-text); }
+
+.theme-dark #page-financeiro .fin-date-quick .chip-toggle:hover {
+  border-color: var(--gray-400);
+  color: var(--text-primary);
+}
+
+/* --- Extrato: hairlines, zebra, hover e metadados --- */
+.theme-dark #page-financeiro .fin-row {
+  border-bottom-color: var(--gray-200);
+}
+
+.theme-dark #page-financeiro .fin-list .fin-row:nth-child(even) {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.theme-dark #page-financeiro .fin-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.theme-dark #page-financeiro .fin-list .fin-row:nth-child(even):hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.theme-dark #page-financeiro .fin-row-main strong { color: var(--text-primary); }
+
+.theme-dark #page-financeiro .fin-row-meta,
+.theme-dark #page-financeiro .fin-count,
+.theme-dark #page-financeiro .fin-card-label,
+.theme-dark #page-financeiro .fin-empty,
+.theme-dark #page-financeiro .fin-chart-empty,
+.theme-dark #page-financeiro .fin-cat-empty {
+  color: var(--muted-text);
+}
+
+.theme-dark #page-financeiro .fin-list-head h3,
+.theme-dark #page-financeiro .fin-chart-wrap h3 { color: var(--text-primary); }
+
+/* --- Badges de origem no escuro --- */
+.theme-dark #page-financeiro .fin-badge {
+  background: rgba(148, 163, 184, 0.16);
+  color: var(--gray-500);
+}
+
+.theme-dark #page-financeiro .fin-badge.whatsapp {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34D399;
+}
+
+.theme-dark #page-financeiro .fin-badge.n8n {
+  background: rgba(139, 92, 246, 0.18);
+  color: #A78BFA;
+}
+
+/* --- Modais: container --- */
+.theme-dark #finTransacaoModal,
+.theme-dark #finCategoriaModal {
+  background: var(--card-bg);
+  border: 1px solid var(--gray-200);
+}
+
+.theme-dark #finTransacaoModal h2,
+.theme-dark #finCategoriaModal h2 { color: var(--text-primary); }
+
+.theme-dark #finTransacaoModal .modal-meta,
+.theme-dark #finCategoriaModal .modal-meta { color: var(--muted-text); }
+
+.theme-dark #finTransacaoModal label,
+.theme-dark #finCategoriaModal label { color: var(--text-secondary); }
+
+/* --- Modais: formulário padrão escuro --- */
+.theme-dark #finTransacaoModal input[type="text"],
+.theme-dark #finTransacaoModal input[type="date"],
+.theme-dark #finTransacaoModal select,
+.theme-dark #finTransacaoModal textarea,
+.theme-dark #finCategoriaModal input[type="text"],
+.theme-dark #finCategoriaModal select {
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  border-color: var(--gray-300);
+}
+
+.theme-dark #finTransacaoModal input::placeholder,
+.theme-dark #finTransacaoModal textarea::placeholder,
+.theme-dark #finCategoriaModal input::placeholder {
+  color: var(--muted-text);
+}
+
+/* --- Modais: segmented control Despesa / Renda --- */
+.theme-dark .fin-type-tab {
+  background: var(--surface-bg);
+  border-color: var(--gray-300);
+  color: var(--text-secondary);
+}
+
+.theme-dark .fin-type-tab:hover { border-color: var(--gray-400); }
+
+.theme-dark .fin-type-tab.active[data-tipo="despesa"] {
+  background: var(--error-soft);
+  border-color: #EF4444;
+  color: #F87171;
+}
+
+.theme-dark .fin-type-tab.active[data-tipo="receita"] {
+  background: var(--success-soft);
+  border-color: #22C55E;
+  color: #4ADE80;
+}
+
+/* --- Modais: input de valor --- */
+.theme-dark #finValor {
+  background: var(--surface-bg);
+  border-color: var(--gray-300);
+  color: #F1F5F9;
+}
+
+.theme-dark #finValor::placeholder { color: var(--muted-text); }
+
+/* --- Modais: grade de categorias --- */
+.theme-dark .fin-cat {
+  background: var(--surface-bg);
+  border-color: var(--gray-300);
+  color: var(--text-secondary);
+}
+
+.theme-dark .fin-cat:hover { border-color: var(--gray-400); }
+
+.theme-dark .fin-cat.active {
+  background: var(--surface-bg);
+  border-color: var(--primary-blue);
+  color: var(--text-primary);
+  box-shadow: 0 0 0 3px rgba(22, 91, 255, 0.28);
+}
+
+.theme-dark .fin-cat-add {
+  background: var(--surface-bg);
+  border-color: var(--gray-400);
+  color: #7EA6FF;
+}
+
+.theme-dark .fin-cat-add:hover,
+.theme-dark .fin-cat-add:focus-visible {
+  border-color: var(--primary-blue);
+  background: rgba(22, 91, 255, 0.14);
+}
+
+/* --- Modais: ações e botões --- */
+.theme-dark #finTransacaoModal .btn-ghost,
+.theme-dark #finCategoriaModal .btn-ghost {
+  background: transparent;
+  border-color: var(--gray-300);
+  color: var(--text-secondary);
+}
+
+.theme-dark #finTransacaoModal .btn-ghost:hover,
+.theme-dark #finCategoriaModal .btn-ghost:hover {
+  background: var(--gray-100);
+  color: var(--text-primary);
+}
+
+/* --- Lixeira de categoria --- */
+.theme-dark .fin-cat-del { color: var(--gray-500); }
+
+.theme-dark .fin-cat-del:hover {
+  color: #F87171;
+  background: var(--error-soft);
+}
+
+/* --- Estados de foco/validação --- */
+.theme-dark #finTransacaoModal .form-error { color: #F87171; }
+.theme-dark #finCategoriaModal .form-error { color: #F87171; }

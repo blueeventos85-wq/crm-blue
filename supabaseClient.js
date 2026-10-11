@@ -1186,6 +1186,188 @@ async function fetchVisibleCadencesForPerfil(perfil) {
 }
 
 /* ============================================
+   HELPER: financeiro — categorias e transações
+   ============================================ */
+let _finCategoriasCache = null;
+
+function invalidateFinanceiroCache() {
+  _finCategoriasCache = null;
+}
+
+async function fetchFinanceiroCategoriasSupabase(force) {
+  if (force) _finCategoriasCache = null;
+  if (_finCategoriasCache) return _finCategoriasCache;
+  if (!_supabase) return [];
+
+  const { data, error } = await _supabase
+    .from('financeiro_categorias')
+    .select('*')
+    .order('tipo')
+    .order('nome');
+
+  if (error) {
+    console.error('[Supabase] Erro ao buscar categorias financeiras:', error.message, error.code);
+    return [];
+  }
+
+  _finCategoriasCache = data || [];
+  console.log('[Supabase] Categorias financeiras carregadas:', _finCategoriasCache.length);
+  return _finCategoriasCache;
+}
+
+async function insertFinanceiroCategoriaSupabase(data) {
+  if (!_supabase) throw new Error('Supabase client não inicializado.');
+
+  const payload = {
+    nome: String(data.nome || '').trim(),
+    tipo: data.tipo === 'receita' ? 'receita' : 'despesa',
+    icone: data.icone || 'Tag',
+    cor: data.cor || '#3b82f6',
+    user_id: data.user_id || null,
+  };
+  if (data.empresa_id) payload.empresa_id = data.empresa_id;
+
+  if (!payload.nome) throw new Error('Categoria sem nome.');
+
+  const { data: result, error } = await _supabase
+    .from('financeiro_categorias')
+    .insert([payload])
+    .select();
+
+  if (error) {
+    console.error('[Supabase] Erro ao inserir categoria financeira:', error.message, error.code);
+    throw new Error(error.message || 'Erro ao criar categoria');
+  }
+
+  _finCategoriasCache = null;
+  console.log('[Supabase] Categoria financeira criada:', result);
+  return result && result[0];
+}
+
+async function deleteFinanceiroCategoriaSupabase(id) {
+  if (!_supabase) throw new Error('Supabase client não inicializado.');
+
+  const { error } = await _supabase
+    .from('financeiro_categorias')
+    .delete()
+    .eq('id', String(id));
+
+  if (error) {
+    console.error('[Supabase] Erro ao deletar categoria financeira:', error.message, error.code);
+    throw new Error(error.message || 'Erro ao excluir categoria');
+  }
+
+  _finCategoriasCache = null;
+}
+
+async function fetchFinanceiroTransacoesSupabase(range) {
+  if (!_supabase) return [];
+
+  let query = _supabase
+    .from('financeiro_transacoes')
+    .select('*')
+    .order('data_transacao', { ascending: false })
+    .order('hora_transacao', { ascending: false });
+
+  if (range && range.start) query = query.gte('data_transacao', range.start);
+  if (range && range.end) query = query.lte('data_transacao', range.end);
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('[Supabase] Erro ao buscar transações financeiras:', error.message, error.code);
+    return [];
+  }
+
+  console.log('[Supabase] Transações financeiras encontradas:', (data || []).length);
+  return data || [];
+}
+
+async function insertFinanceiroTransacaoSupabase(data) {
+  if (!_supabase) throw new Error('Supabase client não inicializado.');
+
+  // Payload aceita tanto a UI ({ tipo, valor, categoria_id, ... }) quanto o
+  // n8n ({ tipo, valor, categoria_nome, empresa_id: 'blue_eventos', ... }).
+  // O trigger financeiro_assoc_categoria resolve nome → id quando id vier nulo.
+  const payload = {
+    tipo: data.tipo === 'receita' ? 'receita' : 'despesa',
+    valor: Number(data.valor),
+    categoria_id: data.categoria_id || null,
+    categoria_nome: data.categoria_nome || null,
+    descricao: data.descricao || null,
+    data_transacao: data.data_transacao || new Date().toISOString().slice(0, 10),
+    origem: data.origem || 'sistema',
+    empresa_id: data.empresa_id || null,
+    user_id: data.user_id || null,
+  };
+  if (data.hora_transacao) payload.hora_transacao = data.hora_transacao;
+
+  if (isNaN(payload.valor) || payload.valor < 0) throw new Error('Valor inválido.');
+  if (!payload.categoria_id && !payload.categoria_nome) throw new Error('Transação sem categoria.');
+
+  Object.keys(payload).forEach(k => {
+    if (payload[k] === undefined) delete payload[k];
+  });
+
+  const { data: result, error } = await _supabase
+    .from('financeiro_transacoes')
+    .insert([payload])
+    .select();
+
+  if (error) {
+    const msg = error.message || 'Erro desconhecido';
+    const code = error.code || 'N/A';
+    console.error('[Supabase] Erro ao inserir transação financeira:', { message: msg, code, payload });
+    throw new Error(`${msg} [${code}]`.trim());
+  }
+
+  console.log('[Supabase] Transação financeira inserida:', result);
+  return result && result[0];
+}
+
+async function updateFinanceiroTransacaoSupabase(id, data) {
+  if (!_supabase) throw new Error('Supabase client não inicializado.');
+
+  const payload = { ...data };
+  if ('valor' in payload) payload.valor = Number(payload.valor);
+  if ('categoria_id' in payload && !payload.categoria_id) delete payload.categoria_id;
+
+  Object.keys(payload).forEach(k => {
+    if (payload[k] === undefined) delete payload[k];
+  });
+
+  const { data: result, error } = await _supabase
+    .from('financeiro_transacoes')
+    .update(payload)
+    .eq('id', String(id))
+    .select();
+
+  if (error) {
+    const msg = error.message || 'Erro desconhecido';
+    const code = error.code || 'N/A';
+    console.error('[Supabase] Erro ao atualizar transação financeira:', { message: msg, code, payload });
+    throw new Error(`${msg} [${code}]`.trim());
+  }
+
+  console.log('[Supabase] Transação financeira atualizada:', result);
+  return result && result[0];
+}
+
+async function deleteFinanceiroTransacaoSupabase(id) {
+  if (!_supabase) throw new Error('Supabase client não inicializado.');
+
+  const { error } = await _supabase
+    .from('financeiro_transacoes')
+    .delete()
+    .eq('id', String(id));
+
+  if (error) {
+    console.error('[Supabase] Erro ao deletar transação financeira:', error.message, error.code);
+    throw new Error(error.message || 'Erro ao excluir transação');
+  }
+}
+
+/* ============================================
    TESTE: verificar conexão e permissões
    Rode no Console: testarSupabase()
    ============================================ */
@@ -1245,4 +1427,12 @@ window.fetchCadenciaVisibility = fetchCadenciaVisibility;
 window.upsertCadenciaVisibility = upsertCadenciaVisibility;
 window.deleteCadenciaVisibility = deleteCadenciaVisibility;
 window.fetchVisibleCadencesForPerfil = fetchVisibleCadencesForPerfil;
+window.invalidateFinanceiroCache = invalidateFinanceiroCache;
+window.fetchFinanceiroCategoriasSupabase = fetchFinanceiroCategoriasSupabase;
+window.insertFinanceiroCategoriaSupabase = insertFinanceiroCategoriaSupabase;
+window.deleteFinanceiroCategoriaSupabase = deleteFinanceiroCategoriaSupabase;
+window.fetchFinanceiroTransacoesSupabase = fetchFinanceiroTransacoesSupabase;
+window.insertFinanceiroTransacaoSupabase = insertFinanceiroTransacaoSupabase;
+window.updateFinanceiroTransacaoSupabase = updateFinanceiroTransacaoSupabase;
+window.deleteFinanceiroTransacaoSupabase = deleteFinanceiroTransacaoSupabase;
 window.testarSupabase = testarSupabase;

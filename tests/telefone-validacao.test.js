@@ -21,17 +21,26 @@ const validarTelefone = new Function(`${fnMatch[0]}; return validarTelefone;`)()
 
 describe('validarTelefone() — formatos aceitos', () => {
   const aceitos = [
+    ['859435889', '9 dígitos (curto, mas válido)'],
     ['8594358894', '10 dígitos (DDD + 8)'],
     ['85994358894', '11 dígitos (DDD + 9)'],
     ['558594358894', '12 dígitos (55 + DDD + 8)'],
     ['5585994358894', '13 dígitos (55 + DDD + 9)'],
+    ['85943588941234', '14 dígitos'],
+    ['55859435889455', '16 dígitos mesmo começando com 55'],
     ['(85) 9435-8894', 'formatado sem DDI'],
     ['(85) 99435-8894', 'formatado sem DDI (celular)'],
     ['+55 85 9435-8894', 'colado com +55, espaços e hífen'],
     ['55 85 99435-8894', 'colado com 55 e espaços'],
     ['55-85-99435-8894', 'colado com 55 e hífens'],
     ['5599999999', 'DDD 55 sem DDI (10 dígitos)'],
-    ['55999999999', 'DDD 55 sem DDI (11 dígitos)']
+    ['55999999999', 'DDD 55 sem DDI (11 dígitos)'],
+    ['351199876543', 'internacional 12 dígitos sem DDI 55 (Portugal)'],
+    ['3511998765432', 'internacional 13 dígitos sem DDI 55'],
+    ['+1 415 555 2671', 'internacional com +1 (EUA)'],
+    ['+44 20 7946 0958', 'internacional com +44 (Reino Unido)'],
+    ['08001234567', '0800 (iniciado em 0, 11 dígitos)'],
+    ['12345678901234567890', '20 dígitos (máximo permitido)']
   ];
 
   for (const [valor, desc] of aceitos) {
@@ -45,12 +54,9 @@ describe('validarTelefone() — formatos rejeitados', () => {
   const rejeitados = [
     ['', 'vazio'],
     ['abcdefgh', 'sem dígitos'],
-    ['55', 'apenas o DDI'],
-    ['859435889', '9 dígitos (curto demais)'],
-    ['85943588941234', '14 dígitos (longo demais)'],
-    ['351199876543', '12 dígitos sem DDI 55'],
-    ['3511998765432', '13 dígitos sem DDI 55'],
-    ['55859435889455', '14 dígitos mesmo começando com 55']
+    ['55', 'apenas o DDI (2 dígitos)'],
+    ['123456', '6 dígitos (curto demais)'],
+    ['123456789012345678901', '21 dígitos (longo demais)']
   ];
 
   for (const [valor, desc] of rejeitados) {
@@ -87,10 +93,12 @@ describe('normalização ao salvar (apenas dígitos)', () => {
 });
 
 describe('campo de telefone do modal', () => {
-  it('não deve ter maxlength que corte o número com DDI', () => {
+  it('deve ter maxlength de pelo menos 25 caracteres (permite + e espaços)', () => {
     const input = (htmlSource.match(/<input[^>]*name="telefone"[^>]*>/) || [])[0];
     assert.ok(input, 'input name="telefone" não encontrado em index.html');
-    assert.ok(!/maxlength/i.test(input), 'input de telefone não deve ter maxlength');
+    const m = input.match(/maxlength="(\d+)"/i);
+    assert.ok(m, 'input de telefone deve ter maxlength');
+    assert.ok(parseInt(m[1], 10) >= 25, `maxlength deve ser >= 25 (atual: ${m[1]})`);
   });
 
   it('deve limpar caracteres não numéricos enquanto o usuário digita/cola', () => {
