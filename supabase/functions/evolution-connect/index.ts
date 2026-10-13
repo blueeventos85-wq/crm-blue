@@ -69,6 +69,7 @@ serve(async (req) => {
   // ── 3. Verificar se instância já existe ──
   let configId: string | null = null
   let instanceExists = false
+  let existingStatus = ''
 
   try {
     let existingQuery = supabase
@@ -82,7 +83,14 @@ serve(async (req) => {
       existingQuery = existingQuery.eq('membro_id', membroId)
     }
 
-    const { data: existingConfig, error: cfgErr } = await existingQuery.maybeSingle()
+    // Mesmo critério do cliente (waFetchConfig): mais recente primeiro + limite 1.
+    // Sem isso, várias configs para o mesmo membro fazem maybeSingle() falhar; o
+    // erro era ignorado, a função tentava criar a instância e a Evolution respondia
+    // 403 "This name ... is already in use" (500 no cliente).
+    const { data: existingConfig, error: cfgErr } = await existingQuery
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
     if (cfgErr) {
       console.error('[connect] Erro ao buscar config:', cfgErr.message)
@@ -90,6 +98,7 @@ serve(async (req) => {
 
     if (existingConfig) {
       configId = existingConfig.id
+      existingStatus = existingConfig.status || ''
       const pcfg = existingConfig.provider_config || {}
       if (pcfg.instanceName === instanceName) {
         instanceExists = true
@@ -132,24 +141,35 @@ serve(async (req) => {
         })
       })
 
+      let createData: Record<string, unknown> = {}
+
       if (!createResponse.ok) {
         const errText = await createResponse.text().catch(() => 'Erro desconhecido')
-        console.error('[connect] Erro ao criar instância:', createResponse.status, errText)
-        return jsonResp({
-          error: `Falha ao criar instância na Evolution API (HTTP ${createResponse.status}): ${errText}`,
-          success: false
-        }, 502)
+        const jaExiste = createResponse.status === 409 ||
+          /already in use|j[aá] est[aá] em uso/i.test(errText)
+
+        if (!jaExiste) {
+          console.error('[connect] Erro ao criar instância:', createResponse.status, errText)
+          return jsonResp({
+            error: `Falha ao criar instância na Evolution API (HTTP ${createResponse.status}): ${errText}`,
+            success: false
+          }, 502)
+        }
+
+        // A instância já existe na Evolution: reutilizar em vez de falhar com 403/500.
+        console.log('[connect] Instância já existe — reutilizando:', instanceName, '|', errText.substring(0, 160))
+      } else {
+        createData = await createResponse.json().catch(() => ({}))
+        console.log('[connect] Instância criada:', JSON.stringify(createData).substring(0, 200))
       }
 
-      const createData = await createResponse.json().catch(() => ({}))
-      console.log('[connect] Instância criada:', JSON.stringify(createData).substring(0, 200))
-
-      // Salvar ou atualizar config no banco
+      // Salvar ou atualizar config no banco (criação nova e reutilização)
+      const instFromCreate = (createData.instance || {}) as Record<string, unknown>
       const providerConfig = {
         instanceName,
-        instanceId: createData.instance?.instanceId || '',
+        instanceId: typeof instFromCreate.instanceId === 'string' ? instFromCreate.instanceId : '',
         integration,
-        owner: createData.instance?.owner || ''
+        owner: typeof instFromCreate.owner === 'string' ? instFromCreate.owner : ''
       }
 
       try {
@@ -181,6 +201,7 @@ serve(async (req) => {
 
           configId = newConfig?.id || null
         }
+        existingStatus = 'connecting'
       } catch (dbErr) {
         console.error('[connect] Erro ao salvar config no banco:', dbErr)
         // Não retornar erro — a instância foi criada com sucesso na Evolution API
@@ -253,6 +274,18 @@ serve(async (req) => {
       ? ((qrData as Record<string, unknown>).pairingCode ||
          ((qrData as Record<string, unknown>).data as Record<string, unknown>)?.pairingCode || null)
       : null
+
+    // Marcar como 'connecting' quando o QR foi entregue: sem isso a config ficava
+    // 'disconnected', o cliente escondia o QR ao recarregar e o status não mudava
+    // até o webhook do primeiro evento de conexão.
+    if (configId && existingStatus !== 'connected' && existingStatus !== 'connecting') {
+      const { error: stErr } = await supabase
+        .from('whatsapp_config')
+        .update({ status: 'connecting', updated_at: new Date().toISOString() })
+        .eq('id', configId)
+      if (stErr) console.error('[connect] Erro ao atualizar status:', stErr.message)
+      else existingStatus = 'connecting'
+    }
 
     return jsonResp({
       success: true,

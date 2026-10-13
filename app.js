@@ -2665,6 +2665,14 @@ async function waLoadStatus() {
     const status = config.status || 'disconnected';
     const instanceName = config.provider_config?.instanceName || '--';
 
+    // Manter o campo "Nome da Instancia" em sincronia com a config existente:
+    // conectar com um nome diferente do armazenado faz a Edge Function tentar
+    // criar uma instância nova (Evolution responde 403 "already in use").
+    const instanceInput = document.getElementById('waInstanceName');
+    if (instanceInput && config.provider_config?.instanceName) {
+      instanceInput.value = config.provider_config.instanceName;
+    }
+
     if (dot) dot.classList.add(status);
     if (sub) sub.textContent = 'Instance: ' + instanceName;
 
@@ -2710,6 +2718,13 @@ async function waHandleConnect() {
   const centrosCustoId = ccSelect?.value || null;
 
   let instanceName = instanceInput?.value?.trim() || '';
+  if (!instanceName) {
+    // Priorizar o nome já configurado para este membro/empresa
+    try {
+      const cfgExistente = await waFetchConfig(currentUser.id, centrosCustoId);
+      instanceName = cfgExistente?.provider_config?.instanceName || '';
+    } catch (_) { /* sem config — gera abaixo */ }
+  }
   if (!instanceName) {
     // Gerar nome baseado no centro de custo ou no usuário
     if (centrosCustoId) {
@@ -4530,20 +4545,14 @@ function renderClients() {
    ============================================ */
 
 function populateClientTransferSelect(sel, currentMembroId) {
-  if (!_membersCache) {
-    _supabase.from('membros')
-      .select('id, nome, email')
-      .eq('status', 'Ativo')
-      .order('nome')
-      .then(({ data, error }) => {
-        if (!error && data) {
-          _membersCache = data;
-          fillMemberOptions(sel, currentMembroId);
-        }
-      });
-  } else {
+  if (!sel) return;
+  if (_membersCache) {
     fillMemberOptions(sel, currentMembroId);
+    return;
   }
+  _ensureMembersCache().then(cache => {
+    if (cache && sel.isConnected) fillMemberOptions(sel, currentMembroId);
+  });
 }
 
 function fillMemberOptions(sel, currentMembroId) {
@@ -4670,13 +4679,8 @@ function populateBarSelect(sel) {
 async function loadMembersForClientBar(select) {
   if (!_supabase) return;
   try {
-    const { data, error } = await _supabase.from('membros')
-      .select('id, nome, email')
-      .eq('status', 'Ativo')
-      .order('nome');
-    if (error || !data) return;
-    _membersCache = data;
-    populateBarSelect(select);
+    const cache = await _ensureMembersCache();
+    if (cache && select?.isConnected) populateBarSelect(select);
   } catch (err) {
     console.error('[ClientBar] Erro ao buscar membros:', err);
   }
@@ -6330,25 +6334,49 @@ function initCrmEmpresaFilter() {
 }
 
 let _membersCache = null;
+let _membersCachePromise = null;
+
+/* Busca única e compartilhada dos membros ativos (id, nome, email).
+   Antes, cada um dos 593 cards de cliente disparava a própria consulta enquanto
+   a primeira ainda estava em voo (593 cards × 2 renders = 1.186 requisições
+   idênticas por carregamento de página). Agora todos aguardam a mesma promise.
+   Mesma query, mesmos filtros e a mesma RLS de antes. */
+function _ensureMembersCache() {
+  if (_membersCache) return Promise.resolve(_membersCache);
+  if (_membersCachePromise) return _membersCachePromise;
+  _membersCachePromise = _supabase.from('membros')
+    .select('id, nome, email')
+    .eq('status', 'Ativo')
+    .order('nome')
+    .then(({ data, error }) => {
+      _membersCachePromise = null;
+      if (error || !data) {
+        console.warn('[Membros] Erro ao buscar cache de membros:', error?.message || 'sem dados');
+        return null;
+      }
+      _membersCache = data;
+      return _membersCache;
+    })
+    .catch(err => {
+      _membersCachePromise = null;
+      console.warn('[Membros] Falha ao buscar cache de membros:', err?.message || err);
+      return null;
+    });
+  return _membersCachePromise;
+}
 
 async function loadMembersForTransfer(currentMembroId) {
   const select = $('#leadTransferMember');
   if (!select) return;
 
-  if (!_membersCache) {
-    const { data, error } = await _supabase.from('membros')
-      .select('id, nome, email')
-      .eq('status', 'Ativo')
-      .order('nome');
-    if (error || !data) {
-      console.error('[Transfer] Erro ao buscar membros:', error?.message);
-      return;
-    }
-    _membersCache = data;
+  const membros = await _ensureMembersCache();
+  if (!membros) {
+    console.error('[Transfer] Erro ao buscar membros');
+    return;
   }
 
   select.innerHTML = '<option value="">Selecione um membro...</option>';
-  _membersCache.forEach(m => {
+  membros.forEach(m => {
     if (m.id === currentMembroId) return;
     const opt = document.createElement('option');
     opt.value = m.id;
@@ -8753,6 +8781,40 @@ function _subscribeNotificacoesRealtime() {
     });
 }
 
+/* ── Nomes em lote para as notificações ──
+   Antes cada conversa não-lida disparava até 3 consultas unitárias
+   (leads/contacts/centros_custo), ~1.700 requests a cada 30s de polling.
+   Agora: no máximo 1 consulta por tabela, em lotes de 50 ids — mesma RLS,
+   mesmo conteúdo (id ausente/sem permissão cai no default, como no maybeSingle). */
+async function _buscarNomesEmLotes(tabela, coluna, ids) {
+  const mapa = new Map();
+  if (!ids.length) return mapa;
+  const TAM = 50;
+  for (let i = 0; i < ids.length; i += TAM) {
+    const lote = ids.slice(i, i + TAM);
+    const { data, error } = await _supabase.from(tabela).select(`id, ${coluna}`).in('id', lote);
+    if (error) {
+      console.warn('[Notif] Erro ao buscar nomes em lote:', tabela, error.message);
+      continue;
+    }
+    for (const row of data || []) mapa.set(row.id, row[coluna]);
+  }
+  return mapa;
+}
+
+async function _buscarNomesNotificacoes(convs) {
+  const leadIds = [...new Set(convs.filter(c => c.lead_id).map(c => c.lead_id))];
+  // contato só é consultado quando não há lead_id (mesma precedência de antes)
+  const contactIds = [...new Set(convs.filter(c => !c.lead_id && c.contact_id).map(c => c.contact_id))];
+  const ccIds = [...new Set(convs.map(c => c.centros_custo_id).filter(Boolean))];
+  const [leadNames, contactNames, ccNames] = await Promise.all([
+    _buscarNomesEmLotes('leads', 'nome', leadIds),
+    _buscarNomesEmLotes('contacts', 'name', contactIds),
+    _buscarNomesEmLotes('centros_custo', 'nome', ccIds)
+  ]);
+  return { leadNames, contactNames, ccNames };
+}
+
 /* ── Buscar não-lidas existentes no boot ── */
 async function _loadUnreadCount() {
   try {
@@ -8784,24 +8846,17 @@ async function _loadUnreadCount() {
     if (totalUnread > 0) {
       const list = _getNotifications();
       const existingIds = new Set(list.map(n => n.data?.conversationId));
-      for (const conv of filteredData) {
-        if (existingIds.has(conv.id)) continue;
+      const pendentes = filteredData.filter(conv => !existingIds.has(conv.id));
+      // A lista é cortada em 50 no final: só as últimas 50 pendentes (ordem do
+      // unshift) sobrevivem ao corte. Buscar nome/centro apenas delas mantém a
+      // saída idêntica e derruba o N+1 — no máximo 3 consultas por ciclo.
+      const novas = pendentes.slice(-50);
+      const { leadNames, contactNames, ccNames } = await _buscarNomesNotificacoes(novas);
+      for (const conv of novas) {
         let leadName = 'Contato';
-        let ccName = '';
-        if (conv.lead_id) {
-          const { data: lead } = await _supabase
-            .from('leads').select('nome').eq('id', conv.lead_id).maybeSingle();
-          if (lead?.nome) leadName = lead.nome;
-        } else if (conv.contact_id) {
-          const { data: contact } = await _supabase
-            .from('contacts').select('name').eq('id', conv.contact_id).maybeSingle();
-          if (contact?.name) leadName = contact.name;
-        }
-        if (conv.centros_custo_id) {
-          const { data: cc } = await _supabase
-            .from('centros_custo').select('nome').eq('id', conv.centros_custo_id).maybeSingle();
-          if (cc?.nome) ccName = cc.nome;
-        }
+        if (conv.lead_id) leadName = leadNames.get(conv.lead_id) || 'Contato';
+        else if (conv.contact_id) leadName = contactNames.get(conv.contact_id) || 'Contato';
+        const ccName = conv.centros_custo_id ? (ccNames.get(conv.centros_custo_id) || '') : '';
         const unread = conv.unread_count || 0;
         list.unshift({
           id: 'n_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
@@ -13126,6 +13181,13 @@ function _convResolveSendNumber(chat) {
 }
 
 async function loadConversasChats() {
+  // Carga só com a tela de Conversas visível: evita recarregar a lista inteira
+  // (conversas + lotes de contatos/leads) com outra página aberta. Ao entrar
+  // na tela, setActivePage('conversas') chama esta função.
+  if (activePage !== 'conversas') {
+    console.log('[Conversas] Carga da lista ignorada — página não ativa:', activePage);
+    return;
+  }
   const list = $('#convChatList');
   if (!list) return;
 
@@ -16567,7 +16629,10 @@ async function _initConvCentroCustoDropdown() {
   }
 
   // Função unificada de troca de empresa
-  const handleCompanyChange = async (companyId) => {
+  // opts.initial: aplicação inicial do filtro salvo (boot/abertura da tela).
+  // Nesse caso a lista NÃO é recarregada aqui — o carregamento é feito uma
+  // única vez por setActivePage('conversas'); troca manual continua recarregando.
+  const handleCompanyChange = async (companyId, opts = {}) => {
     // 'all' = todas as empresas (resetar filtro)
     const effectiveId = companyId === 'all' ? null : companyId;
 
@@ -16619,7 +16684,7 @@ async function _initConvCentroCustoDropdown() {
 
     // 6. Buscar instanceName e carregar conversas
     _convSubscribeRealtime();
-    await loadConversasChats();
+    if (!opts.initial) await loadConversasChats();
   };
 
   // Renderizar opções do menu
@@ -16685,7 +16750,7 @@ async function _initConvCentroCustoDropdown() {
     conversasState.selectedCentroCustoId = initialTargetId;
     conversasState.selectedCompanyId = initialTargetId;
     localStorage.setItem('crm_selected_company_id', initialTargetId);
-    await handleCompanyChange(initialTargetId);
+    await handleCompanyChange(initialTargetId, { initial: true });
   } else {
     // Nenhuma empresa selecionada: mostrar "Todas as Empresas" ou placeholder
     label.textContent = canShowAll ? 'Todas as Empresas' : list[0].nome;
