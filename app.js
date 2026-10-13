@@ -13023,6 +13023,7 @@ const conversasState = {
   filter: 'mine',
   searchTerm: '',
   realtimeChannel: null,
+  realtimeStatus: null, // status do canal conversas-realtime (SUBSCRIBED => sem reload periódico)
   selectedCentroCustoId: null,
   centrosCustoList: [],
   waStatus: 'disconnected',
@@ -13243,15 +13244,22 @@ async function loadConversasChats() {
     let leadsMap = {};
 
     if (leadIds.length > 0) {
-      // Buscar sem filtro .in() para evitar 400 do Postgrest
-      const { data: allLeads, error: leadsErr } = await _supabase
-        .from('leads')
-        .select('id, nome, telefone, email, temperatura, membro_id, owner_id, observacoes, centro_custo_id');
-      if (leadsErr) {
-        console.error('[Conversas] Erro ao buscar leads:', leadsErr.message, leadsErr.code);
-      } else {
-        const leadIdSet = new Set(leadIds);
-        (allLeads || []).forEach(l => { if (leadIdSet.has(l.id)) leadsMap[l.id] = l; });
+      // Buscar apenas os leads das conversas visíveis, em chunks de 50 para não
+      // estourar o limite de URL do PostgREST. (O select sem filtro baixava a
+      // tabela leads inteira a cada refresh — maior fonte de egress da tela.)
+      const LEAD_CHUNK = 50;
+      for (let i = 0; i < leadIds.length; i += LEAD_CHUNK) {
+        if (signal.aborted) return;
+        const chunk = leadIds.slice(i, i + LEAD_CHUNK);
+        const { data: chunkLeads, error: leadsErr } = await _supabase
+          .from('leads')
+          .select('id, nome, telefone, email, temperatura, membro_id, owner_id, observacoes, centro_custo_id')
+          .in('id', chunk);
+        if (leadsErr) {
+          console.error('[Conversas] Erro ao buscar leads:', leadsErr.message, leadsErr.code);
+        } else {
+          (chunkLeads || []).forEach(l => { leadsMap[l.id] = l; });
+        }
       }
     }
 
@@ -13378,19 +13386,25 @@ function recoverPushNameFromContact(contact, lastMessageText) {
 }
 
 /* ---------- filter & render list ---------- */
+let _convSearchAbort = null;
 function _convSearchMessagesContent(term) {
   const q = String(term == null ? '' : term).trim();
   conversasState._searchContentIds = null;
   conversasState._searchSeq = (conversasState._searchSeq || 0) + 1;
+  // Cancela a busca anterior: digitação rápida acumulava queries em voo
+  if (_convSearchAbort) { try { _convSearchAbort.abort(); } catch (_) { /* ignore */ } }
   if (q.length < 3) return Promise.resolve();
   if (/^\d+$/.test(q) && q.replace(/\D/g, '').length >= 3) return Promise.resolve();
   const seq = conversasState._searchSeq;
   const escaped = q.replace(/([%_\\])/g, '\\$1');
+  const abortCtrl = new AbortController();
+  _convSearchAbort = abortCtrl;
   return _supabase
     .from('messages')
     .select('conversation_id, conversation:conversations!inner(membro_id)')
     .ilike('content_text', `%${escaped}%`)
     .limit(1000)
+    .abortSignal(abortCtrl.signal)
     .then(({ data, error }) => {
       if (error) {
         console.warn('[Conversas] Busca em mensagens falhou:', error.message);
@@ -13416,7 +13430,10 @@ function _convSearchMessagesContent(term) {
       conversasState._searchContentIds = validConvIds;
       _convApplyFilter();
     })
-    .catch(err => console.warn('[Conversas] Busca em mensagens exceção:', err));
+    .catch(err => {
+      if (err?.name === 'AbortError' || abortCtrl.signal.aborted) return; // busca superada por outra
+      console.warn('[Conversas] Busca em mensagens exceção:', err);
+    });
 }
 
 function _convApplyFilter() {
@@ -14105,6 +14122,43 @@ async function _convReloadOpenChat(force) {
   }
   console.log('[Conversas] Recarregando conversa aberta:', st._msgConvId, force ? '(manual)' : '(fallback)');
   await _convLoadMessages(st._msgConvId);
+}
+
+/* ---------- refresh incremental pós-envio ----------
+   Em vez de baixar de novo as últimas 80 mensagens (payload caro: media_url pode
+   conter base64 de áudio e o reload descartava o histórico mais antigo já aberto),
+   busca só as N mais recentes e faz merge por id, preservando scroll e histórico. */
+const CONV_RECENT_REFRESH = 15;
+
+async function _convQueryRecent(convId, limit) {
+  const { data, error } = await _supabase
+    .from('messages')
+    .select(CONV_MSG_COLS)
+    .eq('conversation_id', convId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+async function _convRefreshRecentMessages(convIdArg) {
+  const st = conversasState;
+  const convId = convIdArg || st._msgConvId;
+  if (!convId) return;
+  if (st._msgConvId !== convId) return; // conversa trocou no meio do envio
+  try {
+    const rows = await _convQueryRecent(convId, CONV_RECENT_REFRESH);
+    const byId = new Map(st.messages.map(m => [m.id, m]));
+    rows.forEach(r => byId.set(r.id, r));
+    st.messages = [...byId.values()]
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    if (st.messages.length) st._msgOldestAt = st.messages[0].created_at;
+    _renderConvMessages();
+  } catch (err) {
+    // Coluna indisponível/erro pontual → cai no comportamento antigo (página cheia)
+    console.warn('[Conversas] Refresh incremental falhou, recarregando página:', err.message || err);
+    await _convLoadMessages(convId);
+  }
 }
 
 /* ---------- media: resolver URL de mídia ---------- */
@@ -15074,7 +15128,8 @@ async function _convSendMessage() {
     chat.last_message = content;
     chat.last_message_at = new Date().toISOString();
 
-    await _convLoadMessages(chat._conversationId || conversasState.selectedChatId);
+    // Só as mensagens recentes (merge por id) — sem repuxar a página inteira
+    await _convRefreshRecentMessages(chat._conversationId || conversasState.selectedChatId);
 
   } catch (err) {
     console.error('[Conversas] Erro ao enviar mensagem:', err);
@@ -15668,7 +15723,8 @@ async function _convSendPendingMedia(captionOverride) {
     chat.last_message = lastText;
     chat.last_message_at = new Date().toISOString();
 
-    await _convLoadMessages(convId);
+    // Só as mensagens recentes (merge por id) — sem repuxar a página inteira
+    await _convRefreshRecentMessages(convId);
 
   } catch (err) {
     if (sendOk) {
@@ -16313,16 +16369,22 @@ function _convSubscribeRealtime() {
       const newMsg = payload.new;
       const chat = conversasState.allChats.find(c => c._conversationId === newMsg.conversation_id);
       if (!chat) {
-        // Conversa não está na lista (pode ser nova) — recarregar
-        console.log('[Conversas] Mensagem para conversa desconhecida, recarregando:', newMsg.conversation_id);
-        loadConversasChats();
+        // Conversa fora da lista: pode ser conversa nova visível OU conversa de
+        // outra empresa (o canal não tem filtro). Checar 1 linha — a RLS decide —
+        // antes de recarregar a lista inteira (evita cascata de reloads).
+        console.log('[Conversas] Mensagem para conversa fora da lista:', newMsg.conversation_id);
+        _convMaybeReloadForUnknown(newMsg.conversation_id, 'mensagem');
         return;
       }
 
       const selectedConvId = conversasState.allChats.find(c => c.id === conversasState.selectedChatId)?._conversationId;
       if (newMsg.conversation_id === selectedConvId) {
-        conversasState.messages.push(newMsg);
-        _renderConvMessages();
+        // Dedupe: o refresh incremental pós-envio pode já ter trazido a linha
+        if (!conversasState.messages.some(m => m.id === newMsg.id)) {
+          conversasState.messages.push(newMsg);
+          conversasState.messages.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+          _renderConvMessages();
+        }
       }
 
       chat.last_message = newMsg.content_text || (newMsg.content_type && newMsg.content_type !== 'text' ? `[${newMsg.content_type}]` : '');
@@ -16391,19 +16453,81 @@ function _convSubscribeRealtime() {
       if (conversasState.allChats.some(c => c._conversationId === conv.id)) return;
 
       console.log('[Conversas] Nova conversa via realtime:', conv.id);
-      // Recarregar lista para obter dados completos (contato, lead)
-      loadConversasChats();
+      // Recarregar lista para obter dados completos (contato, lead) — em lote,
+      // para um lote de conversas novas (sync) não virar N reloads completos
+      _convMaybeReloadForUnknown(conv.id, 'conversa');
     })
-    .subscribe();
+    .subscribe(status => {
+      conversasState.realtimeStatus = status || null;
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn('[Conversas] Realtime indisponível — polling de lista volta a 15s:', status);
+      }
+    });
 
-  // Fallback: refresh a cada 15 segundos (Realtime pode falhar)
+  // Fallback: a cada 15 segundos — a conversa aberta é sempre sondata (1 linha) e
+  // a lista só é recarregada por completo quando o Realtime não está saudável
+  // (fallback real) ou a cada 8 ticks (~2 min, rede de segurança). Com Realtime
+  // ativo a lista já chega pelos eventos; o reload completo era o maior consumo
+  // de egress da tela (lista + contatos + leads a cada 15s).
   if (_convRefreshInterval) clearInterval(_convRefreshInterval);
+  let refreshTick = 0;
   _convRefreshInterval = setInterval(() => {
-    if (activePage === 'conversas') {
+    if (activePage !== 'conversas') return;
+    refreshTick++;
+    const realtimeOk = conversasState.realtimeStatus === 'SUBSCRIBED';
+    const safetyNet = refreshTick % 8 === 0;
+    if (!realtimeOk || safetyNet) {
+      refreshTick = 0;
       loadConversasChats();
-      _convReloadOpenChat(false);
     }
+    _convReloadOpenChat(false);
   }, 15000);
+}
+
+/* ---------- realtime: conversa fora da lista ----------
+   Consulta única (1 linha) para decidir se vale recarregar a lista inteira:
+   - a RLS devolve a linha só se o usuário enxerga a conversa;
+   - o filtro de empresa descarta conversas de outro centro de custo.
+   Recarga em lote (coalescing): uma leva de eventos (ex.: sync de histórico
+   criando conversas em massa) vira no máximo 1 reload por janela. */
+let _convUnknownReloadTimer = null;
+const _convUnknownReloadPending = new Map(); // convId -> origem
+
+async function _convShouldReloadForConversation(convId) {
+  if (!_isValidUUID(convId)) return false;
+  try {
+    const { data } = await _supabase
+      .from('conversations')
+      .select('id, centros_custo_id')
+      .eq('id', convId)
+      .maybeSingle();
+    if (!data) return false; // RLS: fora do alcance do usuário
+    const ccId = conversasState.selectedCentroCustoId;
+    if (ccId && data.centros_custo_id !== ccId) return false; // fora do filtro de empresa
+    if (conversasState.allChats.some(c => c._conversationId === data.id)) return false;
+    return true;
+  } catch (err) {
+    console.warn('[Conversas] Falha ao checar conversa fora da lista:', err.message || err);
+    return false;
+  }
+}
+
+function _convMaybeReloadForUnknown(convId, origin) {
+  if (!_isValidUUID(convId)) return;
+  _convUnknownReloadPending.set(convId, origin);
+  if (_convUnknownReloadTimer) return;
+  _convUnknownReloadTimer = setTimeout(async () => {
+    const pending = [..._convUnknownReloadPending.entries()];
+    _convUnknownReloadPending.clear();
+    _convUnknownReloadTimer = null;
+    let target = null;
+    for (const [id, org] of pending) {
+      if (await _convShouldReloadForConversation(id)) { target = { id, org }; break; }
+    }
+    if (!target) return;
+    console.log('[Conversas] Conversa nova visível via realtime — recarregando lista:', target.id, `(${target.org})`);
+    loadConversasChats();
+  }, 2000);
 }
 
 /* ---------- auto-resize textarea ---------- */
