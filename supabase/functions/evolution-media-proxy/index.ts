@@ -239,7 +239,8 @@ serve(async (req) => {
     }, 400)
   }
 
-  const fallbackUrl = `${evoUrl}/chat/getBase64FromMediaMessage/${instanceName}`
+  // encodeURIComponent: nomes com espaço (ex.: "crm gisele") quebravam a rota
+  const fallbackUrl = `${evoUrl}/chat/getBase64FromMediaMessage/${encodeURIComponent(instanceName)}`
   console.log('[media-proxy] fallback via getBase64FromMediaMessage')
 
   try {

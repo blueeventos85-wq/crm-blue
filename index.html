@@ -632,10 +632,33 @@
               <p>Gerencie e gere os contratos em PDF dos seus leads.</p>
             </div>
             <div class="contratos-add-block">
-              <button class="btn btn-primary contratos-add-button" id="btnNovoContrato" disabled>
-                <i data-lucide="plus"></i>
-                Adicionar contrato
-              </button>
+              <div class="contratos-add-wrap" id="contratosAddWrap">
+                <button class="btn btn-primary contratos-add-button" id="btnNovoContrato" disabled aria-haspopup="menu" aria-expanded="false">
+                  <i data-lucide="plus"></i>
+                  Adicionar contrato
+                </button>
+                <div class="contratos-add-dropdown" id="contratosAddDropdown" role="menu" aria-label="Tipo de contrato">
+                  <button type="button" class="contratos-add-option" data-tipo="100" role="menuitem">Contrato 100% <span class="contratos-add-option-tag">À vista</span></button>
+                  <button type="button" class="contratos-add-option" data-tipo="50" role="menuitem">
+                    Contrato 50%
+                    <span class="contratos-add-option-tag">2x</span>
+                  </button>
+                  <button type="button" class="contratos-add-option contratos-add-option--submenu" id="contratosAddParceladoToggle" data-tipo="parcelado" role="menuitem" aria-haspopup="true" aria-expanded="false">
+                    Contrato Parcelado
+                    <span class="contratos-add-option-tag">2x–5x</span>
+                  </button>
+                  <div class="contratos-add-submenu" id="contratosAddSubmenuParcelado" role="menu" aria-label="Parcelamento">
+                    <button type="button" class="contratos-add-option" data-tipo="2" role="menuitem">Parcelado 2x</button>
+                    <button type="button" class="contratos-add-option" data-tipo="3" role="menuitem">Parcelado 3x</button>
+                    <button type="button" class="contratos-add-option" data-tipo="4" role="menuitem">Parcelado 4x</button>
+                    <button type="button" class="contratos-add-option" data-tipo="5" role="menuitem">Parcelado 5x</button>
+                  </div>
+                  <button type="button" class="contratos-add-option contratos-add-option--disabled" data-tipo="proposta" role="menuitem" disabled>
+                    Proposta para o cliente
+                    <span class="contratos-add-option-tag">Em breve</span>
+                  </button>
+                </div>
+              </div>
               <p class="form-hint contratos-add-hint" id="contratosAddHint" style="display:none;"></p>
             </div>
           </section>
@@ -691,6 +714,7 @@
                   <th>Número</th>
                   <th>Contratante</th>
                   <th>Empresa</th>
+                  <th>Tipo</th>
                   <th>Serviço(s)</th>
                   <th>Data do evento</th>
                   <th>Valor total</th>
@@ -1097,6 +1121,52 @@
                     <div>
                       <h3 class="card-title">Conexao WhatsApp</h3>
                       <p class="card-sub">Configure a integracao com a Evolution API para enviar e receber mensagens</p>
+                    </div>
+                  </div>
+
+                  <!-- Lista de instancias vinculadas (multi-instancia) -->
+                  <div id="waInstancesSection" style="margin-bottom:16px">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+                      <div>
+                        <strong style="font-size:13px">Instancias</strong>
+                        <span class="card-sub" id="waInstancesCount" style="margin-left:6px"></span>
+                      </div>
+                      <div style="display:flex;gap:8px">
+                        <button class="btn btn-ghost btn-sm" id="waLinkInstanceBtn">
+                          <i data-lucide="link"></i> Vincular instancia existente
+                        </button>
+                        <button class="btn btn-primary btn-sm" id="waNewInstanceBtn">
+                          <i data-lucide="plus"></i> Nova instancia
+                        </button>
+                      </div>
+                    </div>
+                    <div id="waInstancesList"></div>
+                  </div>
+
+                  <!-- Vincular instancia ja existente na Evolution (sem QR) -->
+                  <div id="waLinkInstanceForm" style="display:none;margin-bottom:16px;border:1px solid var(--border-color, #e5e7eb);border-radius:8px;padding:12px">
+                    <div class="form-grid">
+                      <div class="form-group">
+                        <label>Empresa</label>
+                        <select id="waLinkCentroCustoSelect">
+                          <option value="">Selecione a empresa...</option>
+                        </select>
+                        <p class="field-hint">Empresa que recebera as conversas desta instancia</p>
+                      </div>
+                      <div class="form-group">
+                        <label>Nome da Instancia (exato na Evolution)</label>
+                        <input type="text" id="waLinkInstanceName" placeholder="ex: crm gisele" />
+                        <p class="field-hint">Use o nome exato da instancia ja existente na Evolution API</p>
+                      </div>
+                      <div class="form-group">
+                        <label>Numero do WhatsApp (opcional)</label>
+                        <input type="text" id="waLinkNumero" placeholder="ex: 558591499320" />
+                        <p class="field-hint">Apenas para identificacao na tela</p>
+                      </div>
+                    </div>
+                    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+                      <button class="btn btn-ghost" id="waLinkCancelBtn">Cancelar</button>
+                      <button class="btn btn-primary" id="waLinkSubmitBtn"><i data-lucide="link"></i> Vincular</button>
                     </div>
                   </div>
 
@@ -3718,25 +3788,53 @@
             <div class="form-group">
               <label>Condição de Pagamento</label>
               <select id="contratoCondicaoPagamento">
-                <option value="1">À vista (1 parcela)</option>
-                <option value="2">2 Parcelas (Assinatura + Véspera)</option>
+                <option value="1">À vista (100%)</option>
+                <option value="50">50% / 50% (2 parcelas)</option>
+                <option value="2">Parcelado 2x</option>
+                <option value="3">Parcelado 3x</option>
+                <option value="4">Parcelado 4x</option>
+                <option value="5">Parcelado 5x</option>
               </select>
             </div>
             <div class="form-group">
-              <label>Valor 1ª Parcela (R$)</label>
+              <label id="labelValorP1">Valor 1ª Parcela (R$)</label>
               <input type="number" id="contratoValorP1" step="0.01" placeholder="0,00" />
             </div>
             <div class="form-group">
-              <label>Vencimento 1ª Parcela</label>
+              <label id="labelDataP1">Vencimento 1ª Parcela</label>
               <input type="date" id="contratoVencimentoP1" />
             </div>
             <div class="form-group" id="rowParcelaVal2" style="display:none;">
-              <label>Valor 2ª Parcela (R$)</label>
+              <label id="labelValorP2">Valor 2ª Parcela (R$)</label>
               <input type="number" id="contratoValorP2" step="0.01" placeholder="0,00" />
             </div>
             <div class="form-group" id="rowParcelaVenc2" style="display:none;">
-              <label>Vencimento 2ª Parcela</label>
+              <label id="labelDataP2">Vencimento 2ª Parcela</label>
               <input type="date" id="contratoVencimentoP2" />
+            </div>
+            <div class="form-group" id="rowParcelaVal3" style="display:none;">
+              <label id="labelValorP3">Valor 3ª Parcela (R$)</label>
+              <input type="number" id="contratoValorP3" step="0.01" placeholder="0,00" />
+            </div>
+            <div class="form-group" id="rowParcelaVenc3" style="display:none;">
+              <label id="labelDataP3">Vencimento 3ª Parcela</label>
+              <input type="date" id="contratoVencimentoP3" />
+            </div>
+            <div class="form-group" id="rowParcelaVal4" style="display:none;">
+              <label id="labelValorP4">Valor 4ª Parcela (R$)</label>
+              <input type="number" id="contratoValorP4" step="0.01" placeholder="0,00" />
+            </div>
+            <div class="form-group" id="rowParcelaVenc4" style="display:none;">
+              <label id="labelDataP4">Vencimento 4ª Parcela</label>
+              <input type="date" id="contratoVencimentoP4" />
+            </div>
+            <div class="form-group" id="rowParcelaVal5" style="display:none;">
+              <label id="labelValorP5">Valor 5ª Parcela (R$)</label>
+              <input type="number" id="contratoValorP5" step="0.01" placeholder="0,00" />
+            </div>
+            <div class="form-group" id="rowParcelaVenc5" style="display:none;">
+              <label id="labelDataP5">Vencimento 5ª Parcela</label>
+              <input type="date" id="contratoVencimentoP5" />
           </div>
         </div>
       </div>

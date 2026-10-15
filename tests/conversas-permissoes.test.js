@@ -35,7 +35,8 @@ describe('Conversas · visibilidade da lista', () => {
   });
 
   it('filtra por centro de custo apenas quando empresa está selecionada', () => {
-    assert.ok(src.includes(`if (ccId) q = q.eq('centros_custo_id', ccId)`), 'filtro condicional de centro de custo ausente');
+    assert.ok(src.includes(`if (ccId) {`) && src.includes(`q.eq('centros_custo_id', ccId)`),
+      'filtro condicional de centro de custo ausente');
   });
 
   it('permite carregar com "Todas as Empresas" (sem guard de ccId nulo)', () => {

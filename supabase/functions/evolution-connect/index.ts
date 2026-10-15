@@ -13,6 +13,18 @@ function jsonResp(data: Record<string, unknown>, status = 200) {
   })
 }
 
+// Normaliza nome de instância para comparações tolerantes a
+// encoding ("crm%20gisele"), espaços extras e caixa ("CRM Gisele").
+function normInstance(raw: unknown): string {
+  let s = String(raw ?? '').trim()
+  try {
+    s = decodeURIComponent(s).trim()
+  } catch {
+    // valor não é escape válido — mantém como está
+  }
+  return s.replace(/\s+/g, ' ').toLowerCase()
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -29,7 +41,7 @@ serve(async (req) => {
     const body = await req.json()
     membroId = body.membroId || null
     centrosCustoId = body.centrosCustoId || null
-    instanceName = body.instanceName || ''
+    instanceName = String(body.instanceName || '').trim()
     qrcode = body.qrcode !== false
     integration = body.integration || 'WHATSAPP-BAILEYS'
   } catch {
@@ -100,7 +112,7 @@ serve(async (req) => {
       configId = existingConfig.id
       existingStatus = existingConfig.status || ''
       const pcfg = existingConfig.provider_config || {}
-      if (pcfg.instanceName === instanceName) {
+      if (normInstance(pcfg.instanceName) === normInstance(instanceName)) {
         instanceExists = true
       }
     }
@@ -135,7 +147,12 @@ serve(async (req) => {
               'QRCODE_UPDATED',
               'CONNECTION_UPDATE',
               'MESSAGES_UPSERT',
-              'SEND_MESSAGE'
+              'MESSAGES_UPDATE',
+              'MESSAGES_DELETE',
+              'SEND_MESSAGE',
+              'CHATS_UPSERT',
+              'GROUPS_UPDATE',
+              'CONTACTS_UPDATE'
             ]
           }
         })
@@ -220,7 +237,8 @@ serve(async (req) => {
   console.log('[connect] Buscando QR Code para:', instanceName)
 
   try {
-    const qrResponse = await fetch(`${apiUrl}/instance/connect/${instanceName}`, {
+    // encodeURIComponent: nomes com espaço (ex.: "crm gisele") quebravam a rota
+    const qrResponse = await fetch(`${apiUrl}/instance/connect/${encodeURIComponent(instanceName)}`, {
       method: 'GET',
       headers: { 'apikey': apiKey }
     })

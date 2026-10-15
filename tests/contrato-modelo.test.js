@@ -161,24 +161,24 @@ describe('parseEmpresaFilterValue()', () => {
    ============================================ */
 
 describe('idsEmpresaCriavel()', () => {
-  it('libera somente a empresa que tem modelo cadastrado', () => {
-    assert.deepEqual(idsEmpresaCriavel(COM_TABELA), [CC_BLUE]);
+  it('libera as empresas com modelo ativo ou template embutido', () => {
+    assert.deepEqual(idsEmpresaCriavel(COM_TABELA), [CC_BLUE, CC_PRO]);
   });
 
-  it('não libera nenhuma empresa quando ninguém tem modelo', () => {
-    assert.deepEqual(idsEmpresaCriavel({ ...COM_TABELA, modelos: [] }), []);
+  it('sem linhas na tabela, empresas com template embutido seguem liberadas', () => {
+    assert.deepEqual(idsEmpresaCriavel({ ...COM_TABELA, modelos: [] }), [CC_BLUE, CC_PRO]);
   });
 
-  it('ignora modelo inativo', () => {
+  it('linha inativa bloqueia a empresa; template embutido sem linha segue liberado', () => {
     assert.deepEqual(
       idsEmpresaCriavel({ ...COM_TABELA, modelos: [{ centro_custo_id: CC_BLUE, ativo: false }] }),
-      []
+      [CC_PRO]
     );
   });
 
   it('fallback por nome enquanto a tabela não existe (pré-migration)', () => {
-    assert.deepEqual(EMPRESAS_LIBERADAS_PADRAO, ['blue eventos']);
-    assert.deepEqual(idsEmpresaCriavel(SEM_TABELA), [CC_BLUE]);
+    assert.deepEqual(EMPRESAS_LIBERADAS_PADRAO, ['blue eventos', 'blue pro']);
+    assert.deepEqual(idsEmpresaCriavel(SEM_TABELA), [CC_BLUE, CC_PRO]);
   });
 });
 
@@ -188,17 +188,24 @@ describe('empresaCriavel()', () => {
     assert.equal(empresaCriavel({ centroCustoId: '', ...COM_TABELA }), false);
   });
 
-  it('sem modelo próprio a empresa fica bloqueada', () => {
+  it('empresa sem modelo embutido e sem linha própria fica bloqueada', () => {
     assert.equal(empresaCriavel({ centroCustoId: CC_BLUE, ...COM_TABELA }), true);
     assert.equal(empresaCriavel({ centroCustoId: CC_DIGITAL, ...COM_TABELA }), false);
-    assert.equal(empresaCriavel({ centroCustoId: CC_PRO, ...COM_TABELA }), false);
+    assert.equal(empresaCriavel({ centroCustoId: CC_PRO, ...COM_TABELA }), true);
   });
 });
 
-describe('Criação liberada apenas para a Blue Eventos', () => {
+describe('Criação liberada para Blue Eventos e Blue PRO', () => {
   it('Blue Eventos: criação disponível', () => {
     assert.equal(motivoBloqueioCriacao({ filtro: CC_BLUE, ...COM_TABELA }), null);
     const res = podeSalvarContrato({ centroCustoId: CC_BLUE, ...COM_TABELA });
+    assert.equal(res.ok, true);
+    assert.equal(res.motivo, null);
+  });
+
+  it('Blue PRO: criação disponível (template embutido, sem aviso de modelo)', () => {
+    assert.equal(motivoBloqueioCriacao({ filtro: CC_PRO, ...COM_TABELA }), null);
+    const res = podeSalvarContrato({ centroCustoId: CC_PRO, ...COM_TABELA });
     assert.equal(res.ok, true);
     assert.equal(res.motivo, null);
   });
@@ -207,14 +214,6 @@ describe('Criação liberada apenas para a Blue Eventos', () => {
     const motivo = motivoBloqueioCriacao({ filtro: CC_DIGITAL, ...COM_TABELA });
     assert.equal(motivo, msgModeloNaoConfigurado('Blue Digital'));
     const res = podeSalvarContrato({ centroCustoId: CC_DIGITAL, ...COM_TABELA });
-    assert.equal(res.ok, false);
-    assert.equal(res.motivo, motivo);
-  });
-
-  it('Blue PRO: bloqueada com aviso de modelo não configurado', () => {
-    const motivo = motivoBloqueioCriacao({ filtro: CC_PRO, ...COM_TABELA });
-    assert.equal(motivo, msgModeloNaoConfigurado('Blue PRO'));
-    const res = podeSalvarContrato({ centroCustoId: CC_PRO, ...COM_TABELA });
     assert.equal(res.ok, false);
     assert.equal(res.motivo, motivo);
   });
@@ -236,8 +235,8 @@ describe('Criação liberada apenas para a Blue Eventos', () => {
 
   it('mesmo comportamento quando a tabela de modelos ainda não existe', () => {
     assert.equal(motivoBloqueioCriacao({ filtro: CC_BLUE, ...SEM_TABELA }), null);
+    assert.equal(motivoBloqueioCriacao({ filtro: CC_PRO, ...SEM_TABELA }), null);
     assert.equal(motivoBloqueioCriacao({ filtro: CC_DIGITAL, ...SEM_TABELA }), msgModeloNaoConfigurado('Blue Digital'));
-    assert.equal(motivoBloqueioCriacao({ filtro: CC_PRO, ...SEM_TABELA }), msgModeloNaoConfigurado('Blue PRO'));
     assert.equal(motivoBloqueioCriacao({ filtro: '', ...SEM_TABELA }), MSG_SELECIONAR_EMPRESA_CRIAVEL);
   });
 
@@ -260,15 +259,26 @@ describe('podeSalvarContrato() — edição preserva dados existentes', () => {
     assert.equal(res.ok, true);
   });
 
-  it('bloqueia trocar a empresa durante a edição para uma sem modelo', () => {
+  it('bloqueia trocar a empresa durante a edição para uma sem template', () => {
+    const res = podeSalvarContrato({
+      centroCustoId: CC_DIGITAL,
+      centroCustoIdSalvo: CC_BLUE,
+      isEdicao: true,
+      ...COM_TABELA
+    });
+    assert.equal(res.ok, false);
+    assert.equal(res.motivo, msgModeloNaoConfigurado('Blue Digital'));
+  });
+
+  it('permite trocar a empresa durante a edição para a Blue PRO', () => {
     const res = podeSalvarContrato({
       centroCustoId: CC_PRO,
       centroCustoIdSalvo: CC_BLUE,
       isEdicao: true,
       ...COM_TABELA
     });
-    assert.equal(res.ok, false);
-    assert.equal(res.motivo, msgModeloNaoConfigurado('Blue PRO'));
+    assert.equal(res.ok, true);
+    assert.equal(res.motivo, null);
   });
 
   it('permite editar contrato antigo que não tinha empresa', () => {
@@ -276,10 +286,10 @@ describe('podeSalvarContrato() — edição preserva dados existentes', () => {
     assert.equal(res.ok, true);
   });
 
-  it('mantém a Blue Eventos criando antes do push da migration', () => {
+  it('mantém Blue Eventos e Blue PRO criando antes do push da migration', () => {
     assert.equal(podeSalvarContrato({ centroCustoId: CC_BLUE, ...SEM_TABELA }).ok, true);
+    assert.equal(podeSalvarContrato({ centroCustoId: CC_PRO, ...SEM_TABELA }).ok, true);
     assert.equal(podeSalvarContrato({ centroCustoId: CC_DIGITAL, ...SEM_TABELA }).ok, false);
-    assert.equal(podeSalvarContrato({ centroCustoId: CC_PRO, ...SEM_TABELA }).ok, false);
   });
 });
 

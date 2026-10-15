@@ -426,19 +426,31 @@ async function findOrCreateConversation(
   groupJid: string | null = null,
   remoteJid: string | null = null,
 ): Promise<{ id: string; created: boolean; remoteJid: string }> {
-  let query = supabase
-    .from('conversations')
-    .select('id, lead_id, last_message_at, remote_jid')
-    .eq('contact_id', contactId)
-    .eq('status', 'open')
-
-  if (membroId) {
-    query = query.eq('membro_id', membroId)
-  } else if (centrosCustoId) {
-    query = query.eq('centros_custo_id', centrosCustoId)
+  // Multi-tenant: centros_custo_id é filtrado obrigatoriamente quando
+  // presente (nunca omitido em favor de membro_id). UNIQUE composto
+  // (remote_jid, centros_custo_id, membro_id) isola empresas.
+  const effectiveRjid = isGroup ? groupJid : remoteJid
+  const openQuery = () => {
+    let q = supabase
+      .from('conversations')
+      .select('id, lead_id, last_message_at, remote_jid')
+      .eq('status', 'open')
+    if (centrosCustoId) q = q.eq('centros_custo_id', centrosCustoId)
+    if (membroId) q = q.eq('membro_id', membroId)
+    return q
   }
-  const { data: existingRows } = await query.limit(1)
-  const existing = existingRows && existingRows[0]
+
+  // Chave primária: remote_jid + centros_custo_id (+ membro_id)
+  let existing: any = null
+  if (effectiveRjid) {
+    const { data } = await openQuery().eq('remote_jid', effectiveRjid).limit(1)
+    existing = data && data[0] ? data[0] : null
+  }
+  // Fallback legado: conversas antigas sem remote_jid gravado → contact_id
+  if (!existing) {
+    const { data } = await openQuery().eq('contact_id', contactId).limit(1)
+    existing = data && data[0] ? data[0] : null
+  }
 
   if (existing) {
     if (leadId && !existing.lead_id) {
@@ -454,6 +466,7 @@ async function findOrCreateConversation(
     contact_id: contactId,
     status: 'open',
     unread_count: 0,
+    is_archived: false,
     last_message_text: lastMessageText || '',
     last_message_at: new Date().toISOString(),
     created_at: new Date().toISOString(),
@@ -489,6 +502,18 @@ async function findOrCreateConversation(
   }
 
   if (convError) {
+    // Corrida: UNIQUE(remote_jid, centros_custo_id, membro_id) violado →
+    // re-lookup e devolve a conversa existente.
+    if (convError.code === '23505') {
+      let retry = openQuery()
+      if (effectiveRjid) retry = retry.eq('remote_jid', effectiveRjid)
+      else retry = retry.eq('contact_id', contactId)
+      const { data: raced } = await retry.limit(1)
+      if (raced && raced[0]) {
+        console.log('[sync-history] Corrida de insert (23505) — usando conversa existente:', raced[0].id)
+        return { id: raced[0].id, created: false, remoteJid: raced[0].remote_jid || '' }
+      }
+    }
     throw new Error('Failed to create conversation: ' + convError.message)
   }
   return { id: newConv.id, created: true, remoteJid: (isGroup ? groupJid : remoteJid) || '' }

@@ -88,16 +88,20 @@ async function waFetchConfig(membroId, centrosCustoId) {
 /* ============================================
    2. CONNECT: criar instância e pegar QR Code
    ============================================ */
-async function waConnect(membroId, instanceName, centrosCustoId) {
+async function waConnect(membroId, instanceName, centrosCustoId, integration) {
   if (!instanceName) throw new Error('instanceName é obrigatório')
   if (!membroId && !centrosCustoId) throw new Error('membroId ou centrosCustoId é obrigatório')
 
-  console.log('[WA] Conectando instância:', instanceName, '| CC:', centrosCustoId)
+  const cleanName = String(instanceName).trim()
+  const cleanIntegration = String(integration || '').trim() || 'WHATSAPP-BAILEYS'
+
+  console.log('[WA] Conectando instância:', cleanName, '| CC:', centrosCustoId, '| integração:', cleanIntegration)
 
   const result = await waInvokeFunction('evolution-connect', {
     membroId,
     centrosCustoId,
-    instanceName,
+    instanceName: cleanName,
+    integration: cleanIntegration,
     qrcode: true
   })
 
@@ -112,6 +116,118 @@ async function waConnect(membroId, instanceName, centrosCustoId) {
   }
 
   return result
+}
+
+/* ============================================
+   1b. CONFIG: listar TODAS as configs (multi-instância)
+   ============================================ */
+async function waFetchAllConfigs(membroId) {
+  if (!_supabase) return []
+
+  let query = _supabase
+    .from('whatsapp_config')
+    .select('*')
+    .eq('provider', 'evolution_api')
+
+  if (membroId) {
+    // Membro vê as configs das empresas em que participa + as próprias (fallback legado)
+    const { data: vinculos } = await _supabase
+      .from('membro_centros_custo')
+      .select('centro_custo_id')
+      .eq('membro_id', membroId)
+
+    const ccIds = (vinculos || []).map(v => v.centro_custo_id).filter(Boolean)
+    if (ccIds.length) {
+      query = query.or(`centros_custo_id.in.(${ccIds.join(',')}),membro_id.eq.${membroId}`)
+    } else {
+      query = query.eq('membro_id', membroId)
+    }
+  }
+
+  const { data, error } = await query.order('created_at', { ascending: false })
+
+  if (error) {
+    console.warn('[WA] All configs query error:', error.message)
+    return []
+  }
+
+  return data || []
+}
+
+/* ============================================
+   2b. LINK INSTANCE: vincular instância existente
+       na Evolution a uma empresa (sem QR)
+   ============================================ */
+async function waInstanceLink({ membroId, centrosCustoId, instanceName, numero }) {
+  if (!instanceName || !String(instanceName).trim()) {
+    throw new Error('instanceName é obrigatório')
+  }
+  if (!centrosCustoId) {
+    throw new Error('centrosCustoId é obrigatório')
+  }
+
+  console.log('[WA] Vinculando instância existente:', instanceName, '| CC:', centrosCustoId)
+
+  const result = await waInvokeFunction('wa-instance-link', {
+    membroId: membroId || null,
+    centrosCustoId,
+    instanceName: String(instanceName).trim(),
+    numero: numero || null
+  })
+
+  if (result && result.success === false) {
+    throw new Error(result.error || 'Falha ao vincular instância')
+  }
+
+  _waConfigCache = null
+  console.log('[WA] Instância vinculada:', result)
+  return result
+}
+
+/* ============================================
+   2c. SET WEBHOOK: re-sincronizar webhook + estado
+       da instância já vinculada (botão "Sincronizar")
+   ============================================ */
+async function waSetWebhook(membroId, centrosCustoId) {
+  const config = await waFetchConfig(membroId, centrosCustoId)
+  if (!config) throw new Error('Configuração não encontrada')
+
+  const instanceName = config.provider_config?.instanceName
+  if (!instanceName) throw new Error('Config sem instanceName')
+
+  console.log('[WA] Re-sincronizando webhook da instância:', instanceName)
+
+  const result = await waInvokeFunction('wa-instance-link', {
+    membroId: membroId || null,
+    centrosCustoId: config.centros_custo_id,
+    instanceName,
+    numero: config.provider_config?.numero || null
+  })
+
+  if (result && result.success === false) {
+    throw new Error(result.error || 'Falha ao sincronizar webhook')
+  }
+
+  _waConfigCache = null
+  return result
+}
+
+/* ============================================
+   2d. UNLINK: remover vínculo config ↔ empresa
+       (a instância continua viva na Evolution)
+   ============================================ */
+async function waUnlinkInstance(configId) {
+  if (!configId) throw new Error('configId é obrigatório')
+
+  const { error } = await _supabase
+    .from('whatsapp_config')
+    .delete()
+    .eq('id', configId)
+
+  if (error) throw error
+
+  _waConfigCache = null
+  console.log('[WA] Config desvinculada/removida:', configId)
 }
 
 /* ============================================
@@ -481,7 +597,11 @@ function waSubscribeToConversations(membroId, onUpdate, centrosCustoId) {
     _waConvSubscription.unsubscribe()
   }
 
-  const filter = membroId ? `membro_id=eq.${membroId}` : undefined
+  // Multi-tenancy: priorizar filtro por centros_custo_id (1 conversa visualizada
+  // por empresa); fallback por membro_id quando não há CC informado.
+  const filter = centrosCustoId
+    ? `centros_custo_id=eq.${centrosCustoId}`
+    : (membroId ? `membro_id=eq.${membroId}` : undefined)
 
   const channelConfig = {
     event: '*',
@@ -535,7 +655,11 @@ function waInvalidateCache() {
    EXPOSIÇÃO GLOBAL
    ============================================ */
 window.waFetchConfig = waFetchConfig
+window.waFetchAllConfigs = waFetchAllConfigs
 window.waConnect = waConnect
+window.waInstanceLink = waInstanceLink
+window.waSetWebhook = waSetWebhook
+window.waUnlinkInstance = waUnlinkInstance
 window.waDisconnect = waDisconnect
 window.waSendText = waSendText
 window.waSendMedia = waSendMedia

@@ -6,6 +6,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Normaliza nome de instância vindo do webhook/URL para bater com o
+// provider_config.instanceName salvo no banco. Tolerante a:
+//   "crm%20gisele" / "crm gisele" / " CRM Gisele " / "crm  gisele"
+function normInstance(raw: unknown): string {
+  let s = String(raw ?? '').trim()
+  try {
+    s = decodeURIComponent(s).trim()
+  } catch {
+    // valor não é escape válido — mantém como está
+  }
+  return s.replace(/\s+/g, ' ').toLowerCase()
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -23,7 +36,8 @@ serve(async (req) => {
     })
 
     const event = body.event || ''
-    const instanceName = body.instance || ''
+    // Normaliza uma única vez: "crm%20gisele" / " CRM Gisele " → "crm gisele"
+    const instanceName = normInstance(body.instance || '')
 
     // ── messages.upsert / MESSAGES_UPSERT: mensagem recebida ou enviada ──
     if (event === 'messages.upsert' || event === 'MESSAGES_UPSERT') {
@@ -97,7 +111,7 @@ serve(async (req) => {
 
       const config = (configs || []).find(c => {
         const pcfg = c.provider_config || {}
-        return pcfg.instanceName === instanceName
+        return normInstance(pcfg.instanceName) === instanceName
       })
 
       if (!config) {
@@ -360,7 +374,7 @@ serve(async (req) => {
 
       const config = (allConfigs || []).find(c => {
         const pcfg = c.provider_config || {}
-        return pcfg.instanceName === instanceName
+        return normInstance(pcfg.instanceName) === instanceName
       })
 
       if (config) {
@@ -511,6 +525,92 @@ serve(async (req) => {
       }
 
       return new Response(JSON.stringify({ ok: true, updatedContacts, updatedConversations }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // ── chats.upsert / CHATS_UPSERT: chat apareceu na lista da Evolution ──
+    // Garante a linha em conversations assim que o chat existe (mesmo antes da
+    // primeira mensagem) e atualiza nome/foto do contato — a fila da empresa
+    // passa a enxergar o chat na hora, sem depender de mensagem.
+    if (event === 'chats.upsert' || event === 'CHATS_UPSERT') {
+      let processed = 0
+      try {
+        // Resolver tenant pelo instanceName (mesmo critério dos demais eventos)
+        const { data: configs } = await supabase
+          .from('whatsapp_config')
+          .select('id, membro_id, centros_custo_id, provider_config')
+          .eq('provider', 'evolution_api')
+
+        const config = (configs || []).find(c => {
+          const pcfg = c.provider_config || {}
+          return normInstance(pcfg.instanceName) === instanceName
+        })
+        if (!config) {
+          console.log('[webhook] chats.upsert: config não encontrada para:', instanceName)
+          return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'config_not_found' }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        const membroId = config.membro_id
+        const centrosCustoId = config.centros_custo_id || null
+
+        const raw = body.data
+        const items: any[] = Array.isArray(raw) ? raw
+          : raw && typeof raw === 'object' ? [raw]
+          : []
+        const now = new Date().toISOString()
+
+        for (const chat of items) {
+          const rawId = String(chat?.id || chat?.remoteJid || chat?.jid || '')
+          if (!rawId) continue
+          const isGroupChat = rawId.includes('@g.us')
+          const jid = rawId.includes('@')
+            ? rawId
+            : (isGroupChat ? `${rawId}@g.us` : `${rawId}@s.whatsapp.net`)
+          const chatName = String(chat?.name || chat?.subject || chat?.pushName || '').trim()
+          const pic: string | null =
+            chat?.profilePictureUrl || chat?.pictureUrl || chat?.imgUrl || null
+
+          let contactId: string
+          if (isGroupChat) {
+            contactId = await findOrCreateGroupContact(supabase, membroId, centrosCustoId, jid, chatName)
+            const gUpd: Record<string, any> = { updated_at: now }
+            if (chatName) gUpd.name = chatName
+            if (pic && /^https?:\/\//i.test(pic)) gUpd.avatar_url = pic
+            if (chatName || pic) {
+              let { error: gErr } = await supabase
+                .from('contacts')
+                .update(gUpd)
+                .eq('id', contactId)
+              // Resiliência: migração de avatar_url pendente
+              if (gErr && /avatar_url/.test(gErr.message || '')) {
+                delete gUpd.avatar_url
+                ;({ error: gErr } = await supabase
+                  .from('contacts')
+                  .update(gUpd)
+                  .eq('id', contactId))
+              }
+              if (gErr) console.error('[webhook] chats.upsert: erro ao atualizar grupo:', gErr)
+            }
+          } else {
+            const digits = jid.split('@')[0].split(':')[0].replace(/\D/g, '')
+            if (!/\d{8,}/.test(digits)) continue
+            contactId = await findOrCreateContact(supabase, membroId, centrosCustoId, digits, chatName, null)
+          }
+
+          // Cria a conversa se ainda não existir (não toca em last_message)
+          await findOrCreateConversation(supabase, membroId, centrosCustoId, contactId, '', null, isGroupChat, jid)
+          processed++
+        }
+      } catch (chErr) {
+        console.error('[webhook] Erro ao processar chats.upsert:', chErr)
+      }
+      console.log('[webhook] chats.upsert processado:', { instanceName, processed })
+      return new Response(JSON.stringify({ ok: true, processed }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
@@ -895,7 +995,12 @@ async function findOrCreateGroupContact(
   return newContact.id
 }
 
-// ── findOrCreateConversation: prioridade centros_custo_id, vincula lead ──
+// ── findOrCreateConversation: multi-tenant, vincula lead ──
+// REGRA: lookup SEMPRE tenant-scoped — centros_custo_id é filtrado
+// obrigatoriamente quando presente (nunca omitido em favor de membro_id).
+// "Meu WhatsApp, meu lead": membro_id isola conversas por corretor na
+// mesma empresa. UNIQUE(remote_jid, centros_custo_id, membro_id) garante
+// que o mesmo número possa existir em empresas diferentes sem conflito.
 async function findOrCreateConversation(
   supabase: any,
   membroId: string | null,
@@ -906,21 +1011,27 @@ async function findOrCreateConversation(
   isGroup: boolean = false,
   groupJid: string | null = null
 ): Promise<string> {
-  // REGRA: "Meu WhatsApp, meu lead" — buscar por contact_id + membro_id
-  // Se o mesmo contato fala com dois corretores diferentes, cria conversas separadas
-  let query = supabase
-    .from('conversations')
-    .select('id')
-    .eq('contact_id', contactId)
-    .eq('status', 'open')
-
-  if (membroId) {
-    query = query.eq('membro_id', membroId)
-  } else if (centrosCustoId) {
-    // Fallback legado: quando não há membro_id (não deveria acontecer)
-    query = query.eq('centros_custo_id', centrosCustoId)
+  const openQuery = () => {
+    let q = supabase
+      .from('conversations')
+      .select('id, lead_id, remote_jid')
+      .eq('status', 'open')
+    if (centrosCustoId) q = q.eq('centros_custo_id', centrosCustoId)
+    if (membroId) q = q.eq('membro_id', membroId)
+    return q
   }
-  const { data: existing } = await query.select('id, lead_id, remote_jid').maybeSingle()
+
+  // Chave primária: remote_jid + centros_custo_id (+ membro_id)
+  let existing: { id: string; lead_id: string | null; remote_jid: string | null } | null = null
+  if (groupJid) {
+    const { data } = await openQuery().eq('remote_jid', groupJid).limit(1)
+    existing = data && data[0] ? data[0] : null
+  }
+  // Fallback legado: conversas antigas sem remote_jid gravado → contact_id
+  if (!existing) {
+    const { data } = await openQuery().eq('contact_id', contactId).limit(1)
+    existing = data && data[0] ? data[0] : null
+  }
 
   if (existing) {
     // Vincular lead se necessário
@@ -970,6 +1081,7 @@ async function findOrCreateConversation(
     contact_id: contactId,
     status: 'open',
     unread_count: 0,
+    is_archived: false,
     last_message_text: lastMessageText || '',
     last_message_at: new Date().toISOString(),
     created_at: new Date().toISOString(),
@@ -1006,6 +1118,18 @@ async function findOrCreateConversation(
   }
 
   if (convError) {
+    // Corrida: UNIQUE(remote_jid, centros_custo_id, membro_id) violado →
+    // outra requisição criou a conversa primeiro. Re-lookup e devolve a existente.
+    if (convError.code === '23505') {
+      let retry = openQuery()
+      if (groupJid) retry = retry.eq('remote_jid', groupJid)
+      else retry = retry.eq('contact_id', contactId)
+      const { data: raced } = await retry.limit(1)
+      if (raced && raced[0]) {
+        console.log('[webhook] Corrida de insert (23505) — usando conversa existente:', raced[0].id)
+        return raced[0].id
+      }
+    }
     console.error('[webhook] Erro ao criar conversa:', convError)
     throw new Error('Failed to create conversation: ' + convError.message)
   }

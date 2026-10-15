@@ -110,10 +110,13 @@ export function parseEmpresaFilterValue(value) {
    COM MODELO CONFIGURADO
    ============================================ */
 
-/* Nomes (minúsculos, sem espaços extras) das empresas liberadas quando a
-   tabela contrato_modelos ainda não existe (migration não aplicada).
-   Sem isso, nenhum contrato poderia ser criado antes do push. */
-export const EMPRESAS_LIBERADAS_PADRAO = Object.freeze(['blue eventos']);
+/* Nomes (minúsculos, sem espaços extras) das empresas que já têm template
+   de contrato embutido no app (bluepro.js / modelo padrão da Blue Eventos).
+   Sem isso, nenhuma empresa seria criável antes do push da migration. */
+export const EMPRESAS_TEMPLATE_EMBUTIDO = Object.freeze(['blue eventos', 'blue pro']);
+
+/* Mantido por compatibilidade: mesmas empresas liberadas por padrão. */
+export const EMPRESAS_LIBERADAS_PADRAO = EMPRESAS_TEMPLATE_EMBUTIDO;
 
 export const MSG_SELECIONAR_EMPRESA_CRIAVEL =
   'Selecione uma empresa com modelo de contrato configurado para criar contratos.';
@@ -132,25 +135,30 @@ function _nomeEmpresa(centroCustoId, empresas = []) {
   return cc && cc.nome ? cc.nome : '';
 }
 
-/* IDs das empresas que aceitam contrato novo: linha própria em
-   contrato_modelos (ativo). Se a tabela não existir ainda, usa o
-   fallback por nome. Liberar uma empresa no futuro = cadastrar o modelo. */
+/* IDs das empresas que aceitam contrato novo:
+   - tabela indisponível → nomes com template embutido (EMPRESAS_TEMPLATE_EMBUTIDO);
+   - tabela disponível → linha ativa em contrato_modelos OU, não tendo
+     nenhuma linha, nome com template embutido (Blue PRO não depende de
+     cadastro para liberar a criação). Linha `ativo: false` bloqueia.
+   Liberar uma empresa nova no futuro = cadastrar o modelo ou embutir o template. */
 export function idsEmpresaCriavel({
   modelos = [],
   empresas = [],
   modelosDisponiveis = true
 } = {}) {
   const emps = (Array.isArray(empresas) ? empresas : []).filter(cc => cc && cc.id);
+  const embutidas = new Set(EMPRESAS_TEMPLATE_EMBUTIDO);
+  const linhas = (Array.isArray(modelos) ? modelos : []).filter(m => m && m.centro_custo_id);
+  const comLinha = new Set(linhas.map(m => m.centro_custo_id));
+  const comLinhaAtiva = new Set(linhas.filter(m => m.ativo !== false).map(m => m.centro_custo_id));
+  const embutida = (cc) => embutidas.has(_normNome(cc.nome));
+
   if (!modelosDisponiveis) {
-    const liberadas = new Set(EMPRESAS_LIBERADAS_PADRAO);
-    return emps.filter(cc => liberadas.has(_normNome(cc.nome))).map(cc => cc.id);
+    return emps.filter(cc => embutida(cc)).map(cc => cc.id);
   }
-  const comModelo = new Set(
-    (Array.isArray(modelos) ? modelos : [])
-      .filter(m => m && m.centro_custo_id && m.ativo !== false)
-      .map(m => m.centro_custo_id)
-  );
-  return emps.map(cc => cc.id).filter(id => comModelo.has(id));
+  return emps
+    .filter(cc => comLinhaAtiva.has(cc.id) || (!comLinha.has(cc.id) && embutida(cc)))
+    .map(cc => cc.id);
 }
 
 export function empresaCriavel({ centroCustoId, modelos, empresas, modelosDisponiveis } = {}) {

@@ -9119,6 +9119,28 @@ textarea:focus-visible,
 .status-vencido { background: var(--amber-50); color: var(--amber-700); }
 .theme-dark .status-vencido { background: var(--amber-900); color: var(--amber-200); }
 
+/* Tipo do contrato (coluna TIPO) */
+.contrato-tipo-badge {
+  justify-content: center;
+  min-width: 56px;
+  text-transform: none;
+}
+
+.contrato-tipo-100 { background: var(--green-50); color: var(--green-700); }
+.theme-dark .contrato-tipo-100 { background: var(--green-900); color: var(--green-200); }
+.contrato-tipo-50 { background: var(--blue-50); color: var(--blue-700); }
+.theme-dark .contrato-tipo-50 { background: var(--blue-900); color: var(--blue-200); }
+.contrato-tipo-2x { background: var(--indigo-50); color: var(--indigo-700); }
+.theme-dark .contrato-tipo-2x { background: var(--indigo-900); color: var(--indigo-200); }
+.contrato-tipo-3x { background: var(--indigo-50); color: var(--indigo-700); }
+.theme-dark .contrato-tipo-3x { background: var(--indigo-900); color: var(--indigo-200); }
+.contrato-tipo-4x { background: var(--indigo-50); color: var(--indigo-700); }
+.theme-dark .contrato-tipo-4x { background: var(--indigo-900); color: var(--indigo-200); }
+.contrato-tipo-5x { background: var(--indigo-50); color: var(--indigo-700); }
+.theme-dark .contrato-tipo-5x { background: var(--indigo-900); color: var(--indigo-200); }
+.contrato-tipo-proposta { background: var(--amber-50); color: var(--amber-700); }
+.theme-dark .contrato-tipo-proposta { background: var(--amber-900); color: var(--amber-200); }
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -9180,6 +9202,96 @@ textarea:focus-visible,
   max-width: 340px;
   text-align: right;
 }
+
+/* Menu de tipos de contrato (100% / 50% / Proposta) */
+.contratos-add-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.contratos-add-dropdown {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 236px;
+  padding: 6px;
+  background: var(--card-bg);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  z-index: 60;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.contratos-add-dropdown.open { display: flex; }
+
+.contratos-add-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  font: 500 13px 'Inter', sans-serif;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.contratos-add-option:hover {
+  background: var(--primary-blue-soft);
+  color: var(--primary-blue);
+}
+
+.contratos-add-option--disabled,
+.contratos-add-option--disabled:hover {
+  color: var(--muted-text);
+  background: transparent;
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.contratos-add-option-tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-text);
+  background: var(--gray-100);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.contratos-add-option--submenu::after {
+  content: '›';
+  font-size: 14px;
+  line-height: 1;
+  color: var(--muted-text);
+  margin-left: 2px;
+}
+
+.contratos-add-submenu {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 4px 12px;
+  padding-left: 8px;
+  border-left: 1px solid var(--gray-200);
+}
+
+.contratos-add-submenu.open { display: flex; }
+
+.theme-dark .contratos-add-submenu { border-left-color: #334155; }
+
+.theme-dark .contratos-add-dropdown { background: #1E293B; border-color: #334155; }
+.theme-dark .contratos-add-option { color: #E2E8F0; }
+.theme-dark .contratos-add-option:hover { background: rgba(59, 130, 246, 0.15); color: #93C5FD; }
+.theme-dark .contratos-add-option--disabled, .theme-dark .contratos-add-option--disabled:hover { color: #94A3B8; background: transparent; }
+.theme-dark .contratos-add-option-tag { background: #334155; color: #94A3B8; }
 
 /* =============================================
    CONTRATOS — Filtros Compactos
@@ -9343,6 +9455,10 @@ textarea:focus-visible,
   white-space: nowrap;
 }
 
+.contract-tipo {
+  white-space: nowrap;
+}
+
 .contract-date,
 .contract-value,
 .contract-created-at {
@@ -9379,6 +9495,16 @@ textarea:focus-visible,
   .contratos-add-button {
     width: 100%;
     justify-content: center;
+  }
+
+  .contratos-add-wrap {
+    width: 100%;
+  }
+
+  .contratos-add-dropdown {
+    left: 0;
+    right: 0;
+    min-width: 0;
   }
 
   .contratos-add-block {

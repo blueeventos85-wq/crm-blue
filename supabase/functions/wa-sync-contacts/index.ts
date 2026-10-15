@@ -348,6 +348,7 @@ serve(async (req) => {
               contact_id: groupContactId,
               status: 'open',
               unread_count: 0,
+              is_archived: false,
               last_message_text: '',
               group_jid: jid,
               remote_jid: jid,

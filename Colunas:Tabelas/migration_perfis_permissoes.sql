@@ -85,6 +85,7 @@ INSERT INTO public.perfis_permissoes (perfil, permissions) VALUES
   "can_contratos_assinado_upload": true, "can_contratos_cancelar": true,
   "can_leads_create": true, "can_leads_read": true, "can_leads_update": true, "can_leads_delete": true,
   "can_leads_export": true, "can_leads_import": true, "can_leads_add_phone": true, "can_leads_transferir": true,
+  "can_leads_view_all": true,
   "can_conversas_create": true, "can_conversas_read": true, "can_conversas_update": true, "can_conversas_delete": true,
   "can_conversas_transferir": true, "can_conversas_delete_msg": true, "can_conversas_sync_lead": true,
   "can_calendario_create": true, "can_calendario_read": true, "can_calendario_update": true, "can_calendario_delete": true,

@@ -18,6 +18,8 @@ import {
   mensagemListaVaziaContratos,
   resumoFiltrosContratos
 } from './src/lib/contrato/filtros.js';
+import { fmtDateBR, fmtTimeBR, fmtCurrency, numeroExtenso } from './src/lib/contrato/formato.js';
+import { buildContratoBluePro, ehEmpresaBluePro } from './src/lib/contrato/bluepro.js';
 
 const $ = (s, ctx = document) => ctx.querySelector(s);
 const $$ = (s, ctx = document) => Array.from(ctx.querySelectorAll(s));
@@ -945,6 +947,7 @@ const PERM_CRUD_KEYS = [
   // Leads
   'can_leads_create', 'can_leads_read', 'can_leads_update', 'can_leads_delete',
   'can_leads_export', 'can_leads_import', 'can_leads_add_phone', 'can_leads_transferir',
+  'can_leads_view_all',
   // Conversas
   'can_conversas_create', 'can_conversas_read', 'can_conversas_update', 'can_conversas_delete',
   'can_conversas_transferir', 'can_conversas_delete_msg', 'can_conversas_sync_lead',
@@ -1134,6 +1137,7 @@ const PERM_MATRIX_ROWS = [
     { key: 'can_contratos_cancelar', label: 'Cancelar Contrato' },
   ]},
   { group: 'Leads / Clientes', perms: [
+    { key: 'can_leads_view_all', label: 'Ver todos os leads e clientes da base' },
     { key: 'can_leads_create', label: 'Criar Lead' },
     { key: 'can_leads_read', label: 'Visualizar Leads' },
     { key: 'can_leads_update', label: 'Editar Lead' },
@@ -1220,6 +1224,11 @@ function renderPermMatrix(permMap, profilePermsFromDB = {}) {
           html += `<td style="text-align:center"><input type="checkbox" class="perm-matrix-check" data-perm="${key}" data-profile="${col.key}" checked disabled title="Administrador sempre acessa todos os módulos"></td>`;
           return;
         }
+        // "Ver todos os leads e clientes da base" é imutável para Administrador
+        if (key === 'can_leads_view_all' && col.key === 'administrador') {
+          html += `<td style="text-align:center"><input type="checkbox" class="perm-matrix-check" data-perm="${key}" data-profile="${col.key}" checked disabled title="Administrador sempre vê todos os leads e clientes"></td>`;
+          return;
+        }
         const checked = profilePerms[col.key]?.[key] === true;
         html += `<td style="text-align:center"><input type="checkbox" class="perm-matrix-check" data-perm="${key}" data-profile="${col.key}"${checked ? ' checked' : ''}></td>`;
       });
@@ -1265,6 +1274,9 @@ async function handlePermMatrixSave() {
       if (!updates[profileKey]) updates[profileKey] = {};
       updates[profileKey][permKey] = cb.checked;
     });
+
+    // "Ver todos os leads e clientes da base" é imutável para Administrador
+    if (updates.administrador) updates.administrador.can_leads_view_all = true;
 
     // 1. Atualiza PERFIL_DEFAULTS em memória (para uso imediato)
     Object.entries(updates).forEach(([profileKey, perms]) => {
@@ -2587,6 +2599,7 @@ function showSettingsTab(tab) {
    ============================================ */
 let _waConfigBound = false;
 let _waQrPolling = null;
+let _waEmpresasMap = {};
 
 async function initWhatsAppConfig() {
   if (!currentUser.id) return;
@@ -2604,16 +2617,49 @@ async function initWhatsAppConfig() {
     if (refreshBtn) refreshBtn.addEventListener('click', waLoadStatus);
     if (qrRefresh) qrRefresh.addEventListener('click', waHandleConnect);
 
+    // Multi-instancia: vincular instancia existente / nova instancia / lista
+    const linkBtn = document.getElementById('waLinkInstanceBtn');
+    const linkCancel = document.getElementById('waLinkCancelBtn');
+    const linkSubmit = document.getElementById('waLinkSubmitBtn');
+    const newInstanceBtn = document.getElementById('waNewInstanceBtn');
+    const instancesList = document.getElementById('waInstancesList');
+
+    if (linkBtn) linkBtn.addEventListener('click', () => {
+      const form = document.getElementById('waLinkInstanceForm');
+      if (form) form.style.display = form.style.display === 'none' ? '' : 'none';
+    });
+    if (linkCancel) linkCancel.addEventListener('click', () => {
+      const form = document.getElementById('waLinkInstanceForm');
+      if (form) form.style.display = 'none';
+    });
+    if (linkSubmit) linkSubmit.addEventListener('click', waHandleLinkInstance);
+    if (newInstanceBtn) newInstanceBtn.addEventListener('click', waHandleNewInstance);
+    if (instancesList) instancesList.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const card = btn.closest('[data-config-id]');
+      if (!card) return;
+      const action = btn.dataset.action;
+      const configId = card.dataset.configId;
+      const ccId = card.dataset.ccId || null;
+      const instanceName = card.dataset.instance || '';
+      const empresa = card.dataset.empresa || '';
+      if (action === 'select') waHandleSelectInstance(ccId);
+      else if (action === 'sync') waHandleSyncInstance(ccId, instanceName);
+      else if (action === 'unlink') waHandleUnlinkInstance(configId, empresa, instanceName);
+    });
+
     // Popular dropdown de centros de custo
     await _populateWaCentroCustoDropdown();
   }
 
+  await waLoadInstances();
   await waLoadStatus();
 }
 
 async function _populateWaCentroCustoDropdown() {
   const select = document.getElementById('waCentroCustoSelect');
-  if (!select) return;
+  const linkSelect = document.getElementById('waLinkCentroCustoSelect');
 
   const { data: mccData } = await _supabase
     .from('membro_centros_custo')
@@ -2625,11 +2671,173 @@ async function _populateWaCentroCustoDropdown() {
     .filter(Boolean)
     .sort((a, b) => a.nome.localeCompare(b.nome));
 
-  select.innerHTML = '<option value="">Selecione a empresa...</option>' +
+  // Mapa id -> nome para a lista de instancias
+  _waEmpresasMap = {};
+  list.forEach(cc => { _waEmpresasMap[cc.id] = cc.nome; });
+
+  const optionsHtml = '<option value="">Selecione a empresa...</option>' +
     list.map(cc => `<option value="${cc.id}">${escapeHtml(cc.nome)}</option>`).join('');
 
-  // Ao trocar o centro de custo, recarregar status
-  select.addEventListener('change', () => waLoadStatus());
+  if (select) {
+    select.innerHTML = optionsHtml;
+    // Ao trocar o centro de custo, recarregar status
+    select.addEventListener('change', () => waLoadStatus());
+  }
+  if (linkSelect) linkSelect.innerHTML = optionsHtml;
+}
+
+/* ── Multi-instancia: lista de configs + ações ── */
+
+async function waLoadInstances() {
+  const listEl = document.getElementById('waInstancesList');
+  const countEl = document.getElementById('waInstancesCount');
+  if (!listEl) return;
+
+  let configs = [];
+  try {
+    configs = await waFetchAllConfigs(currentUser.id);
+  } catch (err) {
+    console.error('[WA Config] Erro ao listar instâncias:', err);
+  }
+
+  if (countEl) countEl.textContent = configs.length ? `(${configs.length})` : '';
+
+  if (!configs.length) {
+    listEl.innerHTML = '<p class="card-sub" style="margin:0">Nenhuma instancia vinculada. Crie uma nova ou vincule uma instancia ja existente na Evolution API.</p>';
+    return;
+  }
+
+  listEl.innerHTML = configs.map(cfg => {
+    const ccId = cfg.centros_custo_id || '';
+    const nomeEmpresa = (ccId && _waEmpresasMap[ccId]) || 'Sem empresa';
+    const instanceName = cfg.provider_config?.instanceName || '—';
+    const numero = cfg.provider_config?.numero || '';
+    const status = cfg.status || 'disconnected';
+    const statusLabel = status === 'connected' ? 'Conectada'
+      : status === 'connecting' ? 'Conectando…' : 'Desconectada';
+    return `
+      <div class="wa-instance-card" data-config-id="${cfg.id}" data-cc-id="${escapeHtml(ccId)}"
+           data-instance="${escapeHtml(instanceName)}" data-empresa="${escapeHtml(nomeEmpresa)}"
+           style="display:flex;align-items:center;gap:12px;border:1px solid var(--border-color, #e5e7eb);border-radius:8px;padding:10px 12px;margin-bottom:8px;flex-wrap:wrap">
+        <div class="wa-status-dot ${status}" title="${statusLabel}"></div>
+        <div style="flex:1;min-width:180px">
+          <div style="font-weight:600;font-size:13px">${escapeHtml(nomeEmpresa)}
+            <span style="font-weight:400;color:var(--text-secondary, #6b7280)">· ${escapeHtml(instanceName)}</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-secondary, #6b7280)">${escapeHtml(numero || 'Sem numero informado')} · ${statusLabel}</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" data-action="select">Selecionar</button>
+          <button class="btn btn-ghost btn-sm" data-action="sync" title="Re-registra o webhook na Evolution e atualiza o status">Sincronizar</button>
+          <button class="btn btn-danger btn-sm" data-action="unlink">Desvincular</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  if (window.lucide) { try { window.lucide.createIcons(); } catch (_) { /* noop */ } }
+}
+
+function waHandleSelectInstance(ccId) {
+  const select = document.getElementById('waCentroCustoSelect');
+  if (select && ccId) {
+    select.value = ccId;
+    waLoadStatus();
+  }
+}
+
+async function waHandleNewInstance() {
+  const form = document.getElementById('waLinkInstanceForm');
+  if (form) form.style.display = 'none';
+  const select = document.getElementById('waCentroCustoSelect');
+  if (select) select.value = '';
+  const nameInput = document.getElementById('waInstanceName');
+  if (nameInput) nameInput.value = '';
+  const qrSection = document.getElementById('waQrSection');
+  if (qrSection) qrSection.style.display = 'none';
+  await waLoadStatus();
+  select?.focus();
+}
+
+async function waHandleLinkInstance() {
+  const ccSelect = document.getElementById('waLinkCentroCustoSelect');
+  const nameInput = document.getElementById('waLinkInstanceName');
+  const numeroInput = document.getElementById('waLinkNumero');
+  const centrosCustoId = ccSelect?.value || null;
+  const instanceName = nameInput?.value?.trim() || '';
+  const numero = numeroInput?.value?.trim() || '';
+
+  if (!centrosCustoId) { toast('Selecione a empresa para vincular a instancia', 'error'); return; }
+  if (!instanceName) { toast('Informe o nome exato da instancia na Evolution API', 'error'); return; }
+
+  const submitBtn = document.getElementById('waLinkSubmitBtn');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Vinculando…'; }
+
+  try {
+    const result = await waInstanceLink({
+      membroId: currentUser.id,
+      centrosCustoId,
+      instanceName,
+      numero
+    });
+
+    const statusMsg = result?.status === 'connected' ? 'conectada'
+      : result?.status === 'connecting' ? 'aguardando pareamento' : 'vinculada (desconectada)';
+    toast(`Instancia "${instanceName}" ${statusMsg}.`);
+
+    const form = document.getElementById('waLinkInstanceForm');
+    if (form) form.style.display = 'none';
+    if (nameInput) nameInput.value = '';
+    if (numeroInput) numeroInput.value = '';
+    if (ccSelect) ccSelect.value = '';
+
+    await waLoadInstances();
+
+    // Selecionar a empresa recem-vinculada no form principal
+    const mainSelect = document.getElementById('waCentroCustoSelect');
+    if (mainSelect && result?.centrosCustoId) mainSelect.value = result.centrosCustoId;
+    await waLoadStatus();
+  } catch (err) {
+    console.error('[WA Config] Erro ao vincular instancia:', err);
+    toast('Erro ao vincular: ' + (err.message || 'Tente novamente'), 'error');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i data-lucide="link"></i> Vincular';
+      if (window.lucide) { try { window.lucide.createIcons(); } catch (_) { /* noop */ } }
+    }
+  }
+}
+
+async function waHandleSyncInstance(ccId, instanceName) {
+  if (!ccId) { toast('Esta instancia nao esta vinculada a uma empresa; use "Vincular instancia existente".', 'error'); return; }
+  try {
+    const result = await waSetWebhook(currentUser.id, ccId);
+    toast(`Webhook sincronizado para "${instanceName}" — status: ${result?.status || 'ok'}`);
+    await waLoadInstances();
+    await waLoadStatus();
+  } catch (err) {
+    console.error('[WA Config] Erro ao sincronizar webhook:', err);
+    toast('Erro ao sincronizar: ' + (err.message || 'Tente novamente'), 'error');
+  }
+}
+
+async function waHandleUnlinkInstance(configId, empresa, instanceName) {
+  const ok = confirm(
+    `Desvincular a instancia "${instanceName}" da empresa "${empresa}"?\n\n` +
+    'A instancia continua existindo na Evolution API; apenas o vinculo com o CRM e removido ' +
+    '(as conversas ja importadas permanecem no banco).'
+  );
+  if (!ok) return;
+
+  try {
+    await waUnlinkInstance(configId);
+    toast('Instancia desvinculada');
+    await waLoadInstances();
+    await waLoadStatus();
+  } catch (err) {
+    console.error('[WA Config] Erro ao desvincular:', err);
+    toast('Erro ao desvincular: ' + (err.message || 'Tente novamente'), 'error');
+  }
 }
 
 async function waLoadStatus() {
@@ -2749,7 +2957,7 @@ async function waHandleConnect() {
   if (label) label.textContent = 'Conectando...';
 
   try {
-    const result = await waConnect(currentUser.id, instanceName, centrosCustoId);
+    const result = await waConnect(currentUser.id, instanceName, centrosCustoId, integration);
 
     if (result.qr) {
       _waSetQrImage(result.qr);
@@ -4315,7 +4523,7 @@ let clienteCcFilter = 'all';
 let clienteViewMode = 'grid';
 
 function getFilteredClients() {
-  const canViewAll = canViewAllData();
+  const canViewAll = canViewAllLeadsClientes();
   const userId = getCurrentUserId();
 
   return clientsData.filter(c => {
@@ -4351,14 +4559,15 @@ function clientCardHTML(c) {
   const more = overflow > 0
     ? `<span class="lead-card-svc-more" tabindex="0" role="button" aria-label="Mais ${overflow} serviço${overflow > 1 ? 's' : ''}" title="${c.services.slice(MAX_SERVICES_CARD).join(', ')}">+${overflow}</span>`
     : '';
-  const isAdmin = isCurrentUserAdmin();
+  const canSelect = canSelectLeadsClientes();
+  const canTransfer = canTransferLeadsClientes();
   const isSelected = selectedClientIds.has(String(c.id));
-  const checkboxHtml = isAdmin
+  const checkboxHtml = canSelect
     ? `<label class="client-select-label" onclick="event.stopPropagation()">
         <input type="checkbox" class="client-select-cb" data-client-id="${c.id}" ${isSelected ? 'checked' : ''} />
        </label>`
     : '';
-  const transferSelectHtml = isAdmin
+  const transferSelectHtml = canTransfer
     ? `<div class="client-transfer-select-wrap" onclick="event.stopPropagation()">
         <label class="client-transfer-label">Transferir para:</label>
         <select class="client-transfer-select" data-client-id="${c.id}">
@@ -4367,7 +4576,7 @@ function clientCardHTML(c) {
        </div>`
     : '';
   return `
-    <article class="client-card${isSelected ? ' selected' : ''}${isAdmin ? ' has-admin-actions' : ''}" data-name="${c.name}" data-client-id="${c.id}" tabindex="0"
+    <article class="client-card${isSelected ? ' selected' : ''}${canSelect ? ' has-admin-actions' : ''}" data-name="${c.name}" data-client-id="${c.id}" tabindex="0"
              aria-label="${c.name}${c.services.length ? ', ' + c.services.length + ' serviço' + (c.services.length > 1 ? 's' : '') : ''}">
       ${checkboxHtml}
       ${transferSelectHtml}
@@ -4568,7 +4777,7 @@ function fillMemberOptions(sel, currentMembroId) {
 }
 
 async function transferSingleClient(clientId, memberId) {
-  if (!isCurrentUserAdmin()) { toast('Apenas administradores podem transferir leads', 'error'); return; }
+  if (!canTransferLeadsClientes()) { toast('Você não tem permissão para transferir leads.', 'error'); return; }
   const member = _membersCache?.find(m => m.id === memberId);
   const memberName = member?.nome || 'Membro';
 
@@ -4614,11 +4823,20 @@ function updateMassBar() {
   const selectAllCb = $('#selectAllClients');
   if (!bar) return;
 
-  const isAdmin = isCurrentUserAdmin();
+  const canSelect = canSelectLeadsClientes();
+  const canTransfer = canTransferLeadsClientes();
+  const canDelete = canDeleteLeadsClientes();
 
-  if (selectAllWrap) selectAllWrap.style.display = isAdmin ? '' : 'none';
+  if (selectAllWrap) selectAllWrap.style.display = canSelect ? '' : 'none';
 
-  if (!isAdmin || selectedClientIds.size === 0) {
+  // Controles da barra aparecem conforme a permissão do perfil (transferir / excluir)
+  $$('.mass-bar-field').forEach(el => { el.style.display = canTransfer ? '' : 'none'; });
+  const transferBtn = $('#massTransferBtn');
+  if (transferBtn) transferBtn.style.display = canTransfer ? '' : 'none';
+  const deleteBtnBar = $('#massDeleteBtn');
+  if (deleteBtnBar) deleteBtnBar.style.display = canDelete ? '' : 'none';
+
+  if (!canSelect || selectedClientIds.size === 0) {
     bar.hidden = true;
     if (selectAllCb) selectAllCb.checked = false;
     return;
@@ -4718,7 +4936,7 @@ function bindClientMassBar() {
 }
 
 async function saveMassTransfer() {
-  if (!isCurrentUserAdmin()) { toast('Apenas administradores podem transferir leads', 'error'); return; }
+  if (!canTransferLeadsClientes()) { toast('Você não tem permissão para transferir leads.', 'error'); return; }
   const memberSelect = $('#massNewMember');
   const qualSelect = $('#massNewQualificador');
   const lostSel = $('#massLostReason');
@@ -4812,6 +5030,7 @@ async function saveMassTransfer() {
 }
 
 async function deleteMassLeads() {
+  if (!canDeleteLeadsClientes()) { toast('Você não tem permissão para excluir leads.', 'error'); return; }
   if (selectedClientIds.size === 0) return;
   const ids = [...selectedClientIds];
 
@@ -6003,7 +6222,7 @@ function setServiceChipsActive(values) {
 async function refreshLeadsEClientsCache() {
   try {
     if (_supabase) {
-      const filterId = canViewAllData() ? null : getCurrentUserId();
+      const filterId = canViewAllLeadsClientes() ? null : getCurrentUserId();
       const [freshLeads, freshClients] = await Promise.all([
         fetchLeadsSupabase(filterId),
         fetchClientsSupabase(filterId)
@@ -6248,12 +6467,30 @@ function canViewAllData() {
   return isCurrentUserAdmin();
 }
 
+/* ── Permissão granular: ver todos os leads e clientes da base ── */
+function canViewAllLeadsClientes() {
+  return isCurrentUserAdmin() || can('can_leads_view_all');
+}
+
+/* ── Permissões granulares: excluir / transferir leads e clientes da base ── */
+function canDeleteLeadsClientes() {
+  return isCurrentUserAdmin() || can('can_leads_delete');
+}
+
+function canTransferLeadsClientes() {
+  return isCurrentUserAdmin() || can('can_leads_transferir');
+}
+
+function canSelectLeadsClientes() {
+  return canDeleteLeadsClientes() || canTransferLeadsClientes();
+}
+
 function getCurrentUserId() {
   return currentUser.id;
 }
 
 function getSearchFilteredLeads() {
-  const canViewAll = canViewAllData();
+  const canViewAll = canViewAllLeadsClientes();
   const userId = getCurrentUserId();
 
   return leads.filter(l => {
@@ -13080,6 +13317,8 @@ const conversasState = {
   realtimeChannel: null,
   realtimeStatus: null, // status do canal conversas-realtime (SUBSCRIBED => sem reload periódico)
   selectedCentroCustoId: null,
+  selectedCentroCustoNome: null,
+  _waConfigHasInstance: false,
   centrosCustoList: [],
   waStatus: 'disconnected',
   instanceName: null,
@@ -13210,17 +13449,31 @@ async function loadConversasChats() {
     // Extrair instanceName da config
     if (waConfig?.provider_config?.instanceName) {
       conversasState.instanceName = waConfig.provider_config.instanceName;
+      conversasState._waConfigHasInstance = true;
     } else {
       conversasState.instanceName = null;
+      conversasState._waConfigHasInstance = false;
     }
 
     if (signal.aborted) return;
 
     let convData, convError;
     console.log('[Conversas] Query:', { ccId, membroId });
+    // Visibilidade por empresa:
+    // - Admin ou Marketing (gestora): TODAS as conversas do centro de custo.
+    // - Demais perfis: conversas atribuídas a ele OU sem atribuição (fila geral).
+    // A listagem NÃO depende de leads — conversa sem lead_id aparece como
+    // contato novo/não identificado (telefone ou pushName do WhatsApp).
+    const userPerfil = _userPermCache?.perfil || currentUser?.perfil || '';
+    const hasFullView = userPerfil === 'Administrador' || userPerfil === 'Marketing';
     const doConvQuery = (cols) => {
       let q = _supabase.from('conversations').select(cols);
-      if (ccId) q = q.eq('centros_custo_id', ccId);
+      if (ccId) {
+        q = q.eq('centros_custo_id', ccId);
+        if (!hasFullView) {
+          q = q.or(`membro_id.eq.${membroId},membro_id.is.null`);
+        }
+      }
       return q.order('last_message_at', { ascending: false, nullsFirst: false });
     };
     let result = await doConvQuery('id, membro_id, contact_id, centros_custo_id, lead_id, status, is_archived, unread_count, last_message_text, last_message_at, created_at, updated_at, group_name, group_jid, title, is_group, avatar_url, metadata, remote_jid');
@@ -13524,7 +13777,9 @@ function _convApplyFilter() {
     else if (f === 'closed') list = list.filter(c => c.status === 'closed');
     else if (f === 'mine') {
       const uid = getCurrentUserId();
-      list = list.filter(c => c.assigned_to === uid);
+      // "Minhas" = minhas + sem atribuição (fila geral) — conversas sem dono
+      // não podem ficar invisíveis para quem atende a empresa.
+      list = list.filter(c => c.assigned_to === uid || !c.assigned_to);
     } else if (f === 'hot') list = list.filter(c => c.temperature === 'quente');
     else if (f === 'groups') list = list.filter(c => c.is_group === true);
     else if (f === 'unidentified') list = list.filter(c => !c.is_group && !c.lead_id);
@@ -13542,6 +13797,25 @@ function _renderConvChatList() {
 
   const chats = conversasState.chats;
   if (!chats.length) {
+    // Empresa selecionada sem instância WhatsApp vinculada → explicar o motivo
+    // em vez de mostrar só "Nenhuma conversa encontrada" sem contexto.
+    const ccId = conversasState.selectedCentroCustoId;
+    if (ccId && !conversasState._waConfigHasInstance) {
+      const nomeEmpresa = conversasState.selectedCentroCustoNome || 'esta empresa';
+      list.innerHTML = `
+        <div class="conv-empty-state" style="text-align:left;padding:16px">
+          <p style="margin-bottom:8px"><strong>Nenhuma conversa para "${escapeHtml(nomeEmpresa)}".</strong></p>
+          <p style="margin-bottom:12px">Nao ha nenhuma instancia WhatsApp vinculada a esta empresa. Vincule a instancia ja existente na Evolution API (ex.: "crm gisele") em Configuracoes &gt; WhatsApp e clique em Sincronizar.</p>
+          <button class="btn btn-primary btn-sm" id="convEmptyWaConfigBtn"><i data-lucide="settings"></i> Abrir Configuracoes &gt; WhatsApp</button>
+        </div>`;
+      const cfgBtn = document.getElementById('convEmptyWaConfigBtn');
+      if (cfgBtn) cfgBtn.addEventListener('click', () => {
+        const tabBtn = document.querySelector('[data-settings-tab="whatsapp"]');
+        if (tabBtn) tabBtn.click();
+      });
+      if (window.lucide) { try { window.lucide.createIcons(); } catch (_) { /* noop */ } }
+      return;
+    }
     list.innerHTML = '<div class="conv-empty-state"><p>Nenhuma conversa encontrada</p></div>';
     return;
   }
@@ -16420,6 +16694,9 @@ function _convSubscribeRealtime() {
   if (conversasState.realtimeChannel) _supabase.removeChannel(conversasState.realtimeChannel);
 
   const ccId = conversasState.selectedCentroCustoId;
+  // Multi-tenancy: filtrar conversas no servidor pelo CC ativo da sessão.
+  // messages não tem coluna de CC — continua com check client-side + RLS.
+  const convFilter = ccId ? `centros_custo_id=eq.${ccId}` : undefined;
 
   conversasState.realtimeChannel = _supabase
     .channel('conversas-realtime')
@@ -16484,7 +16761,8 @@ function _convSubscribeRealtime() {
     .on('postgres_changes', {
       event: 'UPDATE',
       schema: 'public',
-      table: 'conversations'
+      table: 'conversations',
+      ...(convFilter ? { filter: convFilter } : {})
     }, payload => {
       const updated = payload.new;
       if (ccId && updated.centros_custo_id !== ccId) return;
@@ -16507,7 +16785,8 @@ function _convSubscribeRealtime() {
     .on('postgres_changes', {
       event: 'INSERT',
       schema: 'public',
-      table: 'conversations'
+      table: 'conversations',
+      ...(convFilter ? { filter: convFilter } : {})
     }, payload => {
       const conv = payload.new;
       if (ccId && conv.centros_custo_id !== ccId) return;
@@ -16639,6 +16918,8 @@ async function _initConvCentroCustoDropdown() {
     // 1. Atualizar estado global imediatamente
     conversasState.selectedCentroCustoId = effectiveId;
     conversasState.selectedCompanyId = effectiveId;
+    const foundNome = effectiveId ? (list.find(cc => cc.id === effectiveId)?.nome || null) : null;
+    conversasState.selectedCentroCustoNome = foundNome;
 
     // 2. Persistir no localStorage
     if (effectiveId) {
@@ -17599,10 +17880,12 @@ function _abrirPreviewContrato(html, { somenteLeitura = false } = {}) {
   if (typeof initIcons === 'function') initIcons();
 }
 
-function _ccModeloPreview() {
+async function _ccModeloPreview() {
   const modelo = _ccModeloColetarPayload();
   const hoje = new Date().toISOString().split('T')[0];
   const amostra = {
+    // Empresa da amostra → o preview usa o template da empresa (ex.: Blue PRO)
+    centro_custo_id: modelo.centro_custo_id,
     contratante_nome: 'Nome do Cliente',
     contratante_cpf_cnpj: '000.000.000-00',
     contratante_email: 'cliente@exemplo.com',
@@ -17623,7 +17906,8 @@ function _ccModeloPreview() {
     parcelas: [{ parcela: 1, valor: 1000, vencimento: hoje }],
     data_emissao: hoje
   };
-  _abrirPreviewContrato(buildPDFContent(amostra, modelo), { somenteLeitura: true });
+  const empresaNome = await resolveNomeEmpresaContrato(modelo.centro_custo_id);
+  _abrirPreviewContrato(buildPDFContent(amostra, modelo, { empresaNome }), { somenteLeitura: true });
 }
 
 function _initCcContratoModelo() {
@@ -17796,14 +18080,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Etapa 2 — leads e clientes dependem dos serviços; chips reaproveitam o cache
     await Promise.all([
       bootLoad('leads', async () => {
-        const filterId = canViewAllData() ? null : getCurrentUserId();
+        const filterId = canViewAllLeadsClientes() ? null : getCurrentUserId();
         console.log('[Boot] Carregando leads, filterId:', filterId, 'currentUser.id:', currentUser.id);
         const supabaseLeads = await fetchLeadsSupabase(filterId);
         if (supabaseLeads.length > 0) leads = supabaseLeads;
         console.log('[Boot] Leads carregados do Supabase:', leads.length);
       }),
       bootLoad('clientes', async () => {
-        const filterClientId = canViewAllData() ? null : getCurrentUserId();
+        const filterClientId = canViewAllLeadsClientes() ? null : getCurrentUserId();
         const supabaseClients = await fetchClientsSupabase(filterClientId);
         if (supabaseClients.length > 0) clientsData = supabaseClients;
         console.log('[Boot] Clientes carregados do Supabase:', clientsData.length);
@@ -17882,6 +18166,9 @@ let _contratosLeadsList = [];
 let _contratosInited = false;
 let _currentContratoData = null; // contrato em edição
 let _contratoSaving = false; // debounce:防止 duplo clique
+/* Fluxo de pagamento do contrato em criação/edição:
+   '100' = pagamento integral | '50' = 2 parcelas de 50% (assinatura + véspera). */
+let _contratoFluxo = '100';
 
 // Modal close / dirty state
 let _contratoFormSnapshot = null;
@@ -17896,14 +18183,9 @@ function _friendlyContratoError(err) {
   if (err.message) return err.message;
   return 'erro inesperado. Tente novamente.';
 }
-function fmtDateBR(dateStr) {
-  if (!dateStr) return '';
-  try {
-    const [y, m, d] = dateStr.split('-');
-    return `${d}/${m}/${y}`;
-  } catch { return dateStr; }
-}
-
+/* fmtDateBR, fmtTimeBR, fmtCurrency e numeroExtenso vêm de
+   src/lib/contrato/formato.js (fonte única usada também pelo
+   template Blue PRO em src/lib/contrato/bluepro.js). */
 function dataExtenso(dateStr) {
   if (!dateStr) return '';
   try {
@@ -17911,61 +18193,6 @@ function dataExtenso(dateStr) {
     const meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
     return `${d} de ${meses[parseInt(m, 10) - 1]} de ${y}`;
   } catch { return dateStr; }
-}
-
-function fmtTimeBR(timeStr) {
-  if (!timeStr) return '';
-  return timeStr.substring(0, 5);
-}
-
-function fmtCurrency(val) {
-  if (val === null || val === undefined || val === '') return 'R$ 0,00';
-  return Number(val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function numeroExtenso(valor) {
-  if (!valor || isNaN(valor)) return 'zero reais';
-  const n = parseFloat(valor);
-  const inteiro = Math.floor(n);
-  const centavos = Math.round((n - inteiro) * 100);
-
-  const unidades = ['', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove',
-    'dez', 'onze', 'doze', 'treze', 'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
-  const dezenas = ['', '', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
-  const centenas = ['', 'cem', 'duzentos', 'trezentos', 'quatrocentos', 'quinhentos', 'seiscentos', 'setecentos', 'oitocentos', 'novecentos'];
-
-  function converteGrupo(n) {
-    if (n === 0) return '';
-    if (n < 20) return unidades[n];
-    if (n < 100) {
-      const d = Math.floor(n / 10);
-      const u = n % 10;
-      return dezenas[d] + (u ? ' e ' + unidades[u] : '');
-    }
-    const c = Math.floor(n / 100);
-    const resto = n % 100;
-    if (n === 100) return 'cem';
-    return centenas[c] + (resto ? ' e ' + converteGrupo(resto) : '');
-  }
-
-  let resultado = '';
-  if (inteiro === 0) {
-    resultado = 'zero';
-  } else if (inteiro < 1000) {
-    resultado = converteGrupo(inteiro);
-  } else if (inteiro < 1000000) {
-    const milhar = Math.floor(inteiro / 1000);
-    const resto = inteiro % 1000;
-    resultado = (milhar === 1 ? 'mil' : converteGrupo(milhar) + ' mil') + (resto ? ' e ' + converteGrupo(resto) : '');
-  } else {
-    resultado = inteiro.toString();
-  }
-
-  let reais = resultado + (inteiro === 1 ? ' real' : ' reais');
-  if (centavos > 0) {
-    reais += ' e ' + converteGrupo(centavos) + (centavos === 1 ? ' centavo' : ' centavos');
-  }
-  return reais;
 }
 
 function gerarNumeroContrato(seq) {
@@ -17983,6 +18210,35 @@ function contratoStatusBadge(status) {
   };
   const s = map[status] || { cls: '', label: status };
   return `<span class="badge ${s.cls}">${s.label}</span>`;
+}
+
+/* Tipo do contrato na listagem (badge). Contrato legado sem tipo_contrato:
+   N parcelas = "Nx", senão "100%". */
+function contratoTipoBadge(c) {
+  const mapa = {
+    '100%': { cls: 'contrato-tipo-100', label: '100%' },
+    '50%': { cls: 'contrato-tipo-50', label: '50%' },
+    '2x': { cls: 'contrato-tipo-2x', label: '2x' },
+    '3x': { cls: 'contrato-tipo-3x', label: '3x' },
+    '4x': { cls: 'contrato-tipo-4x', label: '4x' },
+    '5x': { cls: 'contrato-tipo-5x', label: '5x' },
+    'proposta': { cls: 'contrato-tipo-proposta', label: 'Proposta' }
+  };
+  const salvo = c && c.tipo_contrato ? String(c.tipo_contrato) : '';
+  const qtd = parseInt(c?.quantidade_parcelas) || 1;
+  const tipo = mapa[salvo] ? salvo : (qtd >= 2 ? `${Math.min(qtd, 5)}x` : '100%');
+  const t = mapa[tipo];
+  return `<span class="badge contrato-tipo-badge ${t.cls}">${t.label}</span>`;
+}
+
+/* Tipo gravado no contrato: '100%' (à vista), '50%' (50/50),
+   '2x'..'5x' (parcelado) ou 'proposta'. */
+function _resolveTipoContrato() {
+  const condicao = document.getElementById('contratoCondicaoPagamento')?.value || '1';
+  if (condicao === '50') return '50%';
+  const n = parseInt(condicao) || 1;
+  if (n <= 1) return '100%';
+  return `${Math.min(n, 5)}x`;
 }
 
 /* ---- Parse PostgreSQL array text for tipo_servico_id ----- */
@@ -18102,6 +18358,13 @@ async function createContratoViaRPC(payload) {
   return data;
 }
 
+/* Update sem tipo_contrato: fallback quando a migration da coluna
+   ainda não foi aplicada (o PostgREST recusa coluna desconhecida). */
+function _contratoUpdateSemTipo(payload, existingId) {
+  const { tipo_contrato, ...resto } = payload;
+  return _supabase.from('contratos').update(resto).eq('id', existingId).select().single();
+}
+
 /* ---- Render table ----- */
 function renderContratosTable(list) {
   const tbody = document.querySelector('#tableContratos tbody');
@@ -18109,7 +18372,7 @@ function renderContratosTable(list) {
 
   if (!list || list.length === 0) {
     const vazio = escapeHtml(mensagemListaVaziaContratos(_contratosFiltrosAplicados));
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;opacity:0.5;padding:24px;">${vazio}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;opacity:0.5;padding:24px;">${vazio}</td></tr>`;
     return;
   }
 
@@ -18140,6 +18403,7 @@ function renderContratosTable(list) {
       <td class="contract-number">${c.numero_contrato || '—'}</td>
       <td class="contract-client" title="${c.contratante_nome || ''}">${c.contratante_nome || '—'}</td>
       <td class="contract-empresa" title="${nomeEmpresa}">${nomeEmpresa}</td>
+      <td class="contract-tipo">${contratoTipoBadge(c)}</td>
       <td class="contract-service" title="${servicoDesc}">${servicoDesc}</td>
       <td class="contract-date">${dataEvento || '—'}</td>
       <td class="contract-value text-right">${valor}</td>
@@ -18256,13 +18520,81 @@ async function getContratoModelo(centroCustoId) {
   return resolveModelo(centroCustoId, contratoModelosData);
 }
 
-function buildPDFContent(data, modelo) {
+/* Nome da empresa (centro de custo) a partir do id salvo no contrato/formulário */
+function _nomeEmpresaPorId(centroCustoId) {
+  if (!centroCustoId) return '';
+  return (centrosCustoData || []).find(cc => cc && cc.id === centroCustoId)?.nome || '';
+}
+
+/* Resolução robusta do nome da empresa que decide o template do contrato.
+   Ordem: id do contrato → empresa do lead (contrato legado sem empresa) →
+   busca pontual no banco quando o cache local está vazio/desatualizado.
+   Sem o nome certo, um contrato Blue PRO sairia com as cláusulas da
+   Blue Eventos ("aluguel", "convidados", "reserva de data"). */
+async function resolveNomeEmpresaContrato(centroCustoId, leadId = null) {
+  let ccId = centroCustoId || null;
+  if (!ccId && leadId) {
+    const lead = (_contratosLeadsList || []).find(l => l && l.id === leadId);
+    ccId = lead?.centro_custo_id || null;
+  }
+  if (!ccId) return '';
+
+  const noCache = () => (centrosCustoData || []).find(cc => cc && cc.id === ccId)?.nome || '';
+  const emCache = noCache();
+  if (emCache) return emCache;
+
+  if (_supabase) {
+    try {
+      const { data, error } = await _supabase
+        .from('centros_custo')
+        .select('nome')
+        .eq('id', ccId)
+        .single();
+      if (!error && data && data.nome) {
+        if (!(centrosCustoData || []).some(cc => cc && cc.id === ccId)) {
+          centrosCustoData = [...(centrosCustoData || []), { id: ccId, nome: data.nome }];
+        }
+        return data.nome;
+      }
+      console.warn('[Contratos] Empresa não encontrada para o template:', ccId, error?.message || '');
+    } catch (err) {
+      console.warn('[Contratos] Falha ao resolver empresa do contrato:', err);
+    }
+  }
+  return noCache();
+}
+
+/* Marcadores de cláusulas de locação/festa (template Blue Eventos) que nunca
+   aparecem no contrato Blue PRO — usados para regenerar conteúdo salvo velho. */
+const _CONTRATO_MARCADORES_EVENTOS = /aluguel|reserva de data|convidados do evento|juros de mora/i;
+
+/* `empresaNome` vem pré-resolvido pelos chamadores assíncronos (evita cache
+   vazio); sem ele, cai na resolução síncrona pelo id do contrato. */
+function buildPDFContent(data, modelo, { empresaNome = '' } = {}) {
   const doc = (modelo && typeof modelo === 'object' && modelo.cabecalho)
     ? modelo
     : DEFAULT_CONTRATO_MODELO;
   const marcaCss = doc.marca_dagua_url
     ? ` style="background-image:url('${_contratoUrlSeguro(doc.marca_dagua_url)}')"`
     : '';
+
+  const nomeEmpresa = empresaNome || _nomeEmpresaPorId(data.centro_custo_id);
+  const ehBluePro = ehEmpresaBluePro(nomeEmpresa);
+  console.log('[Contratos] Template do contrato:', nomeEmpresa || '(empresa desconhecida)',
+    '→', ehBluePro ? 'Blue PRO' : 'Blue Eventos');
+
+  /* Blue PRO: OBRIGATORIAMENTE o template oficial (bluepro.js) — nunca cai no
+     template padrão de festas/locação da Blue Eventos. */
+  if (ehBluePro) {
+    return buildContratoBluePro({
+      data,
+      doc,
+      header: _contratoHeader(doc),
+      marcaCss,
+      footer: (n) => _contratoFooter(n, 4)
+    });
+  }
+
   const qtdParcelas = parseInt(data.quantidade_parcelas) || 1;
   const valorTotal = fmtCurrency(data.valor_total);
   const valorTotalExt = numeroExtenso(data.valor_total);
@@ -18573,6 +18905,19 @@ function validateContratoForm() {
   if (!emEdicao && !document.getElementById('contratoEmpresa')?.value) {
     missing.push({ id: 'contratoEmpresa', label: 'Empresa' });
   }
+  // Parcelamento (50% ou 2x–5x): datas e valores de cada parcela são obrigatórios
+  const nParcelas = _parcelasDaCondicao(document.getElementById('contratoCondicaoPagamento')?.value);
+  if (nParcelas >= 2) {
+    for (let i = 1; i <= nParcelas; i++) {
+      [
+        { id: 'contratoValorP' + i, label: `Valor da ${i}ª parcela` },
+        { id: 'contratoVencimentoP' + i, label: `Data da ${i}ª parcela` }
+      ].forEach(campo => {
+        const el = document.getElementById(campo.id);
+        if (!el || !(el.value || '').trim()) missing.push(campo);
+      });
+    }
+  }
   if (missing.length) {
     highlightFieldErrors(missing.map(f => f.id));
   }
@@ -18581,18 +18926,22 @@ function validateContratoForm() {
 
 /* ---- Collect form data ----- */
 function collectContratoFormData() {
-  const condicao = parseInt(document.getElementById('contratoCondicaoPagamento')?.value || '1');
+  const condicao = document.getElementById('contratoCondicaoPagamento')?.value || '1';
+  const qtdParcelas = _parcelasDaCondicao(condicao);
   const valorTotal = parseFloat(document.getElementById('contratoValorTotal')?.value || 0);
   const servicoDesc = document.getElementById('contratoServicosDesc')?.value || '';
 
   let parcelas = [];
-  if (condicao === 1) {
+  if (qtdParcelas === 1) {
     parcelas = [{ parcela: 1, valor: valorTotal, vencimento: document.getElementById('contratoVencimentoP1')?.value || '' }];
-  } else if (condicao === 2) {
-    parcelas = [
-      { parcela: 1, valor: parseFloat(document.getElementById('contratoValorP1')?.value || 0), vencimento: document.getElementById('contratoVencimentoP1')?.value || '' },
-      { parcela: 2, valor: parseFloat(document.getElementById('contratoValorP2')?.value || 0), vencimento: document.getElementById('contratoVencimentoP2')?.value || '' }
-    ];
+  } else {
+    for (let i = 1; i <= qtdParcelas; i++) {
+      parcelas.push({
+        parcela: i,
+        valor: parseFloat(document.getElementById('contratoValorP' + i)?.value || 0),
+        vencimento: document.getElementById('contratoVencimentoP' + i)?.value || ''
+      });
+    }
   }
 
   return {
@@ -18615,8 +18964,9 @@ function collectContratoFormData() {
     quantidade_horas: parseFloat(document.getElementById('contratoQtdHoras')?.value || 0) || null,
     endereco_evento: document.getElementById('contratoEnderecoEvento')?.value || '',
     valor_total: valorTotal,
-    quantidade_parcelas: condicao,
+    quantidade_parcelas: qtdParcelas,
     parcelas,
+    tipo_contrato: _resolveTipoContrato(),
     data_emissao: new Date().toISOString().split('T')[0],
     membro_id: currentUser?.id || null,
     owner_id: currentUser?.id || null,
@@ -18758,7 +19108,107 @@ function _initLeadSearchable() {
 }
 
 /* ---- Open modal to create new contrato ----- */
-async function openNovoContratoModal() {
+/* ---- Fluxos de criação: Contrato 100% x 50% x Parcelado (2x–5x) ---- */
+function _ehFluxo50(valor) {
+  return String(valor ?? '') === '50';
+}
+
+/* Parcelas de uma condição do seletor:
+   '1' → 1 (100%), '50' → 2 (50/50), '2'..'5' → parcelado. */
+function _parcelasDaCondicao(valorCondicao) {
+  const v = String(valorCondicao ?? '1');
+  if (v === '50') return 2;
+  return Math.min(Math.max(parseInt(v) || 1, 1), 5);
+}
+
+/* Divide o valor total igualmente nas parcelas da condição atual
+   (restos de centavos vão para a última parcela). */
+function _aplicaSplitParcelas() {
+  const total = parseFloat(document.getElementById('contratoValorTotal')?.value || 0) || 0;
+  if (total <= 0) return;
+  const n = _parcelasDaCondicao(document.getElementById('contratoCondicaoPagamento')?.value);
+  if (n < 2) return;
+  const set = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.value = v ? String(v) : '';
+  };
+  const base = Math.round(total / n * 100) / 100;
+  let soma = 0;
+  for (let i = 1; i < n; i++) {
+    set('contratoValorP' + i, base);
+    soma += base;
+  }
+  set('contratoValorP' + n, Math.round((total - soma) * 100) / 100);
+}
+
+/* Mostra/esconde as parcelas (até a 5ª) e ajusta os labels. */
+function _sincronizaParcelasUI({ split = false } = {}) {
+  const condicao = document.getElementById('contratoCondicaoPagamento')?.value || '1';
+  const n = _parcelasDaCondicao(condicao);
+  for (let i = 2; i <= 5; i++) {
+    const mostrar = i <= n ? '' : 'none';
+    ['rowParcelaVal' + i, 'rowParcelaVenc' + i].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = mostrar;
+    });
+  }
+  for (let i = 1; i <= n; i++) {
+    const l = document.getElementById('labelDataP' + i);
+    if (l) l.textContent = condicao === '50' ? `Data da ${i}ª Parcela` : `Vencimento ${i}ª Parcela`;
+  }
+  if (n >= 2 && split) _aplicaSplitParcelas();
+}
+
+/* Define o fluxo ativo no modal: '100' | '50' | '2'..'5' (parcelado). */
+function _aplicaFluxoContrato(tipo, { split = false } = {}) {
+  const t = String(tipo ?? '');
+  _contratoFluxo = t === '50' ? '50' : (/^[2-5]$/.test(t) ? t : '100');
+  const sel = document.getElementById('contratoCondicaoPagamento');
+  if (sel) sel.value = _contratoFluxo === '100' ? '1' : _contratoFluxo;
+  _sincronizaParcelasUI({ split });
+}
+
+/* Título do modal conforme o fluxo escolhido. */
+function _tituloFluxoContrato() {
+  if (_contratoFluxo === '50') return 'Gerar Contrato 50% (2x)';
+  const n = parseInt(_contratoFluxo) || 1;
+  return n >= 2 ? `Gerar Contrato Parcelado (${n}x)` : 'Gerar Contrato';
+}
+
+/* Menu de tipos de contrato do botão "+ Adicionar contrato". */
+function _alternaMenuNovoContrato() {
+  const btn = document.getElementById('btnNovoContrato');
+  const menu = document.getElementById('contratosAddDropdown');
+  if (!btn || !menu || btn.disabled) return;
+  const aberto = menu.classList.toggle('open');
+  btn.setAttribute('aria-expanded', String(aberto));
+  if (!aberto) _fechaSubmenuParcelado();
+}
+
+function _fechaSubmenuParcelado() {
+  const sub = document.getElementById('contratosAddSubmenuParcelado');
+  const toggle = document.getElementById('contratosAddParceladoToggle');
+  if (sub) sub.classList.remove('open');
+  if (toggle) toggle.setAttribute('aria-expanded', 'false');
+}
+
+function _alternaSubmenuParcelado() {
+  const sub = document.getElementById('contratosAddSubmenuParcelado');
+  const toggle = document.getElementById('contratosAddParceladoToggle');
+  if (!sub) return;
+  const aberto = sub.classList.toggle('open');
+  if (toggle) toggle.setAttribute('aria-expanded', String(aberto));
+}
+
+function _fechaMenuNovoContrato() {
+  const btn = document.getElementById('btnNovoContrato');
+  const menu = document.getElementById('contratosAddDropdown');
+  if (menu) menu.classList.remove('open');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+  _fechaSubmenuParcelado();
+}
+
+async function openNovoContratoModal(opts = {}) {
   // Portão de entrada: mesmo que alguém chame a função por outro caminho,
   // só abre quando o filtro e uma empresa com modelo permitem criar.
   await loadContratoModelos();
@@ -18777,13 +19227,10 @@ async function openNovoContratoModal() {
   if (idEl) idEl.value = '';
   const form = document.getElementById('formContrato');
   if (form) form.reset();
+  // Fluxo escolhido no menu: '100' | '50' | parcelado '2'..'5'
+  _aplicaFluxoContrato(opts?.tipo, { split: !!opts?.tipo && opts.tipo !== '100' });
   const title = document.getElementById('modalContratoTitle');
-  if (title) title.textContent = 'Gerar Contrato';
-  // Reset parcela 2 rows
-  ['rowParcelaVal2', 'rowParcelaVenc2'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = 'none';
-  });
+  if (title) title.textContent = _tituloFluxoContrato();
 
   // Reset lead searchable
   _resetLeadSearchable();
@@ -18849,16 +19296,18 @@ async function contratoEdit(id) {
 
   const qtdParcelas = data.quantidade_parcelas || 1;
   const condicaoSel = document.getElementById('contratoCondicaoPagamento');
-  if (condicaoSel) condicaoSel.value = String(Math.min(qtdParcelas, 2));
-  const showP2 = qtdParcelas >= 2 ? '' : 'none';
-  ['rowParcelaVal2', 'rowParcelaVenc2'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = showP2;
-  });
+  // Reabre no mesmo fluxo salvo: '50%' mantém 50/50; senão parcelado Nx (até 5)
+  if (condicaoSel) condicaoSel.value = data.tipo_contrato === '50%' ? '50' : String(Math.min(qtdParcelas, 5));
+  _contratoFluxo = condicaoSel ? (condicaoSel.value === '50' ? '50' : (condicaoSel.value === '1' ? '100' : condicaoSel.value)) : '100';
+  _sincronizaParcelasUI();
 
   const parcelas = data.parcelas || [];
-  if (parcelas[0]) { set('contratoValorP1', parcelas[0].valor); set('contratoVencimentoP1', parcelas[0].vencimento); }
-  if (parcelas[1]) { set('contratoValorP2', parcelas[1].valor); set('contratoVencimentoP2', parcelas[1].vencimento); }
+  for (let i = 1; i <= 5; i++) {
+    if (parcelas[i - 1]) {
+      set('contratoValorP' + i, parcelas[i - 1].valor);
+      set('contratoVencimentoP' + i, parcelas[i - 1].vencimento);
+    }
+  }
 
   _openContratoModal();
 
@@ -18876,7 +19325,9 @@ const _contratoFormFields = [
   'contratoEstado', 'contratoCep', 'contratoServicosDesc', 'contratoDataEvento',
   'contratoHoraInicio', 'contratoHoraFim', 'contratoQtdHoras',
   'contratoEnderecoEvento', 'contratoValorTotal', 'contratoCondicaoPagamento',
-  'contratoValorP1', 'contratoVencimentoP1', 'contratoValorP2', 'contratoVencimentoP2'
+  'contratoValorP1', 'contratoVencimentoP1', 'contratoValorP2', 'contratoVencimentoP2',
+  'contratoValorP3', 'contratoVencimentoP3', 'contratoValorP4', 'contratoVencimentoP4',
+  'contratoValorP5', 'contratoVencimentoP5'
 ];
 
 function _snapshotContratoForm() {
@@ -19039,7 +19490,8 @@ async function saveContrato(status = 'rascunho') {
     }
 
     const modelo = await getContratoModelo(formData.centro_custo_id);
-    const htmlContent = buildPDFContent({ ...formData, data_emissao: dataHoje }, modelo);
+    const empresaNome = await resolveNomeEmpresaContrato(formData.centro_custo_id, formData.lead_id);
+    const htmlContent = buildPDFContent({ ...formData, data_emissao: dataHoje }, modelo, { empresaNome });
 
     const payload = {
       ...formData,
@@ -19049,7 +19501,11 @@ async function saveContrato(status = 'rascunho') {
     };
 
     if (existingId) {
-      const { data, error } = await _supabase.from('contratos').update(payload).eq('id', existingId).select().single();
+      let { data, error } = await _supabase.from('contratos').update(payload).eq('id', existingId).select().single();
+      // Banco sem a migration de tipo_contrato: repete sem o campo novo
+      if (error && String(error.message || '').includes('tipo_contrato')) {
+        ({ data, error } = _contratoUpdateSemTipo(payload, existingId));
+      }
       if (error) {
         console.error('[Contratos] Erro ao salvar:', {
           message: error.message,
@@ -19151,6 +19607,7 @@ async function contratoGeneratePDF(id) {
 
   // ---- 2. Preload watermark image ----
   const modeloPdf = await getContratoModelo(contrato.centro_custo_id);
+  const empresaNome = await resolveNomeEmpresaContrato(contrato.centro_custo_id, contrato.lead_id);
   const watermarkUrl = modeloPdf.marca_dagua_url
     ? _contratoUrlSeguro(modeloPdf.marca_dagua_url)
     : CONTRATO_MARCA_DAGUA_PADRAO;
@@ -19169,7 +19626,15 @@ async function contratoGeneratePDF(id) {
   });
 
   // ---- 3. Create dedicated off-screen export container ----
-  const htmlContent = contrato.conteudo_contrato || buildPDFContent(contrato, modeloPdf);
+  // Contrato Blue PRO com conteúdo salvo por outro template (ex.: gerado antes
+  // do template embutido) traz cláusulas de locação/festa da Blue Eventos
+  // ("aluguel", "convidados", "reserva de data") → regenera a partir do código.
+  const conteudoSalvo = contrato.conteudo_contrato || '';
+  const conteudoObsoleto = ehEmpresaBluePro(empresaNome || _nomeEmpresaPorId(contrato.centro_custo_id)) &&
+    _CONTRATO_MARCADORES_EVENTOS.test(conteudoSalvo);
+  const htmlContent = (conteudoSalvo && !conteudoObsoleto)
+    ? conteudoSalvo
+    : buildPDFContent(contrato, modeloPdf, { empresaNome });
   const A4_W_PX = 794;
 
   const exportRoot = document.createElement('div');
@@ -19480,7 +19945,8 @@ async function openContratoPreview() {
   }
 
   const modelo = await getContratoModelo(formData.centro_custo_id);
-  const html = buildPDFContent(formData, modelo);
+  const empresaNome = await resolveNomeEmpresaContrato(formData.centro_custo_id, formData.lead_id);
+  const html = buildPDFContent(formData, modelo, { empresaNome });
   _abrirPreviewContrato(html, { somenteLeitura: false });
 }
 
@@ -19808,12 +20274,16 @@ async function salvarContratoComoRascunho() {
     let data;
 
     if (existingId) {
-      const { data: updated, error } = await _supabase
+      let { data: updated, error } = await _supabase
         .from('contratos')
         .update(payload)
         .eq('id', existingId)
         .select()
         .single();
+      // Banco sem a migration de tipo_contrato: repete sem o campo novo
+      if (error && String(error.message || '').includes('tipo_contrato')) {
+        ({ data: updated, error } = _contratoUpdateSemTipo(payload, existingId));
+      }
       if (error) throw error;
       data = updated;
     } else {
@@ -19895,6 +20365,7 @@ function _atualizaBotaoNovoContrato() {
     btn.disabled = true;
     btn.title = motivo;
     btn.setAttribute('aria-disabled', 'true');
+    _fechaMenuNovoContrato();
     if (hint) {
       hint.textContent = motivo;
       hint.style.display = '';
@@ -20154,7 +20625,28 @@ async function initContratos() {
     empresaModalSelect.addEventListener('change', () => { _contratoEmpresaTouched = true; });
   }
 
-  document.getElementById('btnNovoContrato')?.addEventListener('click', openNovoContratoModal);
+  document.getElementById('btnNovoContrato')?.addEventListener('click', _alternaMenuNovoContrato);
+  document.querySelectorAll('.contratos-add-option[data-tipo]').forEach(opt => {
+    opt.addEventListener('click', () => {
+      if (opt.disabled) return;
+      const tipo = opt.dataset.tipo;
+      // "Contrato Parcelado" só abre o submenu 2x–5x
+      if (tipo === 'parcelado') {
+        _alternaSubmenuParcelado();
+        return;
+      }
+      const fluxo = ['50', '2', '3', '4', '5'].includes(tipo) ? tipo : '100';
+      _fechaMenuNovoContrato();
+      openNovoContratoModal({ tipo: fluxo });
+    });
+  });
+  document.addEventListener('click', (e) => {
+    const wrap = document.getElementById('contratosAddWrap');
+    if (wrap && !wrap.contains(e.target)) _fechaMenuNovoContrato();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') _fechaMenuNovoContrato();
+  });
   // Trocar empresa/status/mês aplica o filtro imediatamente
   document.getElementById('filterContratoEmpresa')?.addEventListener('change', () => {
     _atualizaBotaoNovoContrato();
@@ -20186,12 +20678,15 @@ async function initContratos() {
   });
 
   document.getElementById('contratoCondicaoPagamento')?.addEventListener('change', function () {
-    const v = parseInt(this.value);
-    const show = v >= 2 ? '' : 'none';
-    ['rowParcelaVal2', 'rowParcelaVenc2'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.style.display = show;
-    });
+    const n = _parcelasDaCondicao(this.value);
+    _contratoFluxo = this.value === '50' ? '50' : (n >= 2 ? String(n) : '100');
+    _sincronizaParcelasUI({ split: n >= 2 });
+  });
+
+  // Parcelamento: digitar o valor total divide automaticamente em N parcelas iguais
+  document.getElementById('contratoValorTotal')?.addEventListener('input', function () {
+    const n = _parcelasDaCondicao(document.getElementById('contratoCondicaoPagamento')?.value);
+    if (n >= 2) _aplicaSplitParcelas();
   });
 
   const btnPreview = document.getElementById('btnContratoPreview');
