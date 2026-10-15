@@ -88,12 +88,15 @@ describe('Persistência do tipo_contrato', () => {
   });
 
   it('edição não trava se a migration da coluna ainda não rodou', () => {
-    assert.ok(appJs.includes('function _contratoUpdateSemTipo('), 'sem fallback de update sem tipo_contrato');
+    assert.ok(appJs.includes('async function _patchContrato('), 'sem retry genérico de PATCH (colunas ausentes)');
     for (const header of ['async function saveContrato(', 'async function salvarContratoComoRascunho(']) {
       const corpo = extractFn(appJs, header);
       assert.ok(corpo, `${header} ausente`);
-      assert.ok(corpo.includes('_contratoUpdateSemTipo('), `${header} sem retry sem tipo_contrato`);
+      assert.ok(corpo.includes('_patchContrato(existingId, patch)'), `${header} sem retry de PATCH com queda de colunas`);
     }
+    const retry = extractFn(appJs, 'async function _patchContrato(');
+    assert.ok(retry, '_patchContrato ausente');
+    assert.ok(/does not exist|Could not find the/.test(retry), 'retry não detecta coluna inexistente');
   });
 });
 

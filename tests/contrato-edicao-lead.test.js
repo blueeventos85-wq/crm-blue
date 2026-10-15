@@ -35,11 +35,19 @@ function extractFn(source, header) {
 }
 
 function carregarSanear() {
-  const constMatch = appJs.match(/const _CONTRATO_CHAVES_UUID = \[[^\]]*\];/);
-  assert.ok(constMatch, '_CONTRATO_CHAVES_UUID ausente');
-  const corpo = extractFn(appJs, 'function _sanearPayloadContratoUpdate(');
-  assert.ok(corpo, '_sanearPayloadContratoUpdate ausente');
-  return new Function(`${constMatch[0]}; ${corpo}; return _sanearPayloadContratoUpdate;`)();
+  const nomes = ['_CONTRATO_COLUNAS_TABELA', '_CONTRATO_CHAVES_UUID', '_CONTRATO_CHAVES_NUMERICAS', '_CONTRATO_CHAVES_DATA'];
+  const consts = nomes.map(n => {
+    const m = appJs.match(new RegExp(`const ${n} = \\[[^\\]]*\\];`));
+    assert.ok(m, `const ${n} ausente`);
+    return m[0];
+  }).join('; ');
+  const funcoes = ['parseMoeda', 'paraISODate', '_sanearPayloadContratoUpdate'].map(n => {
+    const corpo = extractFn(appJs, `function ${n}(`);
+    assert.ok(corpo, `função ${n} ausente`);
+    return corpo;
+  }).join('; ');
+  const consoleMudo = { warn() {}, error() {}, log() {} };
+  return new Function('console', `${consts}; ${funcoes}; return _sanearPayloadContratoUpdate;`)(consoleMudo);
 }
 
 /* ===========================================================
@@ -121,9 +129,8 @@ describe('PATCH de contratos · payload sanitizado', () => {
     assert.ok(corpo, 'saveContrato ausente');
     assert.ok(corpo.includes('_sanearPayloadContratoUpdate(payload)'),
       'saveContrato não sanitiza o payload do update');
-    assert.ok(corpo.includes('.update(patch)'), 'update não usa o patch sanitizado');
-    assert.ok(corpo.includes('_contratoUpdateSemTipo(patch, existingId)'),
-      'retry sem tipo_contrato não usa o patch sanitizado');
+    assert.ok(corpo.includes('_patchContrato(existingId, patch)'),
+      'retry genérico de PATCH não usa o patch sanitizado');
   });
 
   it('salvarContratoComoRascunho sanitiza o update', () => {
@@ -131,8 +138,7 @@ describe('PATCH de contratos · payload sanitizado', () => {
     assert.ok(corpo, 'salvarContratoComoRascunho ausente');
     assert.ok(corpo.includes('_sanearPayloadContratoUpdate(payload)'),
       'rascunho não sanitiza o payload do update');
-    assert.ok(corpo.includes('.update(patch)'), 'update do rascunho não usa o patch sanitizado');
-    assert.ok(corpo.includes('_contratoUpdateSemTipo(patch, existingId)'),
+    assert.ok(corpo.includes('_patchContrato(existingId, patch)'),
       'retry do rascunho não usa o patch sanitizado');
   });
 

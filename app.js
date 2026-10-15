@@ -18223,6 +18223,7 @@ function _friendlyContratoError(err) {
   if (err.code === '23503') return 'referência inválida (lead ou empresa).';
   if (err.code === '23514') return 'dados fora do formato esperado.';
   if (err.message) return err.message;
+  if (err.details) return err.details;
   return 'erro inesperado. Tente novamente.';
 }
 /* fmtDateBR, fmtTimeBR, fmtCurrency e numeroExtenso vêm de
@@ -18400,27 +18401,118 @@ async function createContratoViaRPC(payload) {
   return data;
 }
 
-/* Update sem tipo_contrato: fallback quando a migration da coluna
-   ainda não foi aplicada (o PostgREST recusa coluna desconhecida). */
-function _contratoUpdateSemTipo(payload, existingId) {
-  const { tipo_contrato, ...resto } = payload;
-  return _supabase.from('contratos').update(resto).eq('id', existingId).select().single();
+/* PATCH com queda automática de colunas que o banco ainda não tem   (PGRST204: "column ... does not exist" / "Could not find the 'x' column"):
+   remove a coluna do payload e repete, sem travar a edição (substitui o
+   fallback específico de tipo_contrato). */
+async function _patchContrato(existingId, patch) {
+  const atual = { ...patch };
+  for (let tentativa = 0; tentativa < 6; tentativa++) {
+    const { data, error } = await _supabase.from('contratos').update(atual).eq('id', existingId).select().single();
+    if (!error) return { data, error: null };
+    const msg = String(error.message || '');
+    const det = String(error.details || '');
+    const m = msg.match(/column\s+(?:[\w"]+\.)?"?(\w+)"?\s+does not exist/i)
+      || msg.match(/Could not find the '(\w+)' column/i)
+      || det.match(/column\s+(?:[\w"]+\.)?"?(\w+)"?\s+does not exist/i)
+      || det.match(/Could not find the '(\w+)' column/i);
+    if (m && Object.prototype.hasOwnProperty.call(atual, m[1])) {
+      console.warn('[Contratos] Coluna ausente no banco — removendo do PATCH e repetindo:', m[1]);
+      delete atual[m[1]];
+      continue;
+    }
+    return { data: null, error };
+  }
+  return { data: null, error: { message: 'PATCH recusado mesmo após remover colunas ausentes', code: 'LOCAL_RETRY' } };
 }
+
+/* Converte valores monetários/numéricos de texto para número.
+   Aceita "402,5" (vírgula decimal pt-BR), "R$ 1.402,50", "1.402" (milhar)
+   e números; vazio ou NaN → 0 (evita 400 em colunas numéricas). */
+function parseMoeda(val) {
+  if (typeof val === 'number') return Number.isFinite(val) ? val : 0;
+  let s = String(val ?? '').trim().replace(/[^\d.,\-]/g, '');
+  if (!s) return 0;
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/* Normaliza datas para o formato ISO YYYY-MM-DD aceito pelo PostgreSQL.
+   Converte DD/MM/YYYY (dados brasileiros); vazio/irreconhecível → null. */
+function paraISODate(val) {
+  const s = String(val ?? '').trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const br = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (br) return `${br[3]}-${br[2].padStart(2, '0')}-${br[1].padStart(2, '0')}`;
+  return null;
+}
+
+/* Colunas REAIS da tabela contratos (base migration_contratos.sql +
+   migrations de colunas). Payload só pode enviar o que está aqui. */
+const _CONTRATO_COLUNAS_TABELA = [
+  'id', 'lead_id', 'membro_id', 'owner_id', 'centro_custo_id',
+  'numero_contrato', 'status',
+  'contratante_nome', 'contratante_cpf_cnpj', 'contratante_telefone', 'contratante_email',
+  'contratante_endereco', 'contratante_bairro', 'contratante_cidade', 'contratante_estado', 'contratante_cep',
+  'servico_principal', 'servicos', 'descricao_servicos',
+  'data_evento', 'hora_inicio', 'hora_fim', 'quantidade_horas', 'endereco_evento',
+  'valor_total', 'quantidade_parcelas', 'parcelas',
+  'data_emissao', 'cidade_assinatura', 'estado_assinatura',
+  'conteudo_contrato', 'pdf_storage_path', 'pdf_url',
+  'gerado_em', 'enviado_em', 'assinado_em', 'cancelado_em', 'motivo_cancelamento',
+  'created_at', 'updated_at',
+  'tipo_contrato',           // migration_contrato_tipo.sql
+  'deleted_at',              // migration_add_contratos_deleted_at.sql
+  'assinado_storage_path'    // migration_contrato_assinado_upload.sql
+];
 
 /* Chaves de colunas uuid: string vazia não pode ir para o update
    (evita 400 "invalid input syntax for type uuid: \"\"") */
 const _CONTRATO_CHAVES_UUID = ['lead_id', 'membro_id', 'owner_id', 'centro_custo_id'];
+/* Colunas numéricas: string com vírgula ("402,5") quebra o cast do PostgREST */
+const _CONTRATO_CHAVES_NUMERICAS = ['valor_total', 'quantidade_horas', 'quantidade_parcelas'];
+/* Colunas date: aceitam somente YYYY-MM-DD */
+const _CONTRATO_CHAVES_DATA = ['data_evento', 'data_emissao'];
 
-/* Sanitiza o payload do PATCH de contratos: remove chaves undefined/NaN
-   (números inválidos disparam 400) e converte uuid vazio em null.
-   Strings vazias de colunas texto são mantidas para permitir limpeza de campo. */
+/* Sanitiza o payload do PATCH de contratos: descarta chaves que não são
+   colunas reais da tabela, remove undefined/NaN (disparam 400), converte
+   uuid vazio em null, serializa números ("402,5" → 402.5) e normaliza
+   datas (DD/MM → ISO). Strings vazias de colunas texto são mantidas
+   para permitir limpeza de campo; status é sempre preservado. */
 function _sanearPayloadContratoUpdate(payload) {
   const out = {};
+  const descartadas = [];
   for (const [k, v] of Object.entries(payload)) {
+    if (!_CONTRATO_COLUNAS_TABELA.includes(k)) { descartadas.push(k); continue; }
     if (v === undefined) continue;
     if (typeof v === 'number' && !Number.isFinite(v)) continue;
     if (_CONTRATO_CHAVES_UUID.includes(k) && v === '') { out[k] = null; continue; }
+    if (_CONTRATO_CHAVES_NUMERICAS.includes(k)) {
+      if (typeof v === 'string') {
+        if (v.trim() === '') {
+          // quantidade_parcelas é NOT NULL → preserva mantendo 1; demais são nullable
+          if (k !== 'quantidade_parcelas') out[k] = null;
+        } else {
+          out[k] = parseMoeda(v);
+        }
+      } else {
+        out[k] = v;
+      }
+      continue;
+    }
+    if (_CONTRATO_CHAVES_DATA.includes(k)) {
+      const iso = paraISODate(v);
+      if (iso) { out[k] = iso; continue; }
+      if (k === 'data_emissao') continue; // NOT NULL: mantém o valor já salvo
+      out[k] = null;
+      continue;
+    }
     out[k] = v;
+  }
+  if (descartadas.length) {
+    console.warn('[Contratos] Payload com chaves fora da tabela contratos — descartadas:', descartadas);
   }
   return out;
 }
@@ -18497,10 +18589,10 @@ function fillContratoFromLead(lead) {
   set('contratoCep', lead.cep || '');
   set('contratoEnderecoEvento', lead.endereco_evento || '');
   set('contratoQtdHoras', lead.quantidade_horas || '');
-  if (lead.data_evento) set('contratoDataEvento', lead.data_evento);
+  if (lead.data_evento) set('contratoDataEvento', paraISODate(lead.data_evento) || '');
   if (lead.hora_inicio) set('contratoHoraInicio', lead.hora_inicio.substring(0, 5));
   if (lead.hora_final) set('contratoHoraFim', lead.hora_final.substring(0, 5));
-  if (lead.honorarios) set('contratoValorTotal', parseFloat(lead.honorarios) || '');
+  if (lead.honorarios) set('contratoValorTotal', parseMoeda(lead.honorarios) || '');
 
   const servicos = lead.servicos_selecionados || '';
   if (servicos) {
@@ -18992,18 +19084,18 @@ function validateContratoForm() {
 function collectContratoFormData() {
   const condicao = document.getElementById('contratoCondicaoPagamento')?.value || '1';
   const qtdParcelas = _parcelasDaCondicao(condicao);
-  const valorTotal = parseFloat(document.getElementById('contratoValorTotal')?.value || 0);
+  const valorTotal = parseMoeda(document.getElementById('contratoValorTotal')?.value);
   const servicoDesc = document.getElementById('contratoServicosDesc')?.value || '';
 
   let parcelas = [];
   if (qtdParcelas === 1) {
-    parcelas = [{ parcela: 1, valor: valorTotal, vencimento: document.getElementById('contratoVencimentoP1')?.value || '' }];
+    parcelas = [{ parcela: 1, valor: valorTotal, vencimento: paraISODate(document.getElementById('contratoVencimentoP1')?.value) || '' }];
   } else {
     for (let i = 1; i <= qtdParcelas; i++) {
       parcelas.push({
         parcela: i,
-        valor: parseFloat(document.getElementById('contratoValorP' + i)?.value || 0),
-        vencimento: document.getElementById('contratoVencimentoP' + i)?.value || ''
+        valor: parseMoeda(document.getElementById('contratoValorP' + i)?.value),
+        vencimento: paraISODate(document.getElementById('contratoVencimentoP' + i)?.value) || ''
       });
     }
   }
@@ -19022,10 +19114,10 @@ function collectContratoFormData() {
     servico_principal: servicoDesc,
     descricao_servicos: servicoDesc,
     servicos: servicoDesc ? servicoDesc.split(',').map(s => s.trim()).filter(Boolean) : [],
-    data_evento: document.getElementById('contratoDataEvento')?.value || null,
+    data_evento: paraISODate(document.getElementById('contratoDataEvento')?.value),
     hora_inicio: document.getElementById('contratoHoraInicio')?.value || null,
     hora_fim: document.getElementById('contratoHoraFim')?.value || null,
-    quantidade_horas: parseFloat(document.getElementById('contratoQtdHoras')?.value || 0) || null,
+    quantidade_horas: parseMoeda(document.getElementById('contratoQtdHoras')?.value) || null,
     endereco_evento: document.getElementById('contratoEnderecoEvento')?.value || '',
     valor_total: valorTotal,
     quantidade_parcelas: qtdParcelas,
@@ -19212,7 +19304,7 @@ function _parcelasDaCondicao(valorCondicao) {
 /* Divide o valor total igualmente nas parcelas da condição atual
    (restos de centavos vão para a última parcela). */
 function _aplicaSplitParcelas() {
-  const total = parseFloat(document.getElementById('contratoValorTotal')?.value || 0) || 0;
+  const total = parseMoeda(document.getElementById('contratoValorTotal')?.value);
   if (total <= 0) return;
   const n = _parcelasDaCondicao(document.getElementById('contratoCondicaoPagamento')?.value);
   if (n < 2) return;
@@ -19384,12 +19476,12 @@ async function contratoEdit(id) {
   set('contratoEstado', data.contratante_estado);
   set('contratoCep', data.contratante_cep);
   set('contratoServicosDesc', data.descricao_servicos);
-  set('contratoDataEvento', data.data_evento);
+  set('contratoDataEvento', paraISODate(data.data_evento) || '');
   set('contratoHoraInicio', data.hora_inicio ? data.hora_inicio.substring(0, 5) : '');
   set('contratoHoraFim', data.hora_fim ? data.hora_fim.substring(0, 5) : '');
   set('contratoQtdHoras', data.quantidade_horas);
   set('contratoEnderecoEvento', data.endereco_evento);
-  set('contratoValorTotal', data.valor_total);
+  set('contratoValorTotal', parseMoeda(data.valor_total) || '');
 
   const qtdParcelas = data.quantidade_parcelas || 1;
   const condicaoSel = document.getElementById('contratoCondicaoPagamento');
@@ -19401,8 +19493,8 @@ async function contratoEdit(id) {
   const parcelas = data.parcelas || [];
   for (let i = 1; i <= 5; i++) {
     if (parcelas[i - 1]) {
-      set('contratoValorP' + i, parcelas[i - 1].valor);
-      set('contratoVencimentoP' + i, parcelas[i - 1].vencimento);
+      set('contratoValorP' + i, parseMoeda(parcelas[i - 1].valor) || '');
+      set('contratoVencimentoP' + i, paraISODate(parcelas[i - 1].vencimento) || '');
     }
   }
 
@@ -19599,11 +19691,7 @@ async function saveContrato(status = 'rascunho') {
 
     if (existingId) {
       const patch = _sanearPayloadContratoUpdate(payload);
-      let { data, error } = await _supabase.from('contratos').update(patch).eq('id', existingId).select().single();
-      // Banco sem a migration de tipo_contrato: repete sem o campo novo
-      if (error && String(error.message || '').includes('tipo_contrato')) {
-        ({ data, error } = _contratoUpdateSemTipo(patch, existingId));
-      }
+      const { data, error } = await _patchContrato(existingId, patch);
       if (error) {
         console.error('[Contratos] Erro ao salvar:', {
           message: error.message,
@@ -19612,7 +19700,10 @@ async function saveContrato(status = 'rascunho') {
           code: error.code,
           payload: patch
         });
-        toast('Erro ao salvar contrato: ' + _friendlyContratoError(error), 'error');
+        // JSON da resposta do PostgREST: mostra a coluna que disparou o 400
+        console.error('[Contratos] PATCH 400 — JSON da resposta:', JSON.stringify(error));
+        console.error('[Contratos Erro Detalhado]', error);
+        toast('Erro ao salvar contrato: ' + (error.message || error.details || _friendlyContratoError(error)), 'error');
         return null;
       }
       return data;
@@ -19679,11 +19770,22 @@ function canvasHasVisibleContent(canvas) {
 }
 
 /* ---- Generate PDF from a saved contrato ----- */
-async function contratoGeneratePDF(id) {
+async function contratoGeneratePDF(idOuContrato) {
   if (!_supabase) return;
 
-  const { data: contrato, error } = await _supabase.from('contratos').select('*').eq('id', id).single();
-  if (error || !contrato) { toast('Contrato não encontrado.', 'error'); return; }
+  // Aceita id (linha persistida) OU objeto em memória (dados do formulário),
+  // para gerar o PDF mesmo quando o save falha (não bloqueia a geração).
+  let contrato;
+  if (typeof idOuContrato === 'string') {
+    const { data, error } = await _supabase.from('contratos').select('*').eq('id', idOuContrato).single();
+    if (error || !data) { toast('Contrato não encontrado.', 'error'); return; }
+    contrato = data;
+  } else if (idOuContrato && typeof idOuContrato === 'object') {
+    contrato = idOuContrato;
+  } else {
+    toast('Contrato não encontrado.', 'error');
+    return;
+  }
 
   toast('Gerando PDF…', 'info');
 
@@ -19958,13 +20060,17 @@ async function contratoGeneratePDF(id) {
       return;
     }
 
-    // ---- 9. Update contrato status ----
-    await _supabase.from('contratos').update({
-      status: 'gerado',
-      gerado_em: new Date().toISOString(),
-      pdf_storage_path: storagePath,
-      updated_at: new Date().toISOString()
-    }).eq('id', id);
+    // ---- 9. Update contrato status (somente se persistido no banco) ----
+    if (contrato.id) {
+      const { error: statusErr } = await _supabase.from('contratos').update({
+        status: 'gerado',
+        gerado_em: new Date().toISOString(),
+        pdf_storage_path: storagePath,
+        updated_at: new Date().toISOString()
+      }).eq('id', contrato.id);
+      // Não fatal: o PDF já foi aberto na aba do usuário
+      if (statusErr) console.error('[Contratos] Falha ao registrar status/gerado_em do PDF (não fatal):', statusErr);
+    }
 
     // ---- 10. Open PDF in new tab ----
     window.open(signedData.signedUrl, '_blank');
@@ -20013,12 +20119,17 @@ async function contratoGenerateFromModal() {
     toast('Campos obrigatórios ausentes: ' + nomes, 'error');
     return;
   }
+  // Captura os dados ANTES de fechar o modal: se o save falhar,
+  // o PDF ainda sai com os dados do formulário (não bloqueia).
+  const formData = collectContratoFormData();
   toast('Salvando e gerando PDF…', 'info');
   const saved = await saveContrato('gerado');
-  if (!saved) return;
+  if (!saved) {
+    toast('Não foi possível salvar o contrato; gerando o PDF com os dados do formulário…', 'info');
+  }
   _closeContratoModal();
   // Keep preview open during PDF generation so html2canvas can capture visible pages
-  await contratoGeneratePDF(saved.id);
+  await contratoGeneratePDF(saved || formData);
   // Close preview after generation
   const previewModal = document.getElementById('contratoPreviewModal');
   if (previewModal) previewModal.classList.remove('is-open');
@@ -20373,16 +20484,7 @@ async function salvarContratoComoRascunho() {
 
     if (existingId) {
       const patch = _sanearPayloadContratoUpdate(payload);
-      let { data: updated, error } = await _supabase
-        .from('contratos')
-        .update(patch)
-        .eq('id', existingId)
-        .select()
-        .single();
-      // Banco sem a migration de tipo_contrato: repete sem o campo novo
-      if (error && String(error.message || '').includes('tipo_contrato')) {
-        ({ data: updated, error } = _contratoUpdateSemTipo(patch, existingId));
-      }
+      const { data: updated, error } = await _patchContrato(existingId, patch);
       if (error) throw error;
       data = updated;
     } else {
@@ -20403,10 +20505,12 @@ async function salvarContratoComoRascunho() {
     return data;
   } catch (err) {
     console.error('[Contratos] Erro ao salvar rascunho:', err.message || err);
+    console.error('[Contratos] Resposta JSON do erro:', JSON.stringify(err));
+    console.error('[Contratos Erro Detalhado]', err);
     if (err.code === '23505') {
       toast('Erro: número de contrato duplicado. Tente novamente.', 'error');
     } else {
-      toast('Não foi possível salvar o rascunho: ' + _friendlyContratoError(err), 'error');
+      toast('Não foi possível salvar o rascunho: ' + (err.message || err.details || _friendlyContratoError(err)), 'error');
     }
     return null;
   } finally {
