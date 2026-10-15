@@ -18407,6 +18407,24 @@ function _contratoUpdateSemTipo(payload, existingId) {
   return _supabase.from('contratos').update(resto).eq('id', existingId).select().single();
 }
 
+/* Chaves de colunas uuid: string vazia não pode ir para o update
+   (evita 400 "invalid input syntax for type uuid: \"\"") */
+const _CONTRATO_CHAVES_UUID = ['lead_id', 'membro_id', 'owner_id', 'centro_custo_id'];
+
+/* Sanitiza o payload do PATCH de contratos: remove chaves undefined/NaN
+   (números inválidos disparam 400) e converte uuid vazio em null.
+   Strings vazias de colunas texto são mantidas para permitir limpeza de campo. */
+function _sanearPayloadContratoUpdate(payload) {
+  const out = {};
+  for (const [k, v] of Object.entries(payload)) {
+    if (v === undefined) continue;
+    if (typeof v === 'number' && !Number.isFinite(v)) continue;
+    if (_CONTRATO_CHAVES_UUID.includes(k) && v === '') { out[k] = null; continue; }
+    out[k] = v;
+  }
+  return out;
+}
+
 /* ---- Render table ----- */
 function renderContratosTable(list) {
   const tbody = document.querySelector('#tableContratos tbody');
@@ -18936,14 +18954,18 @@ function highlightFieldErrors(fieldIds) {
 function validateContratoForm() {
   clearFieldErrors();
   const missing = [];
+  const emEdicao = document.getElementById('contratoId')?.value;
   _contratoRequiredFields.forEach(f => {
+    // Lead vinculado é obrigatório apenas na criação: contratos existentes
+    // (ex.: gerados com dados diretos da proposta/empresa) continuam
+    // editáveis e podem ganhar um lead depois pelo buscador do modal.
+    if (f.id === 'contratoLeadId' && emEdicao) return;
     const el = document.getElementById(f.id);
     const val = el ? (el.value || '').trim() : '';
     if (!val) missing.push(f);
   });
   // Empresa é obrigatória apenas na criação: contratos antigos sem empresa
   // continuam editáveis e preservam o valor salvo.
-  const emEdicao = document.getElementById('contratoId')?.value;
   if (!emEdicao && !document.getElementById('contratoEmpresa')?.value) {
     missing.push({ id: 'contratoEmpresa', label: 'Empresa' });
   }
@@ -19043,6 +19065,30 @@ function _selectLeadById(leadId) {
   if (value) {
     value.style.display = '';
     value.innerHTML = `<strong>${lead.nome || '—'}</strong>${lead.telefone ? ' <span style="opacity:0.6;margin-left:6px;">' + lead.telefone + '</span>' : ''}`;
+  }
+}
+
+/* Garante que o lead do contrato editado esteja na lista pesquisável:
+   o escopo de loadContratoLeads (visibilidade por membro) pode não incluí-lo */
+async function _garantirLeadContratoNaLista(leadId) {
+  if (_contratosLeadsList.some(l => l && l.id === leadId)) return;
+  try {
+    const { data } = await _supabase.from('leads').select('*').eq('id', leadId).maybeSingle();
+    if (data) _contratosLeadsList = [data, ..._contratosLeadsList];
+  } catch (err) {
+    console.warn('[Contratos] Lead vinculado não encontrado para exibição:', leadId, err?.message || err);
+  }
+}
+
+/* Exibe o controle do lead quando o registro não pôde ser carregado
+   (lead excluído): o ID já fica no hidden para preservar o vínculo */
+function _mostrarLeadVinculadoFallback() {
+  const placeholder = document.getElementById('leadSearchPlaceholder');
+  const value = document.getElementById('leadSearchValue');
+  if (placeholder) placeholder.style.display = 'none';
+  if (value) {
+    value.style.display = '';
+    value.innerHTML = '<strong>Lead vinculado</strong> <span style="opacity:0.6;margin-left:6px;">registro não disponível</span>';
   }
 }
 
@@ -19303,11 +19349,20 @@ async function contratoEdit(id) {
   const title = document.getElementById('modalContratoTitle');
   if (title) title.textContent = 'Editar Contrato – ' + (data.numero_contrato || '');
 
-  // Populate lead list and select current
+  // Populate lead list and select current (limpa estado da sessão anterior)
+  _resetLeadSearchable();
   if (!_contratosLeadsList.length) _contratosLeadsList = await loadContratoLeads();
+  if (data.lead_id) await _garantirLeadContratoNaLista(data.lead_id);
   _renderLeadSearchOptions();
   if (data.lead_id) {
-    _selectLeadById(data.lead_id);
+    // ID sempre preservado no hidden — submissão/validação não perdem o vínculo
+    const hidden = document.getElementById('contratoLeadId');
+    if (hidden) hidden.value = data.lead_id;
+    if (_contratosLeadsList.some(l => l && l.id === data.lead_id)) {
+      _selectLeadById(data.lead_id);
+    } else {
+      _mostrarLeadVinculadoFallback();
+    }
   }
 
   // Empresa: preserva a empresa já salva no contrato (nunca reatribui por engano)
@@ -19543,10 +19598,11 @@ async function saveContrato(status = 'rascunho') {
     };
 
     if (existingId) {
-      let { data, error } = await _supabase.from('contratos').update(payload).eq('id', existingId).select().single();
+      const patch = _sanearPayloadContratoUpdate(payload);
+      let { data, error } = await _supabase.from('contratos').update(patch).eq('id', existingId).select().single();
       // Banco sem a migration de tipo_contrato: repete sem o campo novo
       if (error && String(error.message || '').includes('tipo_contrato')) {
-        ({ data, error } = _contratoUpdateSemTipo(payload, existingId));
+        ({ data, error } = _contratoUpdateSemTipo(patch, existingId));
       }
       if (error) {
         console.error('[Contratos] Erro ao salvar:', {
@@ -19554,7 +19610,7 @@ async function saveContrato(status = 'rascunho') {
           details: error.details,
           hint: error.hint,
           code: error.code,
-          payload
+          payload: patch
         });
         toast('Erro ao salvar contrato: ' + _friendlyContratoError(error), 'error');
         return null;
@@ -20316,15 +20372,16 @@ async function salvarContratoComoRascunho() {
     let data;
 
     if (existingId) {
+      const patch = _sanearPayloadContratoUpdate(payload);
       let { data: updated, error } = await _supabase
         .from('contratos')
-        .update(payload)
+        .update(patch)
         .eq('id', existingId)
         .select()
         .single();
       // Banco sem a migration de tipo_contrato: repete sem o campo novo
       if (error && String(error.message || '').includes('tipo_contrato')) {
-        ({ data: updated, error } = _contratoUpdateSemTipo(payload, existingId));
+        ({ data: updated, error } = _contratoUpdateSemTipo(patch, existingId));
       }
       if (error) throw error;
       data = updated;
