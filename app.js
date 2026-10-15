@@ -4327,6 +4327,7 @@ function setActivePage(page) {
   }
   if (page === 'crm') {
     renderAll();
+    maybeReconciliarFaturamento();
   }
   if (page === 'calendario') {
     renderCalendar();
@@ -6166,6 +6167,203 @@ function getCadenciaColorById(uuid) {
   return c ? c.cor : '#3B82F6';
 }
 
+/* ============================================
+   FATURAMENTO · AUTOMAÇÃO TEMPORAL DE CADÊNCIAS
+   Reconcilia leads fechados por data de fechamento (vs hoje):
+   mês corrente → "Contrato Fechado"; M-1 → "Faturamento Mês Passado";
+   2–3 meses → "Faturamento Trimestral"; >3 meses → "trimestral Anual".
+   Reconciliação determinística e idempotente.
+   ============================================ */
+const _FATURAMENTO_GUARD_KEY = 'blue_faturamento_ultima_reconciliacao';
+
+function _dataLocalISO(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/* Match robusto de nomes de cadência (trim + espaços duplos + minúsculas + sem acento) */
+function _normalizarNomeCadencia(nome) {
+  return String(nome || '').trim().replace(/\s+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+/* Enquadra uma data de fechamento no bucket vigente (vs hoje local):
+   - fechamento no mês/ano ATUAL → 'contrato-fechado' (permanece/retorna
+     à cadência Contrato Fechado até a virada do mês)
+   - fechamento no mês imediatamente anterior (M-1) → 'mes-passado'
+   - fechamento 2 ou 3 meses atrás (trimestres concluídos) → 'trimestral'
+   - fechamento com mais de 3 meses → 'anual' (histórico acumulado)
+   Data futura ou inválida → null (não mexe no lead). */
+function _enquadrarFaturamento(dataFechISO, hojeISO) {
+  const parse = (s) => {
+    const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return null;
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return isNaN(d.getTime()) ? null : d;
+  };
+  const fech = parse(dataFechISO);
+  const hoje = parse(hojeISO);
+  if (!fech || !hoje) return null;
+  if (fech > hoje) return null;
+  const meses = (hoje.getFullYear() - fech.getFullYear()) * 12 + (hoje.getMonth() - fech.getMonth());
+  if (meses <= 0) return 'contrato-fechado'; // mês corrente
+  if (meses === 1) return 'mes-passado';     // M-1
+  if (meses <= 3) return 'trimestral';       // trimestres concluídos (2–3 meses)
+  return 'anual';                            // mais de 3 meses
+}
+
+/* Resolve a data de fechamento/referência de um lead (prioridade, alinhada
+   ao badge do card "Xd nesta etapa"):
+   1) criado do ÚLTIMO movimento para "Contrato Fechado" (valor do badge);
+   2) contrato do lead (data_emissao ou created_at, mais antigo);
+   3) updated_at || created_at do próprio lead. */
+function _resolverDataFechamento(leadId, movimentosMap, contratosMap, leadRow) {
+  const movs = movimentosMap[leadId];
+  if (movs && movs.length) return movs[0]; // lista em ordem desc: mais recente = badge
+  const contratos = contratosMap[leadId];
+  if (contratos && contratos.length) return [...contratos].sort()[0];
+  return (leadRow && (leadRow.updated_at || leadRow.created_at)) || null;
+}
+
+/* Reconcilia os leads fechados com as cadências de faturamento.
+   centroCustoId: filtra leads por empresa; null = todos os leads visíveis. */
+async function reconciliarCadenciasFaturamento(centroCustoId = null) {
+  const vazio = { movidos: 0, porCadencia: {} };
+  if (!_supabase) return vazio;
+
+  const { data: cadencias, error: cadErr } = await _supabase.from('cadencias').select('id, nome');
+  if (cadErr) {
+    console.error('[Faturamento] Erro ao buscar cadências:', cadErr);
+    return vazio;
+  }
+  const porNome = {};
+  (cadencias || []).forEach(c => { porNome[_normalizarNomeCadencia(c.nome)] = c.id; });
+  const idMes = porNome['faturamento mes passado'];
+  const idTrim = porNome['faturamento trimestral'];
+  const idAnual = porNome['trimestral anual'];
+  const idFechado = porNome['contrato fechado'];
+  if (!idMes || !idTrim || !idAnual) {
+    console.warn('[Faturamento] Cadências de faturamento não encontradas no banco:', { idMes, idTrim, idAnual });
+    return vazio;
+  }
+  const destinos = { 'contrato-fechado': idFechado, 'mes-passado': idMes, trimestral: idTrim, anual: idAnual };
+
+  // Movimentações de entrada em "Contrato Fechado" (data do fechamento —
+  // mesma referência que alimenta o badge do card)
+  const movimentosMap = {};
+  if (idFechado) {
+    const { data: movs, error: movErr } = await _supabase
+      .from('lead_movements')
+      .select('lead_id, created_at')
+      .eq('movement_type', 'cadencia')
+      .eq('to_value', idFechado)
+      .order('created_at', { ascending: false });
+    if (movErr) console.error('[Faturamento] Erro ao buscar movimentações:', movErr);
+    (movs || []).forEach(m => {
+      (movimentosMap[m.lead_id] = movimentosMap[m.lead_id] || []).push(m.created_at); // desc: mais recente primeiro
+    });
+  }
+
+  // Contratos por lead (backup da data de fechamento)
+  const { data: contratos, error: contrErr } = await _supabase
+    .from('contratos')
+    .select('lead_id, created_at, data_emissao')
+    .not('lead_id', 'is', null);
+  if (contrErr) console.error('[Faturamento] Erro ao buscar contratos:', contrErr);
+  const contratosMap = {};
+  (contratos || []).forEach(c => {
+    const d = c.data_emissao || c.created_at;
+    if (!d || !c.lead_id) return;
+    (contratosMap[c.lead_id] = contratosMap[c.lead_id] || []).push(d);
+  });
+
+  // Leads das cadências de faturamento/fechado. Select apenas com colunas
+  // REAIS da tabela leads (updated_at NÃO existe em leads → 42703);
+  // fallback de data: movimentos > contratos > created_at.
+  const idsCad = [idFechado, idMes, idTrim, idAnual].filter(Boolean);
+  const colunasLeads = ['id', 'cadencia_id', 'centro_custo_id', 'created_at'];
+  let leadsRows = null;
+  for (let tentativa = 0; tentativa <= colunasLeads.length; tentativa++) {
+    let q = _supabase
+      .from('leads')
+      .select(colunasLeads.join(','))
+      .in('cadencia_id', idsCad)
+      .order('created_at', { ascending: true });
+    if (centroCustoId) q = q.eq('centro_custo_id', centroCustoId);
+    const { data, error } = await q;
+    if (!error) { leadsRows = data; break; }
+    const msg = `${error.message || ''} ${error.details || ''}`;
+    const m = msg.match(/column\s+(?:[\w"]+\.)?"?(\w+)"?\s+does not exist/i)
+      || msg.match(/Could not find the '(\w+)' column/i);
+    if (m && colunasLeads.includes(m[1]) && colunasLeads.length > 3) {
+      console.warn('[Faturamento] Coluna ausente no banco — removendo do select e repetindo:', m[1]);
+      colunasLeads.splice(colunasLeads.indexOf(m[1]), 1);
+      continue;
+    }
+    console.error('[Faturamento] Erro ao buscar leads:', error);
+    console.error('[Faturamento] Detalhes do erro Supabase:', error.message, error.details, error.hint);
+    return vazio;
+  }
+  if (!leadsRows) return vazio;
+
+  const hojeISO = _dataLocalISO();
+  const agrupados = {};
+  for (const l of leadsRows) {
+    const dataFech = _resolverDataFechamento(l.id, movimentosMap, contratosMap, l);
+    if (!dataFech) continue;
+    const bucket = _enquadrarFaturamento(dataFech, hojeISO);
+    if (!bucket) continue;
+    const alvoId = destinos[bucket];
+    if (!alvoId || l.cadencia_id === alvoId) continue; // já enquadrado
+    (agrupados[alvoId] = agrupados[alvoId] || []).push({ id: l.id, de: l.cadencia_id });
+  }
+
+  // Batch update por cadência destino + histórico de movimentação (sistema)
+  let movidos = 0;
+  const porCadencia = {};
+  for (const [alvoId, itens] of Object.entries(agrupados)) {
+    const ids = itens.map(i => i.id);
+    const { error: updErr } = await _supabase.from('leads').update({ cadencia_id: alvoId }).in('id', ids);
+    if (updErr) {
+      console.error('[Faturamento] Erro ao atualizar cadencia_id:', updErr);
+      continue;
+    }
+    movidos += ids.length;
+    porCadencia[alvoId] = ids.length;
+
+    const linhas = itens.map(i => ({
+      lead_id: i.id,
+      user_id: null,
+      movement_type: 'cadencia',
+      from_value: i.de,
+      to_value: alvoId
+    }));
+    let { error: insErr } = await _supabase.from('lead_movements').insert(linhas);
+    if (insErr && insErr.code === '42703') {
+      // Banco sem a coluna user_id
+      ({ error: insErr } = await _supabase.from('lead_movements').insert(linhas.map(({ user_id, ...r }) => r)));
+    }
+    if (insErr) console.error('[Faturamento] Erro ao registrar movimentações:', insErr);
+  }
+  if (movidos) console.log('[Faturamento] Reconciliação concluída — leads movidos:', movidos, porCadencia);
+  return { movidos, porCadencia };
+}
+
+/* Execução FORÇADA a cada render do CRM: limpa a trava diária no localStorage
+   e reconcilia mesmo assim (a spec exige execução imediata a cada carga). */
+async function maybeReconciliarFaturamento() {
+  try {
+    localStorage.removeItem(_FATURAMENTO_GUARD_KEY);
+    const r = await reconciliarCadenciasFaturamento(null);
+    console.log('[Faturamento] Reconciliação executada: ', r);
+    localStorage.setItem(_FATURAMENTO_GUARD_KEY, _dataLocalISO());
+    if (r && r.movidos > 0) {
+      invalidateDashCache();
+      await refreshLeadsEClientsCache();
+    }
+  } catch (err) {
+    console.error('[Faturamento] Falha na reconciliação automática:', err);
+  }
+}
+
 let _servicosLoaded = false;
 
 async function loadServiceChips(empresaId) {
@@ -6870,6 +7068,21 @@ function servicesHTML(services, leadId) {
   return `<div class="lead-card-services" aria-label="Serviços">${badges}${more}</div>`;
 }
 
+/* Tempo amigável que o lead está na cadência atual (data de entrada na
+   coluna — último movimento, não a criação do lead). */
+function formatarTempoNaCadencia(dataEntrada) {
+  if (!dataEntrada) return '';
+  const t = new Date(dataEntrada).getTime();
+  if (isNaN(t)) return '';
+  const mins = Math.floor((Date.now() - t) / 60000);
+  if (mins < 1) return 'Recém chegado';
+  if (mins < 60) return `${mins} min nesta etapa`;
+  const horas = Math.floor(mins / 60);
+  if (horas < 24) return `${horas}h nesta etapa`;
+  const dias = Math.floor(horas / 24);
+  return `${dias}d nesta etapa`;
+}
+
 function leadCardHTML(l) {
   const initials = l.empresa.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
   const rawServices = (l.servicos && l.servicos.length > 0) ? l.servicos : (l.tiposServico || []);
@@ -6884,6 +7097,10 @@ function leadCardHTML(l) {
     ? `<span class="lead-card-svc-more" tabindex="0" role="button" aria-label="Mais ${overflow} serviço${overflow > 1 ? 's' : ''}" title="${allServices.slice(MAX_SERVICES_CARD).join(', ')}">+${overflow}</span>`
     : '';
   const respName = l.responsavel || 'Sem atendente';
+  const tempoTxt = formatarTempoNaCadencia(l._entradaCadencia);
+  const tempoBadge = tempoTxt
+    ? `<div class="lead-card-time-badge" title="Tempo nesta cadência"><i data-lucide="clock"></i> ${escapeHtml(tempoTxt)}</div>`
+    : '';
   return `
     <article class="lead-card" draggable="true" data-lead-id="${l.id}" tabindex="0"
              aria-label="${l.empresa}${svcCount ? ', ' + svcCount + ' serviço' + (svcCount > 1 ? 's' : '') : ''}">
@@ -6900,6 +7117,7 @@ function leadCardHTML(l) {
         <div class="row"><span class="lbl">Serviço</span><span class="val">${svcBadges || '—'}${more}</span></div>
         <div class="row"><span class="lbl">Data do Evento</span><span class="val">${evDate}</span></div>
         <div class="row"><span class="lbl">Faturamento</span><span class="val">${formatBRL(l.honorarios)}</span></div>
+        ${tempoBadge}
         <div class="lead-card-member-badge"><i data-lucide="user"></i> ${respName}</div>
       </div>
     </article>
@@ -7130,9 +7348,19 @@ async function updateLeadCadencia(id, newStatus) {
 
   // newStatus é o UUID da cadência — salva direto como cadencia_id
   lead._cadenciaId = newStatus;
+  lead._entradaCadencia = new Date().toISOString(); // reinicia o contador do card
   updateLeadSupabase(lead.id, { cadencia_id: newStatus })
     .then(() => console.log('[Supabase] cadencia_id salvo:', newStatus))
     .catch(err => console.error('[Supabase] Erro ao salvar cadencia_id:', err));
+
+  // registra a movimentação (histórico + data de entrada na nova cadência)
+  insertMovement({
+    lead_id: lead.id,
+    user_id: currentUser?.id || null,
+    movement_type: 'cadencia',
+    from_value: oldStatus,
+    to_value: newStatus
+  }).catch(err => console.error('[Lead] Erro ao registrar movimentação:', err));
 
   // visual feedback
   const card = $(`.lead-card[data-lead-id="${id}"]`);
@@ -7635,6 +7863,7 @@ async function handleChangeCadence(cadenceId) {
 
   // cadenceId já é o UUID da cadência (vem da journey bar ou kanban)
   lead._cadenciaId = cadenceId;
+  lead._entradaCadencia = new Date().toISOString(); // reinicia o contador do card
   lead.owner_id = currentUser.id || null;
   const updates = { cadencia_id: cadenceId };
   if (lead.owner_id) updates.owner_id = lead.owner_id;
@@ -10422,6 +10651,13 @@ function initDashboard() {
   // Refresh
   const refresh = document.getElementById('dashRefreshBtn');
   if (refresh) refresh.addEventListener('click', () => { invalidateDashCache(); renderDashAll(true); toast('Dashboard atualizado'); });
+  // Abas do card de faturamento (Ano / Mês Atual)
+  document.querySelectorAll('.fat-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      fatTabAtiva = btn.dataset.fatTab;
+      _fatRender();
+    });
+  });
   // Tabs
   document.querySelectorAll('#dashTabs .dash-tab').forEach(tab => {
     tab.addEventListener('click', () => setDashTab(tab.dataset.tab));
@@ -11436,7 +11672,7 @@ function refreshDashboard() {
   renderFunnel(computeCadenceFunnel(metrics.current));
   renderOrigins(computeOrigins(metrics.current));
   renderTemperatura(computeTemperatures(metrics.current));
-  renderHonorariosChart(computeHonorarios(metrics.current));
+  renderHonorariosChartAsync();
   renderProximosEventos(start, end);
   const badge = document.getElementById('dashPeriodBadge');
   if (badge) badge.textContent = formatPeriodBadge(start, end);
@@ -11553,16 +11789,17 @@ function renderFunnel(funnelData) {
   const items = funnelData.filter(f => f.count > 0);
   if (!items.length) { el.innerHTML = '<p class="empty-state">Nenhum dado no período.</p>'; return; }
   const max = Math.max(...items.map(f => f.count));
-  const colors = ['#165BFF', '#4D80FF', '#9CB3FF', '#C8D6FF', '#E8F0FE'];
   el.innerHTML = items.map((f, i) => {
     const pct = (f.count / max * 100).toFixed(0);
-    return `<div class="funnel-step">
-      <span class="funnel-label">${f.label}</span>
-      <div class="funnel-bar-wrap">
-        <div class="funnel-bar" style="width:${pct}%;background:${colors[i % colors.length]}">${f.count}</div>
+    const chevron = i < items.length - 1
+      ? '<span class="funnel-chevron" aria-hidden="true">→</span>' : '';
+    return `<div class="funnel-stage" title="${escapeHtml(f.label)}: ${f.count} leads">
+      <div class="funnel-stage-head">
+        <span class="funnel-stage-name">${escapeHtml(f.label)}</span>
+        <span class="funnel-stage-count">${f.count}</span>
       </div>
-      <span class="funnel-count">${f.count}</span>
-    </div>`;
+      <div class="funnel-stage-bar"><span style="width:${pct}%"></span></div>
+    </div>${chevron}`;
   }).join('');
 }
 
@@ -11577,11 +11814,13 @@ function renderOrigins(originsMap) {
   const total = entries.reduce((s, [, v]) => s + v.count, 0);
   const fallbackColors = ['#165BFF', '#10b981', '#F0A500', '#a855f7', '#94A3B8'];
   const dpr = window.devicePixelRatio || 1;
-  const w = canvas.parentElement.offsetWidth - 40;
-  canvas.width = w * dpr; canvas.height = 180 * dpr;
-  canvas.style.width = w + 'px'; canvas.style.height = '180px';
-  ctx.scale(dpr, dpr);
-  const cx = w / 2, cy = 90, r = 70;
+  // Rosca perfeitamente circular: lado único (1:1), entre 140 e 170px
+  const size = Math.min(Math.max(canvas.parentElement.offsetWidth - 8, 140), 170);
+  canvas.width = size * dpr; canvas.height = size * dpr;
+  canvas.style.width = size + 'px'; canvas.style.height = size + 'px';
+  canvas.style.maxWidth = '100%';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const cx = size / 2, cy = size / 2, r = size / 2 - 8;
   let startAngle = -Math.PI / 2;
   entries.forEach(([k, v], i) => {
     const slice = (v.count / total) * Math.PI * 2;
@@ -11590,10 +11829,10 @@ function renderOrigins(originsMap) {
     ctx.closePath(); ctx.fillStyle = ORIGEM_COLOR[k] || fallbackColors[i % fallbackColors.length]; ctx.fill();
     startAngle += slice;
   });
-  ctx.beginPath(); ctx.arc(cx, cy, 38, 0, Math.PI * 2);
+  ctx.beginPath(); ctx.arc(cx, cy, r * 0.52, 0, Math.PI * 2);
   ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--card-bg').trim() || '#fff';
   ctx.fill();
-  ctx.font = 'bold 18px Inter, sans-serif';
+  ctx.font = `bold ${Math.max(14, Math.round(r * 0.28))}px Inter, sans-serif`;
   ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim() || '#1F2D3D';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(total.toLocaleString('pt-BR'), cx, cy);
@@ -11623,24 +11862,168 @@ function renderTemperatura(tempData) {
   }).join('');
 }
 
+/* ---- Faturamento mensal (dashboard) ---- */
+const _MESES_ABR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+const _MESES_FULL = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+/* Faturamento do ano: consolida as 4 cadências fechadas.
+   - CONTRATO FECHADO → mês atual
+   - FATURAMENTO MÊS PASSADO → mês anterior
+   - FATURAMENTO TRIMESTRAL / TRIMESTRAL ANUAL → mês do fechamento
+     (movimento em lead_movements para a CF; fallback updated_at/created_at)
+   Valor exato por lead = leads.honorarios. */
+const _FAT_CAD_NOMES = {
+  cf: ['contrato fechado'],
+  mes: ['faturamento mes passado'],
+  trim: ['faturamento trimestral'],
+  anual: ['trimestral anual', 'faturamento anual']
+};
+
+function _fatResolveIdsCadencia(cads) {
+  const porNome = {};
+  (cads || []).forEach(c => { porNome[_normalizarNomeCadencia(c.nome)] = c.id; });
+  const idDe = (chaves) => { for (const n of chaves) if (porNome[n]) return porNome[n]; return null; };
+  return {
+    cf: idDe(_FAT_CAD_NOMES.cf),
+    mes: idDe(_FAT_CAD_NOMES.mes),
+    trim: idDe(_FAT_CAD_NOMES.trim),
+    anual: idDe(_FAT_CAD_NOMES.anual)
+  };
+}
+
+function _fatKeysMes() {
+  const agora = new Date();
+  const antD = new Date(agora.getFullYear(), agora.getMonth() - 1, 1);
+  return {
+    atual: `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`,
+    anterior: `${antD.getFullYear()}-${String(antD.getMonth() + 1).padStart(2, '0')}`
+  };
+}
+
+async function _fetchFaturamentoLeads(ano) {
+  if (!_supabase) return null;
+  const { data: cads, error: cErr } = await _supabase
+    .from('cadencias').select('id, nome');
+  if (cErr) {
+    console.error('[Dashboard] Erro ao buscar cadências (faturamento):', cErr);
+    return null;
+  }
+  const ids = _fatResolveIdsCadencia(cads);
+  const idsFat = [ids.cf, ids.mes, ids.trim, ids.anual].filter(Boolean);
+  if (!idsFat.length) {
+    console.warn('[Dashboard] Cadências de faturamento não encontradas:', ids);
+    return null;
+  }
+  // updated_at NÃO existe na tabela leads (42703) — fallback de data: movimentos > created_at
+  let q = _supabase.from('leads')
+    .select('id, nome, honorarios, cadencia_id, centro_custo_id, created_at')
+    .in('cadencia_id', idsFat)
+    .gt('honorarios', 0);
+  if (dashCcFilter && dashCcFilter !== 'all') {
+    q = q.eq('centro_custo_id', dashCcFilter);
+  } else if (typeof canViewAllData === 'function' && !canViewAllData() && currentUser?.id) {
+    const ccIds = (currentUser.centro_custo_ids || []).filter(Boolean);
+    const partes = [];
+    if (ccIds.length) partes.push(`centro_custo_id.in.(${ccIds.join(',')})`);
+    partes.push(`owner_id.eq.${currentUser.id}`);
+    partes.push(`membro_id.eq.${currentUser.id}`);
+    q = q.or(partes.join(','));
+  }
+  const { data: leadsRows, error: lErr } = await q;
+  if (lErr) {
+    console.error('[Dashboard] Erro ao buscar leads do faturamento:', lErr);
+    return null;
+  }
+  if (!leadsRows || !leadsRows.length) return [];
+  // Movimentações para a Contrato Fechado do ano (fechamento de trim/anual)
+  const { data: movs, error: mErr } = await _supabase
+    .from('lead_movements')
+    .select('lead_id, created_at, to_value')
+    .eq('movement_type', 'cadencia')
+    .eq('to_value', ids.cf)
+    .gte('created_at', `${ano}-01-01`)
+    .order('created_at', { ascending: false });
+  if (mErr) {
+    console.warn('[Dashboard] Movimentações indisponíveis (fallback por created_at):', mErr);
+  }
+  const entradaCF = new Map();
+  (movs || []).forEach(mv => { if (!entradaCF.has(mv.lead_id)) entradaCF.set(mv.lead_id, mv.created_at); });
+  const keys = _fatKeysMes();
+  const fechISO = (l) => entradaCF.get(l.id) || l.created_at || null;
+  const mesKeyDe = (l) => {
+    if (ids.cf && l.cadencia_id === ids.cf) return keys.atual;       // CF → mês corrente
+    if (ids.mes && l.cadencia_id === ids.mes) return keys.anterior;  // Mês Passado → mês anterior
+    const d = fechISO(l);                                            // trim/anual → fechamento
+    return d ? String(d).slice(0, 7) : null;
+  };
+  return leadsRows.map(l => ({
+    lead_id: l.id,
+    contratante_nome: l.nome || '—',
+    valor_total: Number(l.honorarios) || 0,
+    mes_key: mesKeyDe(l),
+    data_emissao: fechISO(l),
+    created_at: fechISO(l)
+  }));
+}
+
+function _agruparContratosPorMes(rows, months) {
+  const byMonth = months.map(mo => ({ ...mo, value: 0, count: 0 }));
+  const idx = Object.fromEntries(months.map((mo, i) => [mo.key, i]));
+  rows.forEach(c => {
+    const d = c.data_emissao || c.created_at;
+    if (!d) return;
+    const i = idx[String(d).slice(0, 7)];
+    if (i === undefined) return;
+    byMonth[i].value += Number(c.valor_total) || 0;
+    byMonth[i].count++;
+  });
+  return byMonth;
+}
+
+function _bindHonTooltip(canvas) {
+  if (canvas._honTipBound) return;
+  canvas._honTipBound = true;
+  let tip = null;
+  canvas.addEventListener('mousemove', (e) => {
+    const hits = canvas._honBarHits || [];
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    const hit = hits.find(h => x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h);
+    if (!hit) { if (tip) tip.style.display = 'none'; return; }
+    if (!tip) {
+      tip = document.createElement('div');
+      tip.className = 'dash-chart-tooltip';
+      canvas.parentElement.appendChild(tip);
+    }
+    tip.textContent = `${hit.label}: R$ ${hit.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    tip.style.display = 'block';
+    tip.style.left = Math.min(x + 12, Math.max(rect.width - 180, 0)) + 'px';
+    tip.style.top = Math.max(y - 36, 0) + 'px';
+  });
+  canvas.addEventListener('mouseleave', () => { if (tip) tip.style.display = 'none'; });
+}
+
 function renderHonorariosChart(honData) {
   const canvas = document.getElementById('chartHon');
   const totalEl = document.getElementById('honTotal');
-  if (totalEl) totalEl.textContent = 'R$ ' + (honData.total || 0).toLocaleString('pt-BR');
+  const fmt = (v) => 'R$ ' + (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (totalEl) totalEl.textContent = fmt(honData.total);
   if (!canvas) return;
+  const byMonth = honData.byMonth || [];
   const ctx = canvas.getContext('2d');
-  const byCad = honData.byCadence || [];
-  if (!byCad.length) { canvas.style.display = 'none'; return; }
+  if (!byMonth.length) { canvas.style.display = 'none'; return; }
   canvas.style.display = '';
-  const max = Math.max(...byCad.map(d => d.value), 1) * 1.15;
+  const max = Math.max(...byMonth.map(d => d.value), 1) * 1.15;
   const dpr = window.devicePixelRatio || 1;
-  const w = canvas.parentElement.offsetWidth - 40;
-  canvas.width = w * dpr; canvas.height = 160 * dpr;
-  canvas.style.width = w + 'px'; canvas.style.height = '160px';
+  const w = Math.max(canvas.parentElement.offsetWidth - 8, 240);
+  const H = Math.min(Math.max(canvas.parentElement.clientHeight || 210, 170), 240);
+  canvas.width = w * dpr; canvas.height = H * dpr;
+  canvas.style.width = w + 'px'; canvas.style.height = H + 'px';
   ctx.scale(dpr, dpr);
-  const padL = 50, padR = 20, padT = 10, padB = 30;
-  const chartW = w - padL - padR, chartH = 160 - padT - padB;
-  const barW = chartW / byCad.length * 0.6, gap = chartW / byCad.length;
+  const padL = 52, padR = 12, padT = 10, padB = 28;
+  const chartW = w - padL - padR, chartH = H - padT - padB;
+  const gap = chartW / byMonth.length, barW = Math.max(gap * 0.55, 10);
   ctx.strokeStyle = '#E2E8F0'; ctx.lineWidth = 1;
   for (let i = 0; i <= 4; i++) {
     const y = padT + chartH - (chartH * i / 4);
@@ -11648,18 +12031,175 @@ function renderHonorariosChart(honData) {
     ctx.fillStyle = '#94A3B8'; ctx.font = '11px Inter, sans-serif'; ctx.textAlign = 'right';
     ctx.fillText('R$' + Math.round(max * i / 4 / 1000) + 'k', padL - 6, y + 4);
   }
-  byCad.forEach((d, i) => {
-    const x = padL + gap * i + gap / 2 - barW / 2;
-    const barH = (d.value / max) * chartH;
+  const hits = [];
+  byMonth.forEach((d, i) => {
+    const cx = padL + gap * i + gap / 2;
+    const x = cx - barW / 2;
+    const barH = Math.max((d.value / max) * chartH, d.value > 0 ? 3 : 0);
     const y = padT + chartH - barH;
-    const grad = ctx.createLinearGradient(x, y, x, padT + chartH);
-    grad.addColorStop(0, '#165BFF'); grad.addColorStop(1, '#4D80FF');
-    ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.roundRect(x, y, barW, barH, [4, 4, 0, 0]); ctx.fill();
+    if (barH > 0) {
+      const grad = ctx.createLinearGradient(x, y, x, padT + chartH);
+      grad.addColorStop(0, '#165BFF'); grad.addColorStop(1, '#4D80FF');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.roundRect(x, y, barW, barH, [4, 4, 0, 0]); ctx.fill();
+    }
+    // Rótulo do mês: horizontal, completo e sem corte
     ctx.fillStyle = '#94A3B8'; ctx.font = '11px Inter, sans-serif'; ctx.textAlign = 'center';
-    const label = d.label.length > 8 ? d.label.slice(0, 7) + '…' : d.label;
-    ctx.fillText(label, padL + gap * i + gap / 2, padT + chartH + 18);
+    ctx.fillText(d.label, cx, padT + chartH + 18);
+    hits.push({ x, y, w: barW, h: Math.max(barH, 14), label: d.fullLabel, value: d.value });
   });
+  canvas._honBarHits = hits;
+  _bindHonTooltip(canvas);
+}
+
+/* Carrega contratos do ano corrente e renderiza a aba ativa (Ano / Mês Atual). */
+let fatTabAtiva = 'ano';
+let _fatRowsCache = null;
+
+/* Fallback (sem Supabase): leads em memória nas 4 cadências fechadas,
+   honorários exatos; mês = CF→atual, Mês Passado→anterior, trim/anual→
+   entrada na cadência (degradado). */
+function _fatRowsFallback() {
+  const ano = new Date().getFullYear();
+  const cads = (typeof getDbCadencias === 'function' ? getDbCadencias() : []) || [];
+  const ids = _fatResolveIdsCadencia(cads);
+  const keys = _fatKeysMes();
+  const isoDe = (raw) => {
+    const s = String(raw || '');
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const br = s.split(' ')[0].split('/'); // dd/mm/yyyy
+    if (br.length === 3) return `${br[2]}-${br[1].padStart(2, '0')}-${br[0].padStart(2, '0')}`;
+    return null;
+  };
+  return (leads || []).filter(l => {
+    if (!(Number(l.honorarios) > 0)) return false;
+    return [ids.cf, ids.mes, ids.trim, ids.anual].filter(Boolean).includes(l.status);
+  }).map(l => {
+    const fech = isoDe(l._entradaCadencia || l.createdAt);
+    const mesKey = (ids.cf && l.status === ids.cf) ? keys.atual
+      : (ids.mes && l.status === ids.mes) ? keys.anterior
+      : (fech ? fech.slice(0, 7) : null);
+    return {
+      valor_total: l.honorarios,
+      mes_key: mesKey,
+      data_emissao: fech,
+      created_at: fech,
+      contratante_nome: l.empresa || l.cliente || l.responsavel || '—'
+    };
+  }).filter(r => r.mes_key && r.mes_key.startsWith(String(ano)));
+}
+
+function _fatFmtBRL(v) {
+  return 'R$ ' + (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function _fatRender() {
+  const titleEl = document.getElementById('fatCardTitle');
+  const subEl = document.getElementById('fatCardSub');
+  const totalEl = document.getElementById('honTotal');
+  const chartWrap = document.getElementById('fatChartWrap');
+  const mesExtra = document.getElementById('fatMesExtra');
+  const mesLista = document.getElementById('fatMesLista');
+  if (!titleEl || !totalEl) return;
+  const rows = _fatRowsCache || _fatRowsFallback();
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const keyDe = r => r.mes_key || String(r.data_emissao || r.created_at || '').slice(0, 7);
+
+  document.querySelectorAll('.fat-tab').forEach(b => {
+    const on = b.dataset.fatTab === fatTabAtiva;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+
+  if (fatTabAtiva === 'mes') {
+    const mesKey = `${y}-${String(m + 1).padStart(2, '0')}`;
+    const antD = new Date(y, m - 1, 1);
+    const antKey = `${antD.getFullYear()}-${String(antD.getMonth() + 1).padStart(2, '0')}`;
+    const rowsMes = rows.filter(r => keyDe(r) === mesKey);
+    const rowsAnt = rows.filter(r => keyDe(r) === antKey);
+    const total = rowsMes.reduce((s, r) => s + (Number(r.valor_total) || 0), 0);
+    const totalAnt = rowsAnt.reduce((s, r) => s + (Number(r.valor_total) || 0), 0);
+    const qtd = rowsMes.length;
+    const ticket = qtd ? total / qtd : 0;
+    const variacao = totalAnt > 0 ? ((total - totalAnt) / totalAnt) * 100 : null;
+    titleEl.textContent = 'Faturamento do Mês Atual';
+    subEl.textContent = `${_MESES_FULL[m]} ${y}`;
+    totalEl.textContent = _fatFmtBRL(total);
+    if (chartWrap) chartWrap.hidden = true;
+    if (mesExtra) {
+      mesExtra.hidden = false;
+      const varCls = variacao === null ? '' : variacao > 0 ? 'up' : variacao < 0 ? 'down' : '';
+      const varTxt = variacao === null ? '—' : (variacao >= 0 ? '+' : '') + variacao.toFixed(1) + '%';
+      mesExtra.innerHTML = `
+        <div class="fat-metrics">
+          <div class="fat-metric">
+            <span class="fm-label">Contratos no mês</span>
+            <span class="fm-value">${qtd}</span>
+          </div>
+          <div class="fat-metric">
+            <span class="fm-label">Ticket médio</span>
+            <span class="fm-value">${_fatFmtBRL(ticket)}</span>
+          </div>
+          <div class="fat-metric">
+            <span class="fm-label">vs. mês anterior</span>
+            <span class="fm-value ${varCls}">${varTxt}</span>
+          </div>
+        </div>`;
+    }
+    if (mesLista) {
+      mesLista.hidden = false;
+      if (!rowsMes.length) {
+        mesLista.innerHTML = '<p class="empty-state">Nenhum contrato faturado no mês.</p>';
+      } else {
+        mesLista.innerHTML = '<div class="fat-list">' + rowsMes
+          .sort((a, b) => String(b.data_emissao || b.created_at || '').localeCompare(String(a.data_emissao || a.created_at || '')))
+          .map(r => {
+            const br = String(r.data_emissao || r.created_at || '').slice(0, 10).split('-');
+            const dataFmt = br.length === 3 ? `${br[2]}/${br[1]}` : '—';
+            return `<div class="fat-list-item">
+              <div class="fat-list-info">
+                <div class="fat-list-name">${escapeHtml(r.contratante_nome || 'Contrato')}</div>
+                <div class="fat-list-meta">Fechado em ${dataFmt}</div>
+              </div>
+              <span class="fat-list-value">${_fatFmtBRL(r.valor_total)}</span>
+            </div>`;
+          }).join('') + '</div>';
+      }
+    }
+  } else {
+    titleEl.textContent = 'Valor de Faturamento do Ano';
+    subEl.textContent = `Consolidado acumulado de ${y}`;
+    const months = [];
+    for (let i = 0; i < 12; i++) {
+      months.push({
+        y, m: i,
+        key: `${y}-${String(i + 1).padStart(2, '0')}`,
+        label: _MESES_ABR[i],
+        fullLabel: _MESES_FULL[i]
+      });
+    }
+    const byMonth = _agruparContratosPorMes(rows, months);
+    const total = byMonth.reduce((s, mo) => s + mo.value, 0);
+    totalEl.textContent = _fatFmtBRL(total);
+    if (mesExtra) { mesExtra.hidden = true; mesExtra.innerHTML = ''; }
+    if (mesLista) { mesLista.hidden = true; mesLista.innerHTML = ''; }
+    if (chartWrap) chartWrap.hidden = false;
+    renderHonorariosChart({ total, byMonth });
+  }
+  if (window.initIcons) window.initIcons();
+}
+
+async function renderHonorariosChartAsync() {
+  try {
+    const ano = new Date().getFullYear();
+    const rows = await _fetchFaturamentoLeads(ano);
+    _fatRowsCache = rows; // null → fallback por leads em memória
+    _fatRender();
+  } catch (err) {
+    console.error('[Dashboard] Falha no faturamento mensal:', err);
+    _fatRender();
+  }
 }
 
 function renderSparkTotal(total) {
@@ -18082,6 +18622,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     initIcons();
     initInteractions();
     initCRM();
+    // Limpa a trava diária da reconciliação de faturamento: garante a
+    // execução imediata na primeira visita ao CRM desta carga do app.
+    try { localStorage.removeItem(_FATURAMENTO_GUARD_KEY); } catch (_) { /* ignore */ }
     renderCalendar();
     initDashboard();
     renderCalUpcoming();
@@ -21101,6 +21644,9 @@ async function initFinanceiro() {
     await loadFinMembrosFilter();
   }
   bindFinControls();
+  bindFinViewTabs();
+  bindDespesasControls();
+  initDespesasRecorrentes(); // pré-carrega mês atual + lista (async, sem bloquear)
   await refreshFinanceiro();
 }
 
@@ -21861,4 +22407,915 @@ if (typeof MutationObserver !== 'undefined' && !window._finThemeObserver) {
   new MutationObserver(() => {
     if (_finInited && activePage === 'financeiro') renderFinanceiro();
   }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+}
+
+/* ============================================
+   FINANCEIRO · CONTAS RECORRENTES / FIXAS
+   Catálogo fixo + histórico mensal (pago/data/valor).
+   Persistência: Supabase com fallback em localStorage.
+   Virada automática: ao carregar um mês, despesas sem
+   registro em `despesas_recorrentes_historico` nascem
+   como pendentes (pago=false).
+   ============================================ */
+const _DESP_ORIGENS = {
+  pessoal: { label: 'PESSOAL', cls: 'desp-tag-pessoal' },
+  blue: { label: 'BLUE', cls: 'desp-tag-blue' },
+  maxima: { label: 'MÁXXIMA', cls: 'desp-tag-maxima' },
+  blue_digital: { label: 'BLUE DIGITAL', cls: 'desp-tag-blue_digital' }
+};
+const _DESP_TIPOS = { fixa: 'Fixa', variavel: 'Variável', parcelamento: 'Parcelamento' };
+
+/* ---- Origens personalizadas (além das 4 fixas) ---- */
+const _DESP_ORIGENS_LS_KEY = 'crm_origens_despesas';
+let _despOrigensCustom = []; // [{ id, nome, cor }]
+
+function _despOrigemInfo(origem) {
+  const fixa = _DESP_ORIGENS[origem];
+  if (fixa) return { label: fixa.label, cls: `desp-tag ${fixa.cls}`, cor: null };
+  const c = _despOrigensCustom.find(x => x.id === origem);
+  if (c) {
+    return {
+      label: String(c.nome || origem).toUpperCase(),
+      cls: 'desp-tag desp-tag-custom',
+      cor: c.cor || '#165BFF'
+    };
+  }
+  return { label: origem, cls: 'desp-tag', cor: null };
+}
+
+function _despListaOrigens() {
+  return [
+    ...Object.entries(_DESP_ORIGENS).map(([id, o]) => ({ id, nome: o.label, cor: null, fixa: true })),
+    ..._despOrigensCustom.map(c => ({ id: c.id, nome: String(c.nome || '').toUpperCase(), cor: c.cor || '#165BFF', fixa: false }))
+  ];
+}
+
+function _despCarregarOrigensCustom() {
+  _despOrigensCustom = _despLSGet(_DESP_ORIGENS_LS_KEY, []) || [];
+  if (!_supabase) return;
+  try {
+    _supabase.from('despesas_origens').select('*')
+      .then(({ data, error }) => {
+        if (!error && Array.isArray(data) && data.length) {
+          _despOrigensCustom = data.map(r => ({ id: r.id, nome: r.nome, cor: r.cor || '#165BFF' }));
+          _despLSSet(_DESP_ORIGENS_LS_KEY, _despOrigensCustom);
+          // re-render se a view já está montada
+          if (_despInited) { renderDespesas(); _despPreencherSelectOrigens(); }
+        }
+      })
+      .catch(() => { /* offline: usa localStorage */ });
+  } catch (e) { /* ignora */ }
+}
+
+async function _despAdicionarOrigemCustom(nome, cor) {
+  const id = _despNovoId();
+  const nova = { id, nome: String(nome).trim(), cor: cor || '#165BFF' };
+  _despOrigensCustom.push(nova);
+  _despLSSet(_DESP_ORIGENS_LS_KEY, _despOrigensCustom);
+  if (_supabase && !_despUsarLS) {
+    try {
+      const { error } = await _supabase.from('despesas_origens').insert({ id, nome: nova.nome, cor: nova.cor });
+      if (error) throw error;
+    } catch (e) {
+      console.warn('[Despesas] Origem salva só no localStorage:', e && e.message);
+    }
+  }
+  return nova;
+}
+
+/* Catálogo semente: [descricao, origem, tipo, vencimento(dia|null)] */
+const _DESP_SEED = [
+  // ORIGEM PESSOAL
+  ['INTERNET BANDA LARGA - 600 MEGAS', 'pessoal', 'fixa', 20],
+  ['PLANO DE CELULAR CLARO - FIDELIDADE NOVEMBRO', 'pessoal', 'fixa', 12],
+  ['RECARGA DE CELULAR ISABELE', 'pessoal', 'variavel', 13],
+  ['COMBUSTÍVEL/MANUTENÇÕES/ESTACIONAMENTO', 'pessoal', 'variavel', null],
+  ['IPTU', 'pessoal', 'fixa', null],
+  ['ALUGUEL + SEGURO INCÊNDIO + TX BANCÁRIA', 'pessoal', 'variavel', 5],
+  ['CONDOMÍNIO + ÁGUA', 'pessoal', 'fixa', 15],
+  ['ENERGIA', 'pessoal', 'variavel', 28],
+  ['ULTRAGÁS', 'pessoal', 'variavel', 20],
+  ['PENSÃO', 'pessoal', 'fixa', 5],
+  ['CARTÃO DE CRÉDITO NUBANK - PESSOAL', 'pessoal', 'variavel', 25],
+  ['CARTÃO DE CRÉDITO SANTANDER - PESSOAL', 'pessoal', 'fixa', 30],
+  ['CARTÃO DE CRÉDITO PAG BANK - PESSOAL', 'pessoal', 'variavel', 20],
+  ['FINANCIAMENTO CARRO', 'pessoal', 'fixa', 7],
+  ['TVBOX', 'pessoal', 'fixa', 2],
+  ['LAZER E OUTROS (ALMOÇO FORA)', 'pessoal', 'fixa', null],
+  ['FEIRAS DE MERCADO', 'pessoal', 'variavel', null],
+  ['FARMÁCIA', 'pessoal', 'variavel', null],
+  ['ÁGUA MINERAL', 'pessoal', 'fixa', null],
+  ['LOTERIA', 'pessoal', 'fixa', null],
+  ['PETSHOP + CONSULTAS + REMÉDIOS', 'pessoal', 'variavel', null],
+  ['OUTRAS COMPRAS NÃO DECLARADAS', 'pessoal', 'variavel', null],
+  ['COMPRAS EM DINHEIRO NÃO DECLARADAS', 'pessoal', 'variavel', null],
+  ['SISTEMA OKOK - BIOIMPEDÂNCIA', 'pessoal', 'fixa', null],
+  ['AMAZON PRIME', 'pessoal', 'fixa', 20],
+  ['CURSOS', 'pessoal', 'variavel', null],
+  ['PARCELAMENTO GRAND SIENA (6/58)', 'pessoal', 'parcelamento', 15],
+  ['MULTAS FRONTIER', 'pessoal', 'variavel', 30],
+  // ORIGEM BLUE
+  ['INTERNET BANDA LARGA ESCRITÓRIO', 'blue', 'fixa', 20],
+  ['COMBUSTÍVEL/MANUTENÇÕES/ESTACIONAMENTO', 'blue', 'variavel', null],
+  ['CONTADOR + SERVIÇOS ADICIONAIS + SISTEMA CONTÁBIL', 'blue', 'fixa', null],
+  ['RECARGA CELULAR BLUE PRO - 85 99149-9320', 'blue', 'fixa', 20],
+  ['RECARGA CELULAR BLUE EVENTOS - 85 99130-4887', 'blue', 'fixa', 20],
+  ['RECARGA CELULAR BLUE DIGITAL - 85 92005-0265', 'blue', 'fixa', 20],
+  ['NOTAS FISCAIS', 'blue', 'variavel', null],
+  ['IPTU', 'blue', 'fixa', null],
+  ['CONDOMÍNIO SALA 817 B', 'blue', 'fixa', 5],
+  ['CONDOMÍNIO SALA 814 SUL', 'blue', 'fixa', 5],
+  ['PARCELA DA SALA BLUE 814 SUL', 'blue', 'parcelamento', 4],
+  ['SEMESTRAL DA SALA BLUE 817 SUL', 'blue', 'parcelamento', 15],
+  ['ENERGIA SALA 814 SUL', 'blue', 'variavel', 10],
+  ['CARTÃO DE CRÉDITO NUBANK - AGÊNCIA BLUE PRO', 'blue', 'variavel', 25],
+  ['CARTÃO DE CRÉDITO CORA - AGÊNCIA BLUE PRO', 'blue', 'variavel', 25],
+  ['CARTÃO DE CRÉDITO NUBANK - RISA COMÉRCIO', 'blue', 'variavel', 25],
+  ['ÁGUA MINERAL', 'blue', 'fixa', null],
+  ['SALÁRIO ISABELE', 'blue', 'fixa', null],
+  ['SALÁRIO HENRIQUE', 'blue', 'fixa', null],
+  ['PEDRO-SALÁRIO + AJUDA DE CUSTO', 'blue', 'fixa', 5],
+  ['GISELE-SALÁRIO + AJUDA DE CUSTO', 'blue', 'fixa', 5],
+  ['ESTER-SALÁRIO + AJUDA DE CUSTO', 'blue', 'fixa', 5],
+  ['EMPRÉSTIMOS - Nubank PF', 'blue', 'fixa', null],
+  ['EMPRÉSTIMOS - Nubank PJ', 'blue', 'fixa', null],
+  ['EMPRÉSTIMOS - Santander PF', 'blue', 'fixa', null],
+  ['PARCELAMENTO BLUE PRO - ANTIGA (SIMPLES NACIONAL)', 'blue', 'parcelamento', 30],
+  ['PARCELAMENTO BLUE PRO - NOVA (SIMPLES NACIONAL)', 'blue', 'parcelamento', 30],
+  ['PARCELAMENTO IPPASSOS (SIMPLES NACIONAL)', 'blue', 'parcelamento', 30],
+  ['PARCELAMENTO PF - HENRIQUE', 'blue', 'parcelamento', 29],
+  ['IMPOSTO BLUE - 59.417.603/0001-36', 'blue', 'fixa', 10],
+  ['IMPOSTO BLUE - 59.417.603/0001-36', 'blue', 'fixa', 29],
+  ['MANUTENÇÃO DE EQUIPAMENTOS E ESTRUTURA', 'blue', 'fixa', null],
+  ['MATERIAL DE LIMPEZA', 'blue', 'fixa', null],
+  ['MATERIAL DE COPA/ COZINHA', 'blue', 'fixa', null],
+  ['ANÚNCIOS OLX - AGÊNCIA BLUE PRO', 'blue', 'fixa', 5],
+  ['CHAT GPT', 'blue', 'fixa', null],
+  ['GOOGLE ONE - GEMINI', 'blue', 'fixa', 30],
+  ['CANVA', 'blue', 'fixa', 11],
+  ['CAPCUT', 'blue', 'fixa', 9],
+  ['LOOMA BOOTH', 'blue', 'fixa', 20],
+  // ORIGEM MÁXXIMA
+  ['INTERNET BANDA LARGA LOJA - ALARES', 'maxima', 'fixa', 9],
+  ['VOIP BRASIL', 'maxima', 'fixa', null],
+  ['ENERGIA LOJA', 'maxima', 'variavel', 10],
+  ['CAGECE', 'maxima', 'variavel', 4],
+  ['RECARGA DE CELULAR MÁXXIMA - 85 99277-3661', 'maxima', 'fixa', 20],
+  ['RECARGA DE CELULAR MÁXXIMA - 85 99211-2570', 'maxima', 'fixa', 20],
+  ['ALUGUEL DE LOJA + IPTU', 'maxima', 'fixa', 30],
+  ['ÁGUA MINERAL', 'maxima', 'fixa', null],
+  ['SALÁRIO THAÍS + AJUDA DE CUSTO', 'maxima', 'fixa', 5],
+  ['CRECI PF', 'maxima', 'fixa', null],
+  ['CRECI PJ', 'maxima', 'fixa', null],
+  ['ANÚNCIOS PINTEREST', 'maxima', 'fixa', null],
+  // ORIGEM BLUE DIGITAL
+  ['OpenAI', 'blue_digital', 'variavel', null],
+  ['WhatsApp API', 'blue_digital', 'variavel', null],
+  ['OPUS AI', 'blue_digital', 'fixa', null],
+  ['2 Shorts', 'blue_digital', 'fixa', null],
+  ['Google Cloud', 'blue_digital', 'fixa', null],
+  ['VPS Hostinger', 'blue_digital', 'fixa', null],
+  ['Domínio Hostinger', 'blue_digital', 'fixa', null],
+  ['Base 44', 'blue_digital', 'fixa', null],
+  ['Minimax', 'blue_digital', 'fixa', null],
+  ['Elevenlabs', 'blue_digital', 'fixa', null],
+  ['Looker Studio', 'blue_digital', 'fixa', null]
+];
+
+let _despInited = false;
+let _despUsarLS = false; // true = Supabase indisponível → localStorage
+let _despCatalogo = [];  // [{id, descricao, origem, tipo, vencimento, ativo}]
+let _despHist = {};      // { despesaId: {pago, data_pagamento, valor} }
+let _despMesAno = _despMesAtualKey(); // ex.: '2026-10' (mês local corrente)
+let _despOrigemFiltro = 'todas';
+let _despStatusFiltro = 'todas';
+
+function _despMesAtualKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function _despSeedCatalogo() {
+  return _DESP_SEED.map((t, i) => ({
+    id: `seed-${i + 1}`,
+    descricao: t[0],
+    origem: t[1],
+    tipo: t[2],
+    vencimento: t[3],
+    ativo: true
+  }));
+}
+
+function _despLSCatKey() { return 'blue_desp_catalogo'; }
+function _despLSHistKey(mesAno) { return `blue_desp_hist_${mesAno}`; }
+
+function _despLSGet(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch { return fallback; }
+}
+function _despLSSet(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch { /* quota */ }
+}
+
+function _despAtualizarLabel() {
+  const label = document.getElementById('despMesLabel');
+  if (!label) return;
+  const [y, m] = String(_despMesAno || '').split('-').map(Number);
+  if (!y || !m) { label.textContent = '—'; return; }
+  label.textContent = `${_MESES_FULL[m - 1]} ${y}`;
+}
+
+async function initDespesasRecorrentes(force = false) {
+  if (_despInited && !force) { renderDespesas(); return; }
+  _despInited = true;
+  if (!_despMesAno) _despMesAno = _despMesAtualKey();
+  _despAtualizarLabel(); // mostra "Outubro 2026" já no início do load
+  await _despCarregarCatalogo();
+  _despCarregarOrigensCustom();
+  await _despGarantirMes(_despMesAno);
+  renderDespesas();
+}
+
+async function _despCarregarCatalogo() {
+  // 1) Supabase
+  if (_supabase && !_despUsarLS) {
+    const { data, error } = await _supabase
+      .from('despesas_recorrentes')
+      .select('id, descricao, origem, tipo, vencimento, ativo')
+      .order('origem').order('descricao');
+    if (!error && data) {
+      if (data.length) {
+        _despCatalogo = data;
+        _despLSSet(_despLSCatKey(), data); // cache local
+        return;
+      }
+      // tabela existe mas vazia → semeia (deixa o banco gerar os IDs)
+      const seed = _despSeedCatalogo();
+      const { data: inseridos, error: insErr } = await _supabase
+        .from('despesas_recorrentes')
+        .insert(seed.map(({ id, ...s }) => ({ ...s, created_at: new Date().toISOString() })))
+        .select();
+      if (insErr) {
+        console.warn('[Despesas] Semeadura Supabase falhou, usando localStorage:', insErr.message);
+        _despUsarLS = true;
+      } else {
+        _despCatalogo = (inseridos && inseridos.length) ? inseridos : seed;
+        _despLSSet(_despLSCatKey(), _despCatalogo);
+        return;
+      }
+    } else {
+      console.warn('[Despesas] Tabela despesas_recorrentes indisponível:', error && error.message);
+      _despUsarLS = true;
+    }
+  }
+  // 2) localStorage / seed
+  const ls = _despLSGet(_despLSCatKey(), null);
+  if (ls && ls.length) { _despCatalogo = ls; return; }
+  _despCatalogo = _despSeedCatalogo();
+  _despLSSet(_despLSCatKey(), _despCatalogo);
+}
+
+async function _despCarregarMes(mesAno) {
+  _despHist = {};
+  if (_supabase && !_despUsarLS) {
+    const { data, error } = await _supabase
+      .from('despesas_recorrentes_historico')
+      .select('despesa_id, mes_ano, pago, data_pagamento, valor')
+      .eq('mes_ano', mesAno);
+    if (!error && data) {
+      data.forEach(h => {
+        _despHist[h.despesa_id] = {
+          pago: !!h.pago,
+          data_pagamento: h.data_pagamento || null,
+          valor: h.valor
+        };
+      });
+      return;
+    }
+    if (error) {
+      console.warn('[Despesas] Histórico Supabase indisponível:', error.message);
+      _despUsarLS = true;
+    }
+  }
+  _despHist = _despLSGet(_despLSHistKey(mesAno), {});
+}
+
+async function _despGarantirMes(mesAno) {
+  await _despCarregarMes(mesAno);
+  const novos = [];
+  _despCatalogo.forEach(d => {
+    if (d.ativo === false) return;
+    if (!_despHist[d.id]) {
+      _despHist[d.id] = { pago: false, data_pagamento: null, valor: null };
+      novos.push({
+        despesa_id: d.id,
+        mes_ano: mesAno,
+        pago: false,
+        data_pagamento: null,
+        valor: null
+      });
+    }
+  });
+  if (!novos.length) return;
+  if (_supabase && !_despUsarLS) {
+    const { error } = await _supabase
+      .from('despesas_recorrentes_historico')
+      .insert(novos);
+    if (error) {
+      console.warn('[Despesas] Insert do histórico falhou, usando localStorage:', error.message);
+      _despUsarLS = true;
+    }
+  }
+  _despLSSet(_despLSHistKey(mesAno), _despHist); // grava mesmo em modo Supabase (espelho)
+}
+
+async function _despSalvarHist(despId) {
+  const h = _despHist[despId];
+  if (!h) return;
+  const linha = {
+    despesa_id: despId,
+    mes_ano: _despMesAno,
+    pago: !!h.pago,
+    data_pagamento: h.data_pagamento || null,
+    valor: h.valor
+  };
+  _despLSSet(_despLSHistKey(_despMesAno), _despHist);
+  if (_supabase && !_despUsarLS) {
+    const { error } = await _supabase
+      .from('despesas_recorrentes_historico')
+      .upsert(linha, { onConflict: 'despesa_id,mes_ano' });
+    if (error) {
+      console.warn('[Despesas] Upsert do histórico falhou:', error.message);
+      _despUsarLS = true;
+    }
+  }
+}
+
+async function _despTogglePago(despId) {
+  if (despId == null) return;
+  const h = _despHist[despId] || (_despHist[despId] = { pago: false, data_pagamento: null, valor: null });
+  h.pago = !h.pago;
+  h.data_pagamento = h.pago ? new Date().toISOString().slice(0, 10) : null;
+  await _despSalvarHist(despId);
+  renderDespesas();
+}
+
+function _despVencTexto(desp, hist) {
+  if (hist && hist.pago) return { txt: desp.vencimento ? `Dia ${String(desp.vencimento).padStart(2, '0')}` : '—', cls: '' };
+  if (!desp.vencimento) return { txt: '—', cls: '' };
+  const hoje = new Date();
+  const [y, m] = _despMesAno.split('-').map(Number);
+  const isMesAtual = y === hoje.getFullYear() && m === hoje.getMonth() + 1;
+  const dia = desp.vencimento;
+  if (isMesAtual && dia === hoje.getDate()) return { txt: 'Vence hoje', cls: 'desp-hoje' };
+  if (isMesAtual && dia < hoje.getDate()) return { txt: 'Atrasado', cls: 'desp-atrasado' };
+  return { txt: `Dia ${String(dia).padStart(2, '0')}`, cls: '' };
+}
+
+function renderDespesas() {
+  _despAtualizarLabel();
+  // pills de origem: reconstrói com origens personalizadas + botão "+ Origem"
+  const pillsOrigem = document.getElementById('despOrigemPills');
+  if (pillsOrigem) {
+    const lista = _despListaOrigens();
+    pillsOrigem.innerHTML =
+      `<button type="button" class="desp-pill ${_despOrigemFiltro === 'todas' ? 'active' : ''}" data-origem="todas">Todas</button>` +
+      lista.map(o => {
+        const ativo = _despOrigemFiltro === o.id;
+        const style = o.cor ? ` style="border-color:${o.cor};color:${o.cor}"` : '';
+        return `<button type="button" class="desp-pill${o.fixa ? ` desp-pill-${o.id}` : ''}${ativo ? ' active' : ''}" data-origem="${escapeHtml(o.id)}"${style}>${escapeHtml(o.nome)}</button>`;
+      }).join('') +
+      `<button type="button" class="desp-pill desp-pill-add" id="despAddOrigemPill" title="Adicionar nova origem">+ Origem</button>` +
+      `<button type="button" class="desp-pill desp-pill-manage" id="despManageOrigensBtn" title="Editar ou remover origens personalizadas">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        Gerenciar
+      </button>`;
+  }
+  // status pills (estáticas)
+  document.querySelectorAll('#despStatusPills .desp-pill').forEach(b =>
+    b.classList.toggle('active', b.dataset.status === _despStatusFiltro));
+
+  const itens = _despCatalogo
+    .filter(d => d.ativo !== false)
+    .filter(d => _despOrigemFiltro === 'todas' || d.origem === _despOrigemFiltro)
+    .map(d => ({ desp: d, hist: _despHist[d.id] || { pago: false, data_pagamento: null, valor: null } }))
+    .filter(x => {
+      if (_despStatusFiltro === 'pago') return x.hist.pago;
+      if (_despStatusFiltro === 'pendente') return !x.hist.pago;
+      return true;
+    })
+    .sort((a, b) => {
+      const ids = _despListaOrigens().map(o => o.id);
+      const oa = ids.indexOf(a.desp.origem);
+      const ob = ids.indexOf(b.desp.origem);
+      if (oa !== ob) return oa - ob;
+      return String(a.desp.descricao).localeCompare(String(b.desp.descricao), 'pt-BR');
+    });
+
+  // resumo (sobre TODAS as despesas do mês, sem filtros de pill)
+  const todas = _despCatalogo.filter(d => d.ativo !== false)
+    .map(d => ({ desp: d, hist: _despHist[d.id] || { pago: false } }));
+  const pagas = todas.filter(x => x.hist.pago);
+  const pendentes = todas.filter(x => !x.hist.pago);
+  const soma = (arr) => arr.reduce((s, x) => s + (Number(x.hist.valor) || 0), 0);
+  const elT = document.getElementById('despSumTotal');
+  const elP = document.getElementById('despSumPagas');
+  const elPe = document.getElementById('despSumPendentes');
+  if (elT) elT.textContent = `${todas.length} contas`;
+  if (elP) elP.textContent = `${pagas.length} · ${_fatFmtBRL(soma(pagas))}`;
+  if (elPe) elPe.textContent = `${pendentes.length} · ${_fatFmtBRL(soma(pendentes))}`;
+
+  const list = document.getElementById('despList');
+  if (!list) return;
+  if (!itens.length) {
+    list.innerHTML = '<p class="desp-empty">Nenhuma conta para este filtro.</p>';
+    return;
+  }
+  const rowsHtml = itens.map(({ desp, hist }) => {
+    const org = _despOrigemInfo(desp.origem);
+    const venc = _despVencTexto(desp, hist);
+    const orgStyle = org.cor ? ` style="background:${org.cor}1a;color:${org.cor};border-color:${org.cor}44"` : '';
+    return `
+    <div class="desp-row" data-desp-id="${desp.id}">
+      <span class="desp-desc" title="${escapeHtml(desp.descricao)}">${escapeHtml(desp.descricao)}</span>
+      <span><span class="${org.cls}"${orgStyle}>${escapeHtml(org.label)}</span></span>
+      <span class="desp-tipo">${_DESP_TIPOS[desp.tipo] || desp.tipo}</span>
+      <span class="desp-venc ${venc.cls}">${venc.txt}</span>
+      <input class="desp-valor-input" type="number" min="0" step="0.01" placeholder="0,00"
+        value="${hist.valor != null ? Number(hist.valor) : ''}" aria-label="Valor de ${escapeHtml(desp.descricao)}" />
+      <button type="button" class="desp-status-btn ${hist.pago ? 'pago' : ''}" data-action="toggle-status" data-id="${desp.id}" title="Alternar status">
+        ${hist.pago ? '✓ Pago' : 'Pendente'}
+      </button>
+      <span class="desp-actions">
+        <button type="button" class="desp-act-btn desp-act-edit" data-action="edit-despesa" data-id="${desp.id}" title="Editar" aria-label="Editar ${escapeHtml(desp.descricao)}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+        </button>
+        <button type="button" class="desp-act-btn desp-act-del" data-action="delete-despesa" data-id="${desp.id}" title="Excluir" aria-label="Excluir ${escapeHtml(desp.descricao)}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+        </button>
+      </span>
+    </div>`;
+  }).join('');
+  const cardsHtml = itens.map(({ desp, hist }) => {
+    const org = _despOrigemInfo(desp.origem);
+    const venc = _despVencTexto(desp, hist);
+    const orgStyle = org.cor ? ` style="background:${org.cor}1a;color:${org.cor};border-color:${org.cor}44"` : '';
+    return `
+    <div class="desp-card" data-desp-id="${desp.id}">
+      <div class="desp-card-top">
+        <span class="desp-card-desc">${escapeHtml(desp.descricao)}</span>
+        <span class="${org.cls} desp-card-org"${orgStyle}>${escapeHtml(org.label)}</span>
+      </div>
+      <div class="desp-card-mid">
+        <div class="desp-card-info">
+          <span class="desp-venc desp-card-venc ${venc.cls}">${venc.txt}</span>
+          <span class="desp-tipo desp-card-tipo">${_DESP_TIPOS[desp.tipo] || desp.tipo}</span>
+        </div>
+        <div class="desp-card-valor-wrap">
+          <span class="desp-card-valor-prefix" aria-hidden="true">R$</span>
+          <input class="desp-valor-input desp-card-valor" type="number" min="0" step="0.01" placeholder="0,00"
+            value="${hist.valor != null ? Number(hist.valor) : ''}" aria-label="Valor de ${escapeHtml(desp.descricao)}" />
+        </div>
+      </div>
+      <div class="desp-card-foot">
+        <button type="button" class="desp-status-btn desp-card-status ${hist.pago ? 'pago' : ''}" data-action="toggle-status" data-id="${desp.id}" title="Alternar status">
+          ${hist.pago ? '✓ Pago' : 'Pendente'}
+        </button>
+        <button type="button" class="desp-act-btn desp-act-edit" data-action="edit-despesa" data-id="${desp.id}" title="Editar" aria-label="Editar ${escapeHtml(desp.descricao)}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+        </button>
+        <button type="button" class="desp-act-btn desp-act-del" data-action="delete-despesa" data-id="${desp.id}" title="Excluir" aria-label="Excluir ${escapeHtml(desp.descricao)}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+  list.innerHTML = `
+    <div class="desp-table-wrap">
+      <div class="desp-row desp-row-head">
+        <span>Descrição</span><span>Origem</span><span>Tipo</span><span>Vencimento</span><span>Valor (R$)</span><span>Status</span><span>Ações</span>
+      </div>
+      ${rowsHtml}
+    </div>
+    <div class="desp-cards">${cardsHtml}</div>`;
+
+  if (window.initIcons) window.initIcons();
+}
+
+/* ---- CRUD: modal criar/editar + excluir ---- */
+let _despModalMode = 'criar'; // 'criar' | 'editar'
+let _despEditId = null;
+
+function _despPreencherSelectOrigens(selecionada) {
+  const sel = document.getElementById('despFormOrigem');
+  if (!sel) return;
+  const lista = _despListaOrigens();
+  sel.innerHTML = lista.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.nome)}</option>`).join('') +
+    `<option value="__nova">+ Adicionar nova origem...</option>`;
+  const alvo = selecionada && (lista.some(o => o.id === selecionada)) ? selecionada : 'pessoal';
+  sel.value = alvo;
+}
+
+let _despOrigemEditId = null; // null = criando; id = editando origem customizada
+
+function _despAbrirModalOrigem(editId = null) {
+  _despOrigemEditId = editId;
+  const modal = document.getElementById('despOrigemModal');
+  const overlay = document.getElementById('despOrigemOverlay');
+  const err = document.getElementById('despOrigemError');
+  const title = document.getElementById('despOrigemTitle');
+  const meta = modal ? modal.querySelector('.modal-meta') : null;
+  if (err) { err.hidden = true; err.textContent = 'Informe o nome da origem.'; }
+  const nome = document.getElementById('despOrigemNome');
+  const atual = editId ? _despOrigensCustom.find(x => String(x.id) === String(editId)) : null;
+  if (editId && !atual) return;
+  if (title) title.textContent = editId ? 'Editar Origem' : 'Nova Origem';
+  if (meta) meta.textContent = editId ? 'Altere o nome e a cor do badge' : 'Crie uma origem personalizada';
+  if (nome) nome.value = atual ? atual.nome : '';
+  const corAlvo = (atual && atual.cor) || '#165BFF';
+  document.querySelectorAll('#despOrigemCores .desp-cor').forEach(c =>
+    c.classList.toggle('active', c.dataset.cor === corAlvo));
+  if (overlay) overlay.classList.add('open');
+  if (modal) modal.classList.add('open');
+  if (window.initIcons) window.initIcons();
+}
+
+function _despFecharModalOrigem() {
+  _despOrigemEditId = null;
+  const modal = document.getElementById('despOrigemModal');
+  const overlay = document.getElementById('despOrigemOverlay');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+}
+
+async function _despSalvarOrigem() {
+  const nomeEl = document.getElementById('despOrigemNome');
+  const err = document.getElementById('despOrigemError');
+  const nome = (nomeEl && nomeEl.value || '').trim();
+  if (!nome) {
+    if (err) { err.textContent = 'Informe o nome da origem.'; err.hidden = false; }
+    if (nomeEl) nomeEl.focus();
+    return;
+  }
+  if (err) err.hidden = true;
+  const corAtiva = document.querySelector('#despOrigemCores .desp-cor.active');
+  const cor = corAtiva ? corAtiva.dataset.cor : '#165BFF';
+  const nomeUp = nome.toUpperCase();
+  // nomes duplicados (case-insensitive) entre fixas + customizadas (ignora a própria origem em edição)
+  const existe = _despListaOrigens().some(o =>
+    o.nome.toUpperCase() === nomeUp && String(o.id) !== String(_despOrigemEditId));
+  if (existe) {
+    if (err) { err.textContent = 'Já existe uma origem com esse nome.'; err.hidden = false; }
+    return;
+  }
+  let novaId = null;
+  if (_despOrigemEditId) {
+    const alvo = _despOrigensCustom.find(x => String(x.id) === String(_despOrigemEditId));
+    if (alvo) {
+      alvo.nome = nome;
+      alvo.cor = cor;
+      novaId = alvo.id;
+      _despLSSet(_DESP_ORIGENS_LS_KEY, _despOrigensCustom);
+      if (_supabase && !_despUsarLS) {
+        try {
+          await _supabase.from('despesas_origens').update({ nome, cor }).eq('id', alvo.id);
+        } catch (e) { console.warn('[Despesas] Update de origem só no localStorage:', e && e.message); }
+      }
+    }
+  } else {
+    const nova = await _despAdicionarOrigemCustom(nome, cor);
+    novaId = nova.id;
+  }
+  _despFecharModalOrigem();
+  // atualiza pills, badges e select do modal de despesa
+  renderDespesas();
+  if (document.getElementById('despModal') &&
+      document.getElementById('despModal').classList.contains('open')) {
+    _despPreencherSelectOrigens(novaId || (document.getElementById('despFormOrigem') || {}).value);
+  }
+  if (document.getElementById('despGestaoModal') &&
+      document.getElementById('despGestaoModal').classList.contains('open')) {
+    _despRenderGestaoOrigens();
+  }
+  if (window.initIcons) window.initIcons();
+}
+
+/* ---- Gestão de origens (lista editar/excluir) ---- */
+function _despAbrirGestaoOrigens() {
+  const modal = document.getElementById('despGestaoModal');
+  const overlay = document.getElementById('despGestaoOverlay');
+  _despRenderGestaoOrigens();
+  if (overlay) overlay.classList.add('open');
+  if (modal) modal.classList.add('open');
+  if (window.initIcons) window.initIcons();
+}
+
+function _despFecharGestaoOrigens() {
+  const modal = document.getElementById('despGestaoModal');
+  const overlay = document.getElementById('despGestaoOverlay');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+}
+
+function _despRenderGestaoOrigens() {
+  const list = document.getElementById('despGestaoList');
+  if (!list) return;
+  const fixas = Object.entries(_DESP_ORIGENS).map(([id, o]) => ({
+    id, nome: o.label, cor: null, fixa: true
+  }));
+  const customs = _despOrigensCustom.map(c => ({
+    id: c.id, nome: String(c.nome || '').toUpperCase(), cor: c.cor || '#165BFF', fixa: false
+  }));
+  list.innerHTML = [...fixas, ...customs].map(o => {
+    const style = o.cor ? ` style="background:${o.cor}1a;color:${o.cor};border-color:${o.cor}44"` : '';
+    const badge = `<span class="desp-tag desp-tag-custom desp-manage-badge"${style}>${escapeHtml(o.nome)}</span>`;
+    const acoes = o.fixa
+      ? '<span class="desp-manage-lock">Somente leitura</span>'
+      : `<span class="desp-manage-actions">
+          <button type="button" class="desp-act-btn desp-act-edit" data-action="edit-origem" data-id="${o.id}" title="Editar origem">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+          </button>
+          <button type="button" class="desp-act-btn desp-act-del" data-action="delete-origem" data-id="${o.id}" title="Excluir origem">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+          </button>
+        </span>`;
+    return `<div class="desp-manage-row" data-origem-id="${o.id}" data-fixa="${o.fixa ? '1' : '0'}">${badge}${acoes}</div>`;
+  }).join('');
+}
+
+async function _despExcluirOrigem(id) {
+  if (!confirm('Deseja realmente remover esta origem?')) return;
+  // migra despesas da origem removida para PESSOAL (evita corromper dados)
+  const afetadas = _despCatalogo.filter(d => String(d.origem) === String(id));
+  for (const d of afetadas) {
+    d.origem = 'pessoal';
+    if (_supabase && !_despUsarLS) {
+      try { await _supabase.from('despesas_recorrentes').update({ origem: 'pessoal' }).eq('id', d.id); }
+      catch (e) { /* segue LS */ }
+    }
+  }
+  if (afetadas.length) _despLSSet(_despLSCatKey(), _despCatalogo);
+  _despOrigensCustom = _despOrigensCustom.filter(x => String(x.id) !== String(id));
+  _despLSSet(_DESP_ORIGENS_LS_KEY, _despOrigensCustom);
+  if (_supabase && !_despUsarLS) {
+    try { await _supabase.from('despesas_origens').delete().eq('id', id); }
+    catch (e) { console.warn('[Despesas] Delete de origem só no localStorage:', e && e.message); }
+  }
+  // filtro ativo na origem removida → volta para Todas
+  if (String(_despOrigemFiltro) === String(id)) _despOrigemFiltro = 'todas';
+  _despRenderGestaoOrigens();
+  renderDespesas();
+  const sel = document.getElementById('despFormOrigem');
+  if (sel) _despPreencherSelectOrigens(sel.value && sel.value !== id ? sel.value : 'pessoal');
+  if (window.initIcons) window.initIcons();
+}
+
+function _despNovoId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `custom-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+}
+
+function _despAbrirModal(mode, despId = null) {
+  _despModalMode = mode;
+  _despEditId = despId;
+  const modal = document.getElementById('despModal');
+  const overlay = document.getElementById('despModalOverlay');
+  const title = document.getElementById('despModalTitle');
+  const err = document.getElementById('despFormError');
+  if (err) err.hidden = true;
+  const d = despId ? _despCatalogo.find(x => String(x.id) === String(despId)) : null;
+  if (mode === 'editar' && !d) return;
+  if (title) title.textContent = mode === 'editar' ? 'Editar Despesa' : 'Nova Despesa Recorrente';
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  setVal('despFormDescricao', d ? d.descricao : '');
+  _despPreencherSelectOrigens(d ? d.origem : 'pessoal');
+  setVal('despFormTipo', d ? (d.tipo || 'fixa') : 'fixa');
+  const semVenc = document.getElementById('despFormSemVenc');
+  const venc = document.getElementById('despFormVenc');
+  const temVenc = d ? d.vencimento != null : true;
+  if (semVenc) semVenc.checked = !temVenc;
+  setVal('despFormVenc', d && d.vencimento != null ? d.vencimento : '');
+  if (venc) venc.disabled = !temVenc;
+  const hist = despId ? _despHist[despId] : null;
+  const valorPadrao = hist && hist.valor != null ? hist.valor : (d && d.valor_padrao != null ? d.valor_padrao : '');
+  setVal('despFormValor', valorPadrao);
+  if (overlay) overlay.classList.add('open');
+  if (modal) modal.classList.add('open');
+  if (window.initIcons) window.initIcons();
+}
+
+function _despFecharModal() {
+  const modal = document.getElementById('despModal');
+  const overlay = document.getElementById('despModalOverlay');
+  if (overlay) overlay.classList.remove('open');
+  if (modal) modal.classList.remove('open');
+  _despEditId = null;
+}
+
+async function _despPersistirCatalogoOp(op, payload, id) {
+  _despLSSet(_despLSCatKey(), _despCatalogo); // espelho local sempre
+  if (!_supabase || _despUsarLS) return;
+  try {
+    if (op === 'insert') {
+      const { error } = await _supabase.from('despesas_recorrentes').insert(payload);
+      if (error) throw error;
+    } else if (op === 'update') {
+      const { error } = await _supabase.from('despesas_recorrentes').update(payload).eq('id', id);
+      if (error) throw error;
+    } else if (op === 'delete') {
+      const { error } = await _supabase.from('despesas_recorrentes').delete().eq('id', id);
+      if (error) throw error;
+      await _supabase.from('despesas_recorrentes_historico').delete().eq('despesa_id', id);
+    }
+  } catch (err) {
+    console.warn('[Despesas] Sync Supabase falhou, mantendo localStorage:', err && err.message);
+    _despUsarLS = true;
+  }
+}
+
+async function _despSalvarModal() {
+  const descEl = document.getElementById('despFormDescricao');
+  const err = document.getElementById('despFormError');
+  const descricao = (descEl && descEl.value || '').trim();
+  if (!descricao) {
+    if (err) err.hidden = false;
+    if (descEl) descEl.focus();
+    return;
+  }
+  if (err) err.hidden = true;
+  const origem = (document.getElementById('despFormOrigem') || {}).value || 'pessoal';
+  const tipo = (document.getElementById('despFormTipo') || {}).value || 'fixa';
+  const semVenc = !!(document.getElementById('despFormSemVenc') || {}).checked;
+  const vencRaw = parseInt((document.getElementById('despFormVenc') || {}).value, 10);
+  const vencimento = semVenc || isNaN(vencRaw) ? null : Math.min(Math.max(vencRaw, 1), 31);
+  const valorRaw = (document.getElementById('despFormValor') || {}).value;
+  const valor = valorRaw === '' || valorRaw == null ? null : Number(valorRaw);
+
+  if (_despModalMode === 'editar' && _despEditId != null) {
+    const d = _despCatalogo.find(x => String(x.id) === String(_despEditId));
+    if (d) {
+      Object.assign(d, { descricao, origem, tipo, vencimento });
+      await _despPersistirCatalogoOp('update', { descricao, origem, tipo, vencimento }, d.id);
+      if (valor != null && _despHist[d.id]) {
+        _despHist[d.id].valor = valor;
+        await _despSalvarHist(d.id);
+      }
+    }
+  } else {
+    const nova = { id: _despNovoId(), descricao, origem, tipo, vencimento, ativo: true, valor_padrao: valor };
+    _despCatalogo.push(nova);
+    await _despPersistirCatalogoOp('insert', {
+      id: nova.id, descricao, origem, tipo, vencimento, ativo: true, created_at: new Date().toISOString()
+    }, nova.id);
+    // instancia no mês selecionado como pendente, com valor padrão
+    _despHist[nova.id] = { pago: false, data_pagamento: null, valor };
+    await _despSalvarHist(nova.id);
+  }
+  _despFecharModal();
+  renderDespesas();
+}
+
+async function _despExcluir(despId) {
+  if (!confirm('Deseja realmente excluir esta despesa recorrente?')) return;
+  _despCatalogo = _despCatalogo.filter(x => String(x.id) !== String(despId));
+  delete _despHist[despId];
+  await _despPersistirCatalogoOp('delete', null, despId);
+  _despLSSet(_despLSHistKey(_despMesAno), _despHist);
+  renderDespesas();
+}
+
+function bindDespesasControls() {
+  if (bindDespesasControls._bound) return;
+  bindDespesasControls._bound = true;
+  const cont = document.getElementById('finViewRecorrentes');
+  if (!cont) return;
+  // Delegação: sobrevive a re-renders da lista
+  cont.addEventListener('click', (e) => {
+    if (e.target.closest('#despPrevMes')) { _despNavMes(-1); return; }
+    if (e.target.closest('#despNextMes')) { _despNavMes(1); return; }
+    if (e.target.closest('#despNovaBtn')) { _despAbrirModal('criar'); return; }
+    if (e.target.closest('#despAddOrigemPill') || e.target.closest('#despAddOrigemBtn')) { _despAbrirModalOrigem(); return; }
+    if (e.target.closest('#despManageOrigensBtn')) { _despAbrirGestaoOrigens(); return; }
+    const origemPill = e.target.closest('#despOrigemPills .desp-pill');
+    if (origemPill) { _despOrigemFiltro = origemPill.dataset.origem; renderDespesas(); return; }
+    const statusPill = e.target.closest('#despStatusPills .desp-pill');
+    if (statusPill) { _despStatusFiltro = statusPill.dataset.status; renderDespesas(); return; }
+    const editBtn = e.target.closest('[data-action="edit-despesa"]');
+    if (editBtn) {
+      _despAbrirModal('editar', editBtn.dataset.id || null);
+      return;
+    }
+    const delBtn = e.target.closest('[data-action="delete-despesa"]');
+    if (delBtn) {
+      if (delBtn.dataset.id) _despExcluir(delBtn.dataset.id);
+      return;
+    }
+    const toggleBtn = e.target.closest('[data-action="toggle-status"]');
+    if (toggleBtn) {
+      _despTogglePago(toggleBtn.getAttribute('data-id'));
+      return;
+    }
+    const statusBtn = e.target.closest('.desp-status-btn');
+    if (statusBtn) {
+      const host = statusBtn.closest('[data-desp-id]');
+      if (host) _despTogglePago(host.dataset.despId);
+    }
+  });
+  cont.addEventListener('change', (e) => {
+    // select "__nova" no modal de despesa → abre mini-modal de origem
+    if (e.target.id === 'despFormOrigem' && e.target.value === '__nova') {
+      _despAbrirModalOrigem();
+      return;
+    }
+    const inp = e.target.closest('.desp-valor-input');
+    if (!inp) return;
+    const host = inp.closest('[data-desp-id]');
+    if (!host) return;
+    const id = host.dataset.despId;
+    (async () => {
+      const h = _despHist[id] || (_despHist[id] = { pago: false, data_pagamento: null, valor: null });
+      h.valor = inp.value === '' ? null : Number(inp.value);
+      await _despSalvarHist(id);
+      renderDespesas();
+    })();
+  });
+  // Modal criar/editar (elementos estáticos)
+  const mClose = document.getElementById('despModalClose');
+  const mCancel = document.getElementById('despModalCancel');
+  const mSave = document.getElementById('despModalSave');
+  const mOverlay = document.getElementById('despModalOverlay');
+  const semVenc = document.getElementById('despFormSemVenc');
+  const vencInput = document.getElementById('despFormVenc');
+  if (mClose) mClose.addEventListener('click', _despFecharModal);
+  if (mCancel) mCancel.addEventListener('click', _despFecharModal);
+  if (mSave) mSave.addEventListener('click', () => _despSalvarModal());
+  if (mOverlay) mOverlay.addEventListener('click', _despFecharModal);
+  if (semVenc && vencInput) semVenc.addEventListener('change', () => {
+    vencInput.disabled = semVenc.checked;
+    if (semVenc.checked) vencInput.value = '';
+  });
+  // Mini-modal de origem (elementos estáticos)
+  const oClose = document.getElementById('despOrigemClose');
+  const oCancel = document.getElementById('despOrigemCancel');
+  const oSave = document.getElementById('despOrigemSave');
+  const oOverlay = document.getElementById('despOrigemOverlay');
+  if (oClose) oClose.addEventListener('click', _despFecharModalOrigem);
+  if (oCancel) oCancel.addEventListener('click', _despFecharModalOrigem);
+  if (oSave) oSave.addEventListener('click', () => _despSalvarOrigem());
+  if (oOverlay) oOverlay.addEventListener('click', _despFecharModalOrigem);
+  const cores = document.getElementById('despOrigemCores');
+  if (cores) cores.addEventListener('click', (e) => {
+    const cor = e.target.closest('.desp-cor');
+    if (!cor) return;
+    document.querySelectorAll('#despOrigemCores .desp-cor').forEach(c => c.classList.toggle('active', c === cor));
+  });
+  // Modal de gestão de origens (elementos estáticos)
+  const gClose = document.getElementById('despGestaoClose');
+  const gFechar = document.getElementById('despGestaoFechar');
+  const gNova = document.getElementById('despGestaoNova');
+  const gOverlay = document.getElementById('despGestaoOverlay');
+  if (gClose) gClose.addEventListener('click', _despFecharGestaoOrigens);
+  if (gFechar) gFechar.addEventListener('click', _despFecharGestaoOrigens);
+  if (gOverlay) gOverlay.addEventListener('click', _despFecharGestaoOrigens);
+  if (gNova) gNova.addEventListener('click', () => _despAbrirModalOrigem());
+  const gList = document.getElementById('despGestaoList');
+  if (gList) gList.addEventListener('click', (e) => {
+    const editBtn = e.target.closest('[data-action="edit-origem"]');
+    if (editBtn && editBtn.dataset.id) { _despAbrirModalOrigem(editBtn.dataset.id); return; }
+    const delBtn = e.target.closest('[data-action="delete-origem"]');
+    if (delBtn && delBtn.dataset.id) { _despExcluirOrigem(delBtn.dataset.id); return; }
+  });
+}
+
+function _despNavMes(delta) {
+  const [y, m] = String(_despMesAno || _despMesAtualKey()).split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  _despMesAno = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  initDespesasRecorrentes(true);
+}
+
+function bindFinViewTabs() {
+  if (bindFinViewTabs._bound) return;
+  bindFinViewTabs._bound = true;
+  const tabs = document.querySelectorAll('#finViewTabs .seg');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(b => {
+        const on = b === tab;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      const view = tab.dataset.finview;
+      const extrato = document.getElementById('finViewExtrato');
+      const recor = document.getElementById('finViewRecorrentes');
+      if (extrato) extrato.hidden = view !== 'extrato';
+      if (recor) recor.hidden = view !== 'recorrentes';
+      if (view === 'recorrentes') {
+        bindDespesasControls();
+        initDespesasRecorrentes();
+      }
+    });
+  });
 }

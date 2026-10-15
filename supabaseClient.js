@@ -176,6 +176,21 @@ async function fetchLeadsSupabase(filterMemberId) {
 
   console.log('[Supabase] Leads encontrados:', data.length);
 
+  // Última movimentação de cadência por lead → data de entrada na coluna atual
+  let entradaMap = {};
+  try {
+    const { data: movsEntrada } = await _supabase
+      .from('lead_movements')
+      .select('lead_id, to_value, created_at')
+      .eq('movement_type', 'cadencia')
+      .order('created_at', { ascending: false });
+    (movsEntrada || []).forEach(m => {
+      if (!entradaMap[m.lead_id]) entradaMap[m.lead_id] = m; // primeiro da desc = mais recente
+    });
+  } catch (errMov) {
+    console.warn('[Supabase] Sem dados de movimentação para o contador de cadência:', errMov);
+  }
+
   const allOwnerIds = [...new Set(data.map(r => r.membro_id || r.owner_id).filter(Boolean))];
   let memberMap = {};
   if (allOwnerIds.length > 0) {
@@ -229,6 +244,11 @@ async function fetchLeadsSupabase(filterMemberId) {
         return [raw];
       })(),
       _cadenciaId: row.cadencia_id || null,
+      _entradaCadencia: (function () {
+        const ult = entradaMap[row.id];
+        if (ult && ult.to_value === row.cadencia_id) return ult.created_at;
+        return row.updated_at || row.created_at || null; // fallback
+      })(),
       _centroCustoId: row.centro_custo_id || null,
       _centroCustoNome: '',
       enderecoEvento: row.endereco_evento || '',

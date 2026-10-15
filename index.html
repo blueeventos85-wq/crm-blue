@@ -396,17 +396,23 @@
           <!-- Row 3: Valor de Faturamento + Lembrete -->
           <div class="dash-grid-2">
             <!-- Faturamento -->
-            <div class="dash-widget card">
-              <div class="card-header">
+            <div class="dash-widget card fat-card">
+              <div class="card-header fat-header">
                 <div>
-                  <h3 class="card-title"><i data-lucide="circle-dollar-sign"></i> Valor de Faturamento</h3>
-                  <p class="card-sub">Faturamento por período</p>
+                  <h3 class="card-title"><i data-lucide="circle-dollar-sign"></i> <span id="fatCardTitle">Valor de Faturamento do Ano</span></h3>
+                  <p class="card-sub" id="fatCardSub">Consolidado acumulado do ano</p>
+                </div>
+                <div class="fat-tabs" role="tablist" aria-label="Período do faturamento">
+                  <button type="button" class="fat-tab active" data-fat-tab="ano" role="tab" aria-selected="true">Ano</button>
+                  <button type="button" class="fat-tab" data-fat-tab="mes" role="tab" aria-selected="false">Mês Atual</button>
                 </div>
               </div>
-              <div class="honorarios-amount" id="honTotal">R$ 57.000</div>
-              <div class="chart-wrap">
+              <div class="honorarios-amount" id="honTotal">R$ 0,00</div>
+              <div id="fatMesExtra" class="fat-mes-extra" hidden></div>
+              <div class="chart-wrap" id="fatChartWrap">
                 <canvas id="chartHon" aria-label="Valor de Faturamento por mês" role="img"></canvas>
               </div>
+              <div id="fatMesLista" class="fat-mes-lista" hidden></div>
             </div>
             <!-- Próximos Eventos -->
             <div class="dash-widget card eventos-card">
@@ -779,6 +785,13 @@
 
         <!-- ============ FINANCEIRO ============ -->
         <section class="page" id="page-financeiro">
+          <!-- Abas de visão: Extrato Geral | Contas Recorrentes -->
+          <div class="fin-view-tabs seg-control" id="finViewTabs" role="tablist" aria-label="Visão do financeiro">
+            <button class="seg active" data-finview="extrato" role="tab" aria-selected="true">Extrato Geral</button>
+            <button class="seg" data-finview="recorrentes" role="tab" aria-selected="false">Contas Recorrentes / Fixas</button>
+          </div>
+
+          <div id="finViewExtrato">
           <div class="fin-toolbar">
             <div class="seg-control" id="finPeriodSeg" role="tablist" aria-label="Filtro de período">
               <button class="seg active" data-period="month" role="tab" aria-selected="true">Mês</button>
@@ -841,6 +854,180 @@
               </div>
               <p class="fin-chart-empty" id="finChartEmpty">Nenhuma despesa registrada neste período</p>
               <div class="fin-chart-legend" id="finChartLegend"></div>
+            </div>
+          </div>
+          </div><!-- /#finViewExtrato -->
+
+          <!-- ============ CONTAS RECORRENTES / FIXAS ============ -->
+          <div id="finViewRecorrentes" class="desp-view" hidden>
+            <div class="desp-header">
+              <div class="desp-month-nav">
+                <button type="button" class="desp-nav-btn" id="despPrevMes" aria-label="Mês anterior">◀</button>
+                <span class="desp-month-label" id="despMesLabel">—</span>
+                <button type="button" class="desp-nav-btn" id="despNextMes" aria-label="Próximo mês">▶</button>
+              </div>
+              <div class="desp-pills" id="despOrigemPills" role="tablist" aria-label="Filtrar por origem">
+                <button type="button" class="desp-pill active" data-origem="todas">Todas</button>
+                <button type="button" class="desp-pill desp-pill-pessoal" data-origem="pessoal">PESSOAL</button>
+                <button type="button" class="desp-pill desp-pill-blue" data-origem="blue">BLUE</button>
+                <button type="button" class="desp-pill desp-pill-maxima" data-origem="maxima">MÁXXIMA</button>
+                <button type="button" class="desp-pill desp-pill-digital" data-origem="blue_digital">BLUE DIGITAL</button>
+                <button type="button" class="desp-pill desp-pill-add" id="despAddOrigemPill" title="Adicionar nova origem">+ Origem</button>
+                <button type="button" class="desp-pill desp-pill-manage" id="despManageOrigensBtn" title="Editar ou remover origens personalizadas">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                  Gerenciar
+                </button>
+              </div>
+              <div class="desp-pills" id="despStatusPills" role="tablist" aria-label="Filtrar por status">
+                <button type="button" class="desp-pill active" data-status="todas">Todas</button>
+                <button type="button" class="desp-pill" data-status="pendente">Pendentes</button>
+                <button type="button" class="desp-pill" data-status="pago">Pagas</button>
+              </div>
+              <button type="button" class="btn-primary desp-nova-btn" id="despNovaBtn">
+                <i data-lucide="plus"></i> Nova Despesa
+              </button>
+            </div>
+
+            <div class="desp-summary">
+              <div class="desp-sum-card">
+                <span class="desp-sum-label">Total de Contas do Mês</span>
+                <strong id="despSumTotal">0</strong>
+              </div>
+              <div class="desp-sum-card desp-sum-pagas">
+                <span class="desp-sum-label">Total Pagas</span>
+                <strong id="despSumPagas">0</strong>
+              </div>
+              <div class="desp-sum-card desp-sum-pendentes">
+                <span class="desp-sum-label">Total Pendentes</span>
+                <strong id="despSumPendentes">0</strong>
+              </div>
+            </div>
+
+            <div class="desp-list" id="despList">
+              <!-- renderizado por JS -->
+            </div>
+          </div><!-- /#finViewRecorrentes -->
+
+          <!-- Modal: Nova / Editar Despesa Recorrente -->
+          <div class="modal-overlay" id="despModalOverlay"></div>
+          <div class="modal modal-sm" id="despModal" role="dialog" aria-labelledby="despModalTitle">
+            <div class="modal-head">
+              <div class="modal-head-left">
+                <div class="modal-avatar"><i data-lucide="receipt"></i></div>
+                <div>
+                  <h2 id="despModalTitle">Nova Despesa Recorrente</h2>
+                  <p class="modal-meta">Catálogo de contas fixas/variáveis</p>
+                </div>
+              </div>
+              <button class="icon-btn small" id="despModalClose" title="Fechar"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label>Descrição <span class="req">*</span></label>
+                <input type="text" id="despFormDescricao" class="form-control" placeholder="Ex.: ALUGUEL + SEGURO" required />
+                <span class="form-error" id="despFormError" hidden>Informe a descrição da despesa.</span>
+              </div>
+              <div class="form-group">
+                <label>Origem <span class="req">*</span></label>
+                <div class="desp-origem-row">
+                  <select id="despFormOrigem" class="form-control">
+                    <option value="pessoal">PESSOAL</option>
+                    <option value="blue">BLUE</option>
+                    <option value="maxima">MÁXXIMA</option>
+                    <option value="blue_digital">BLUE DIGITAL</option>
+                    <option value="__nova">+ Adicionar nova origem...</option>
+                  </select>
+                  <button type="button" class="desp-add-origem-btn" id="despAddOrigemBtn" title="Nova origem">+ Nova Origem</button>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Tipo</label>
+                <select id="despFormTipo" class="form-control">
+                  <option value="fixa">Fixa / Fixo</option>
+                  <option value="variavel">Variável</option>
+                  <option value="parcelamento">Parcelamento</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Dia de Vencimento (1–31)</label>
+                <input type="number" id="despFormVenc" class="form-control" min="1" max="31" placeholder="Ex.: 5" />
+                <label class="desp-sem-venc">
+                  <input type="checkbox" id="despFormSemVenc" /> Sem vencimento fixo
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Valor Padrão (R$)</label>
+                <input type="number" id="despFormValor" class="form-control" min="0" step="0.01" placeholder="0,00" />
+              </div>
+            </div>
+            <div class="modal-foot">
+              <div></div>
+              <div class="modal-foot-actions">
+                <button class="btn-ghost" id="despModalCancel">Cancelar</button>
+                <button class="btn btn-primary" id="despModalSave"><i data-lucide="save"></i> Salvar Despesa</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mini-modal: Nova Origem -->
+          <div class="modal-overlay" id="despOrigemOverlay"></div>
+          <div class="modal modal-sm" id="despOrigemModal" role="dialog" aria-labelledby="despOrigemTitle">
+            <div class="modal-head">
+              <div class="modal-head-left">
+                <div class="modal-avatar"><i data-lucide="tag"></i></div>
+                <div>
+                  <h2 id="despOrigemTitle">Nova Origem</h2>
+                  <p class="modal-meta">Crie uma origem personalizada</p>
+                </div>
+              </div>
+              <button class="icon-btn small" id="despOrigemClose" title="Fechar"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label>Nome <span class="req">*</span></label>
+                <input type="text" id="despOrigemNome" class="form-control" placeholder="Ex.: INVESTIMENTOS" required />
+                <span class="form-error" id="despOrigemError" hidden>Informe o nome da origem.</span>
+              </div>
+              <div class="form-group">
+                <label>Cor do badge</label>
+                <div class="desp-cores" id="despOrigemCores" role="radiogroup" aria-label="Cor da origem">
+                  <button type="button" class="desp-cor active" data-cor="#165BFF" style="--cor:#165BFF" title="Azul" aria-label="Azul"></button>
+                  <button type="button" class="desp-cor" data-cor="#a855f7" style="--cor:#a855f7" title="Roxo" aria-label="Roxo"></button>
+                  <button type="button" class="desp-cor" data-cor="#10b981" style="--cor:#10b981" title="Verde" aria-label="Verde"></button>
+                  <button type="button" class="desp-cor" data-cor="#F0A500" style="--cor:#F0A500" title="Âmbar" aria-label="Âmbar"></button>
+                  <button type="button" class="desp-cor" data-cor="#F43F5E" style="--cor:#F43F5E" title="Rosa" aria-label="Rosa"></button>
+                  <button type="button" class="desp-cor" data-cor="#06B6D4" style="--cor:#06B6D4" title="Ciano" aria-label="Ciano"></button>
+                </div>
+              </div>
+            </div>
+            <div class="modal-foot">
+              <div></div>
+              <div class="modal-foot-actions">
+                <button class="btn-ghost" id="despOrigemCancel">Cancelar</button>
+                <button class="btn btn-primary" id="despOrigemSave"><i data-lucide="check"></i> Salvar Origem</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal: Gerenciar Origens -->
+          <div class="modal-overlay" id="despGestaoOverlay"></div>
+          <div class="modal modal-sm" id="despGestaoModal" role="dialog" aria-labelledby="despGestaoTitle">
+            <div class="modal-head">
+              <div class="modal-head-left">
+                <div class="modal-avatar"><i data-lucide="tags"></i></div>
+                <div>
+                  <h2 id="despGestaoTitle">Gerenciar Origens</h2>
+                  <p class="modal-meta">Origens fixas são somente leitura</p>
+                </div>
+              </div>
+              <button class="icon-btn small" id="despGestaoClose" title="Fechar"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body desp-gestao-list" id="despGestaoList"></div>
+            <div class="modal-foot">
+              <button class="btn-ghost" id="despGestaoNova"><i data-lucide="plus"></i> Nova Origem</button>
+              <div class="modal-foot-actions">
+                <button class="btn-ghost" id="despGestaoFechar">Fechar</button>
+              </div>
             </div>
           </div>
         </section>
