@@ -425,6 +425,7 @@ async function onAuthReady() {
    ADMIN · CRUD completo de membros
    ============================================ */
 let _adminEditingId = null;
+let _adminEditingEquipe = '';
 let _adminDeleteId = null;
 let _adminMembersCache = [];
 let _adminPermCache = [];
@@ -588,6 +589,7 @@ function closeMemberModal() {
   if (overlay) overlay.classList.remove('open');
   if (modal) modal.classList.remove('open');
   _adminEditingId = null;
+  _adminEditingEquipe = '';
 }
 
 function openDeleteModal() {
@@ -612,6 +614,7 @@ function resetMemberForm() {
   ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const selects = ['adminMemberRole', 'adminMemberTeam'];
   selects.forEach(id => { const el = document.getElementById(id); if (el) el.selectedIndex = 0; });
+  _adminEditingEquipe = '';
   document.getElementById('adminMemberPessoa').value = 'Pessoa Física';
   ['adminMemberNotifEmail', 'adminMemberNotifWhats', 'adminMemberNotifSound'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = 'Sim';
@@ -656,8 +659,12 @@ function fillMemberForm(member) {
   document.getElementById('adminMemberName').value = member.nome || '';
   document.getElementById('adminMemberEmail').value = member.email || '';
   document.getElementById('adminMemberPassword').value = '';
-  setSelectValue('adminMemberRole', member.cargo);
+  // Cargo legado fora da lista oficial migra ('Atendimento'→'Atendente',
+  // 'Contador'/'Auxiliar'→'Membro'); equipe legada fica em 'Selecione…'
+  // e é preservada no save via _adminEditingEquipe.
+  setSelectValue('adminMemberRole', member.cargo ? (canonPerfil(member.cargo) || 'Membro') : '');
   setSelectValue('adminMemberTeam', member.equipe);
+  _adminEditingEquipe = member.equipe || '';
   document.getElementById('adminMemberPessoa').value = member.pessoa || 'Pessoa Física';
   document.getElementById('adminMemberCPF').value = member.cpf || '';
   // Converter dd/mm/aaaa para YYYY-MM-DD se necessário (dados antigos)
@@ -727,7 +734,7 @@ async function handleMemberSave() {
       // ═══ EDITAR ═══
       console.log('[Admin] Editando membro:', _adminEditingId);
       const payload = {
-        nome: name, email, cargo: role || '', equipe: team || '',
+        nome: name, email, cargo: role || '', equipe: team || _adminEditingEquipe || '',
         pessoa: pessoa || 'Pessoa Física', cpf: cpf || '',
         data_aniversario: birth, telefone: phone || '',
         notificacao_email: notifEmail === 'Sim',
@@ -870,14 +877,15 @@ function bindRowActions(row, member) {
 /* ── Renderizar row ── */
 function renderMemberRow(m) {
   const initials = (m.nome || '').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
-  const badgeClass = m.cargo === 'Administrador' ? 'admin-badge-admin' :
-    m.cargo === 'Marketing' ? 'admin-badge-marketing' : 'admin-badge-attend';
+  const cargoLabel = cargoExibicao(m.cargo) || '—';
+  const badgeClass = cargoLabel === 'Administrador' ? 'admin-badge-admin' :
+    cargoLabel === 'Marketing' ? 'admin-badge-marketing' : 'admin-badge-attend';
   const row = document.createElement('tr');
   row.dataset.memberId = m.id;
   row.innerHTML = `
     <td><div class="admin-user-cell"><span class="admin-avatar">${escapeHtml(initials)}</span> ${escapeHtml(m.nome || '')}</div></td>
     <td>${escapeHtml(m.email || '')}</td>
-    <td><span class="admin-badge ${badgeClass}">${escapeHtml(m.cargo || '—')}</span></td>
+    <td><span class="admin-badge ${badgeClass}">${escapeHtml(cargoLabel)}</span></td>
     <td><span class="admin-badge admin-badge-team">${escapeHtml(m.equipe || '—')}</span></td>
     <td><span class="admin-status admin-status-ativo">${escapeHtml(m.status || 'Ativo')}</span></td>
     <td>${m.created_at ? new Date(m.created_at).toLocaleDateString('pt-BR') : '—'}</td>
@@ -1309,10 +1317,9 @@ async function handlePermMatrixSave() {
 
     // 3. Propaga para membros_permissoes (cada membro herda do seu cargo)
     for (const member of _adminMembersCache) {
-      const perfilNorm = (member.cargo || '').toLowerCase().replace(' ', '_');
-      const perfilMap = { administrador: 'Administrador', atendente: 'Atendente', marketing: 'Marketing', pre_vendas: 'Pre Vendas', membro: 'Membro' };
-      const perfilName = perfilMap[perfilNorm];
+      const perfilName = canonPerfil(member.cargo);
       if (!perfilName) continue;
+      const perfilNorm = normPerfilVis(perfilName);
 
       // Merge: PERFIL_DEFAULTS (already updated by matrix save) + CRUD from matrix
       const profileDefaults = PERFIL_DEFAULTS[perfilName] || {};
@@ -1956,14 +1963,40 @@ async function handleServicoDelete() {
 /* ============================================
    ADMIN · ABA CADÊNCIAS (Visibilidade por Perfil)
    ============================================ */
-const CADENCIA_VIS_PERFIS = ['Administrador', 'Membro', 'Pré Vendas', 'Atendente'];
+const CADENCIA_VIS_PERFIS = ['Administrador', 'Atendente', 'Marketing', 'Pré Vendas', 'Membro'];
+
+/* ── Perfis oficiais (fonte única) ──────────────────────────
+   Storage canônico: 'Pre Vendas' (sem acento — igual PERFIL_DEFAULTS e
+   perfis_permissoes); exibição: 'Pré Vendas'. Cargos legados
+   ('Atendimento', 'Contador', 'Auxiliar') são normalizados por canonPerfil(). */
+const PERFIS_OFICIAIS = ['Administrador', 'Atendente', 'Marketing', 'Pre Vendas', 'Membro'];
+
+/* Normaliza o nome do perfil para comparação (acentos/caixa/espaços),
+   cobrindo dados legados como 'Pré Vendas' x perfil canônico 'Pre Vendas'
+   e 'Atendimento' x 'Atendente' */
+function normPerfilVis(p) {
+  const k = (p || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '_');
+  return k === 'atendimento' ? 'atendente' : k;
+}
+
+/* Converte cargo/perfil gravado para o perfil oficial canônico.
+   Retorna null para vazio/desconhecido (callers aplicam o fallback). */
+function canonPerfil(p) {
+  const k = normPerfilVis(p);
+  return PERFIS_OFICIAIS.find(f => normPerfilVis(f) === k) || null;
+}
+
+/* Valor de cargo para exibição (canoniza legados; mantém desconhecidos como estão) */
+function cargoExibicao(cargo) {
+  return cargo ? (canonPerfil(cargo) || cargo) : null;
+}
 
 async function loadCadenciaVisibilityAdmin() {
   if (!_supabase) return;
   const tbody = document.getElementById('adminCadenciaVisBody');
   if (!tbody) return;
 
-  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--muted-text)">Carregando...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--muted-text)">Carregando...</td></tr>';
 
   const visData = await fetchCadenciaVisibility();
 
@@ -1975,10 +2008,10 @@ async function loadCadenciaVisibilityAdmin() {
     visMap: {}
   }));
 
-  // Match visibility records by UUID
+  // Match visibility records by UUID (chave normalizada p/ dados legados)
   visData.forEach(v => {
     const cad = allCadences.find(c => c.uuid === v.cadencia_id);
-    if (cad) cad.visMap[v.perfil] = v.visible;
+    if (cad) cad.visMap[normPerfilVis(v.perfil)] = v.visible;
   });
 
   renderCadenciaVisibilityTable(allCadences);
@@ -1989,7 +2022,7 @@ function renderCadenciaVisibilityTable(allCadences) {
   if (!tbody) return;
 
   if (allCadences.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted-text)">Nenhuma cadência encontrada</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted-text)">Nenhuma cadência encontrada</td></tr>';
     return;
   }
 
@@ -2001,7 +2034,7 @@ function renderCadenciaVisibilityTable(allCadences) {
     const tr = document.createElement('tr');
     const checksHtml = CADENCIA_VIS_PERFIS.map(perfil => {
       // Default to visible (checked) unless explicitly set to false
-      const checked = perfil === 'Administrador' || cad.visMap[perfil] !== false;
+      const checked = perfil === 'Administrador' || cad.visMap[normPerfilVis(perfil)] !== false;
       const disabled = perfil === 'Administrador';
       return `<td style="text-align:center">
         <input type="checkbox" class="cad-vis-check" data-cadencia-uuid="${cad.uuid || ''}" data-perfil="${perfil}" ${checked ? 'checked' : ''} ${disabled ? 'disabled title="Administrador sempre vê todas"' : ''} ${!cad.uuid ? 'disabled title="Cadência não encontrada no banco"' : ''} />
@@ -2332,12 +2365,12 @@ function renderCadenciaVisibilityChecks(existingVis = {}) {
   const container = document.getElementById('cadenciaVisibilidadeChecks');
   if (!container) return;
 
-  const perfis = CADENCIA_VIS_PERFIS || ['Administrador', 'Membro', 'Pré Vendas', 'Atendente'];
+  const perfis = CADENCIA_VIS_PERFIS || ['Administrador', 'Atendente', 'Marketing', 'Pré Vendas', 'Membro'];
   
   container.innerHTML = perfis.map(perfil => {
     // Administrador sempre vê tudo (checkbox desabilitado e marcado)
     const isAdmin = perfil === 'Administrador';
-    const checked = isAdmin || existingVis[perfil] !== false; // default true para não-admin
+    const checked = isAdmin || existingVis[normPerfilVis(perfil)] !== false; // default true para não-admin
     const disabled = isAdmin;
     
     return `
@@ -2381,10 +2414,10 @@ async function openCadenciaModalForEdit(cadenciaId) {
     });
   }
 
-  // Load existing visibility settings for this cadencia
+  // Load existing visibility settings for this cadencia (chave normalizada p/ dados legados)
   const visData = _cadenciaVisibilityData.filter(v => v.cadencia_id === cadenciaId);
   const visMap = {};
-  visData.forEach(v => { visMap[v.perfil] = v.visible; });
+  visData.forEach(v => { visMap[normPerfilVis(v.perfil)] = v.visible; });
   renderCadenciaVisibilityChecks(visMap);
 
   setCadenciaFormMode('edit');
@@ -3207,8 +3240,9 @@ async function loadTeamMembers() {
 
   list.innerHTML = members.map(m => {
     const initials = (m.nome || '').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
-    const badgeClass = m.cargo === 'Administrador' ? 'tag-blue' :
-      m.cargo === 'Marketing' ? 'tag-purple' : 'tag-green';
+    const cargoLabel = cargoExibicao(m.cargo) || 'Membro';
+    const badgeClass = cargoLabel === 'Administrador' ? 'tag-blue' :
+      cargoLabel === 'Marketing' ? 'tag-purple' : 'tag-green';
     const avatarContent = m.foto_url
       ? `<img src="${m.foto_url}" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover" />`
       : initials;
@@ -3219,7 +3253,7 @@ async function loadTeamMembers() {
         <p class="client-name">${escapeHtml(m.nome || '')}</p>
         <p class="client-cnpj">${escapeHtml(m.email || '')}</p>
       </div>
-      <span class="tag ${badgeClass}">${escapeHtml(m.cargo || 'Membro')}</span>
+      <span class="tag ${badgeClass}">${escapeHtml(cargoLabel)}</span>
     </li>`;
   }).join('');
 }
@@ -3594,10 +3628,10 @@ async function loadUserPermissions() {
   }
 
   // Step 2: Determine user's profile — use cargo from membros table as authoritative source
-  const validProfiles = ['Administrador', 'Atendente', 'Marketing', 'Pre Vendas', 'Membro'];
-  let perfil = currentUser.perfil;
-  if (!perfil || !validProfiles.includes(perfil)) {
-    console.warn('[Perm] Invalid or missing perfil:', JSON.stringify(perfil), '— falling back to Membro');
+  // canonPerfil normaliza legados: 'Atendimento'→'Atendente', 'Pré Vendas'→'Pre Vendas', etc.
+  let perfil = canonPerfil(currentUser.perfil);
+  if (!perfil) {
+    console.warn('[Perm] Invalid or missing perfil:', JSON.stringify(currentUser.perfil), '— falling back to Membro');
     perfil = 'Membro';
   }
   currentUser.perfil = perfil;
@@ -6019,13 +6053,14 @@ function getVisibleCadences(centroCustoId) {
     return [];
   }
   
-  // Apply visibility filtering for non-admins
+  // Apply visibility filtering for non-admins (comparação normalizada p/ dados legados)
   let visible = dbCadencias.map(dbCadenciaToCrmFormat);
   
   if (!isCurrentUserAdmin() && _cadenciaVisibilityData.length > 0) {
     const perfil = currentUser.perfil || 'Atendente';
+    const perfilNorm = normPerfilVis(perfil);
     const blockedUuids = _cadenciaVisibilityData
-      .filter(v => v.perfil === perfil && v.visible === false)
+      .filter(v => normPerfilVis(v.perfil) === perfilNorm && v.visible === false)
       .map(v => v.cadencia_id);
     if (blockedUuids.length > 0) {
       visible = visible.filter(c => !blockedUuids.includes(c.id));
@@ -6255,6 +6290,10 @@ async function refreshCadenciasCache() {
   try {
     await loadDbCadencias();          // colunas e filtros do CRM
     _cadenciaVisibilityData = await fetchCadenciaVisibility();
+    // Filtro ativo não pode apontar para cadência que o perfil não vê mais
+    if (activeCadenceFilter && !getVisibleCadences().some(c => c.id === activeCadenceFilter)) {
+      activeCadenceFilter = null;
+    }
     populateCadenceFilter();
     await rebuildCadenciaMaps();
   } catch (err) {
@@ -6709,8 +6748,10 @@ function renderKanban() {
   if (!board) return;
 
   const allLeads = getSearchFilteredLeads();
+  const visibleCadences = getVisibleCadences(currentCrmEmpresaFilter);
+  const visibleCadenceIds = new Set(visibleCadences.map(c => c.id));
 
-  board.innerHTML = getVisibleCadences(currentCrmEmpresaFilter).map(c => {
+  board.innerHTML = visibleCadences.map(c => {
     const list = allLeads.filter(l => l.status === c.id);
     const total = list.length;
     const totalFat = list.reduce((a, l) => a + (Number(l.honorarios) || 0), 0);
@@ -6753,7 +6794,8 @@ function renderKanban() {
   bindDropZones();
   _initBoardAutoScroll();
   bindLoadMore();
-  updateKanbanMeta(allLeads);
+  // Total/valor do Pipeline contam apenas leads de cadências visíveis para o perfil
+  updateKanbanMeta(allLeads.filter(l => visibleCadenceIds.has(l.status)));
 }
 
 /**
@@ -13117,7 +13159,7 @@ async function selectCalibMember(memberId) {
   const initials = (_calibSelectedMember.nome || '').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
   document.getElementById('calibProfileAvatar').textContent = initials;
   document.getElementById('calibProfileName').textContent = _calibSelectedMember.nome || '—';
-  document.getElementById('calibProfileRole').textContent = _calibSelectedMember.cargo || '—';
+  document.getElementById('calibProfileRole').textContent = cargoExibicao(_calibSelectedMember.cargo) || '—';
 
   document.getElementById('calibLastUpdate').textContent = new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
