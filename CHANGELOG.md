@@ -2,6 +2,35 @@
 
 > Atualização visual aplicada em cima da estrutura existente — sem reconstruir a tela.
 
+## v1.7.0 · 16/10/2026 — Proposta Comercial em PDF (5 páginas A4)
+
+### 🧾 Builder de PDF (`src/lib/contrato/proposta_pdf.js`)
+- Novo módulo que gera as 5 páginas A4 (794×1123px) da Proposta Comercial em HTML/CSS, fiéis ao modelo oficial `PROPOSTA COMERCIAL - IAP-4.pdf`
+- Páginas: **Capa** · **Institucional** · **Tabela Comercial & Custos** (N páginas, 7 itens/máx) · **Serviços Extras** · **Contracapa**
+- Paleta e medidas extraídas pixel-a-pixel do modelo: navy `#002D72`, indigo `#17028A`, banda `#AFC6E5`, badge total `#B82400`, arcos `#F4DFF8`
+- Círculos da capa, seta do ribbon e arcos institucionais renderizados com `<div>`/`border` (sem `<svg>`/`clip-path`, incompatíveis com html2canvas 1.4.1)
+
+### 🎨 Layout fiel ao modelo
+- **Capa**: logo canto-superior-esquerdo, título em Barlow Condensed 600 (123px), marca d'água do loop, "PROPOSTO A:" na base
+- **Institucional**: foto skyline de Fortaleza (canto sup. dir., recorte com alfa), arcos rosé, texto justificado
+- **Tabela**: faixa header `#AFC6E5` com logo/linha/data, ribbon navy com seta, coluna Nº com zebra azul, badge vermelho TOTAL
+- **Extras**: pílula indigo, lista em 2 colunas com divisor, marca d'água do loop à direita, banner amarelo, doodle "chama no ZAP" (imagem) e pill verde do WhatsApp
+- **Contracapa**: logo central, Instagram/site, barra navy com CNPJ à esquerda, pontilhado roxo 6×6 nos cantos
+
+### 🖼️ Assets novos (`public/assets/proposta/`)
+- `skyline-fortaleza.png` — recorte da foto do modelo, branco→transparente
+- `marca-agua-loop.png` — marca d'água da capa
+- `marca-agua-p4.png` — marca d'água da página de extras (recolorida do loop)
+- `chama-no-zap.png` — doodle ilustrado do WhatsApp
+
+### 🔗 Integração
+- `index.html`: fonte Barlow Condensed adicionada ao Google Fonts
+- `app.js`: import + tratamento de `data-tipo="proposta"` (já existente, mantido)
+- CSS dedicado em `styles.css` (seção "ESTILOS DE RENDERIZAÇÃO DO PDF DA PROPOSTA COMERCIAL"), todas as regras com `!important` para sobrescrever o tema
+- Testes: `tests/proposta-comercial.test.js` cobre builder, paginação, markup e assets
+
+---
+
 ## v1.2.0 · 02/06/2026 — Rebrand Blue Contabilidade (anexo 3)
 
 ### 🎨 Tokens atualizados

@@ -20,6 +20,7 @@ import {
 } from './src/lib/contrato/filtros.js';
 import { fmtDateBR, fmtTimeBR, fmtCurrency, numeroExtenso } from './src/lib/contrato/formato.js';
 import { buildContratoBluePro, ehEmpresaBluePro } from './src/lib/contrato/bluepro.js';
+import { buildPropostaComercialPages } from './src/lib/contrato/proposta_pdf.js';
 
 const $ = (s, ctx = document) => ctx.querySelector(s);
 const $$ = (s, ctx = document) => Array.from(ctx.querySelectorAll(s));
@@ -18888,43 +18889,60 @@ async function loadContratoLeads() {
 
 /* ---- Load contratos from Supabase ----- */
 async function loadContratos(filters = {}) {
-  if (!_supabase) return [];
-  let q = _supabase.from('contratos').select('*')
-    .is('deleted_at', null)
-    .order('created_at', { ascending: false });
+  // Fallback local (seguro para extração/isolamento em testes)
+  const locais = () => (typeof _carregarContratosLocais === 'function' ? _carregarContratosLocais() : []);
+  let list = [];
 
-  if (filters.status) q = q.eq('status', filters.status);
-  if (filters.semEmpresa) {
-    q = q.is('centro_custo_id', null);
-  } else if (filters.centroCustoId) {
-    q = q.eq('centro_custo_id', filters.centroCustoId);
-  }
+  if (!_supabase) {
+    // Sem conexão → lista o fallback local (propostas/contratos salvos offline)
+    list = locais();
+  } else {
+    let q = _supabase.from('contratos').select('*')
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false });
 
-  // Isola por empresa: membros veem apenas contratos das próprias empresas
-  // (ou os que eles mesmos criaram). Administradores veem tudo.
-  if (typeof canViewAllData === 'function' && !canViewAllData() && currentUser?.id) {
-    const ids = (currentUser.centro_custo_ids || []).filter(Boolean);
-    const partes = [];
-    if (ids.length) partes.push(`centro_custo_id.in.(${ids.join(',')})`);
-    partes.push(`owner_id.eq.${currentUser.id}`);
-    partes.push(`membro_id.eq.${currentUser.id}`);
-    q = q.or(partes.join(','));
-  }
+    if (filters.status) q = q.eq('status', filters.status);
+    if (filters.semEmpresa) {
+      q = q.is('centro_custo_id', null);
+    } else if (filters.centroCustoId) {
+      q = q.eq('centro_custo_id', filters.centroCustoId);
+    }
 
-  if (filters.mesEvento) {
-    const [y, m] = filters.mesEvento.split('-');
-    const inicio = `${y}-${m}-01`;
-    const fim = `${y}-${m}-31`;
-    q = q.gte('data_evento', inicio).lte('data_evento', fim);
-  }
-  if (filters.busca) {
-    const b = filters.busca.toLowerCase();
-    // We do client-side filtering after fetch for simplicity
-  }
+    // Isola por empresa: membros veem apenas contratos das próprias empresas
+    // (ou os que eles mesmos criaram). Administradores veem tudo.
+    if (typeof canViewAllData === 'function' && !canViewAllData() && currentUser?.id) {
+      const ids = (currentUser.centro_custo_ids || []).filter(Boolean);
+      const partes = [];
+      if (ids.length) partes.push(`centro_custo_id.in.(${ids.join(',')})`);
+      partes.push(`owner_id.eq.${currentUser.id}`);
+      partes.push(`membro_id.eq.${currentUser.id}`);
+      q = q.or(partes.join(','));
+    }
 
-  const { data, error } = await q;
-  if (error) { console.error('[Contratos] Erro ao carregar contratos:', error); return []; }
-  let list = data || [];
+    if (filters.mesEvento) {
+      const [y, m] = filters.mesEvento.split('-');
+      const inicio = `${y}-${m}-01`;
+      const fim = `${y}-${m}-31`;
+      q = q.gte('data_evento', inicio).lte('data_evento', fim);
+    }
+    if (filters.busca) {
+      const b = filters.busca.toLowerCase();
+      // We do client-side filtering after fetch for simplicity
+    }
+
+    const { data, error } = await q;
+    if (error) { console.error('[Contratos] Erro ao carregar contratos:', error); return locais(); }
+    list = data || [];
+
+    // Mescla propostas salvas no fallback local que ainda não estão no banco
+    // (criadas quando o Supabase falhou) para não sumirem da listagem.
+    const idsBanco = new Set(list.map(c => c.id));
+    const pendentesLocais = locais().filter(c => c && c.id && !idsBanco.has(c.id));
+    if (pendentesLocais.length) {
+      list = [...list, ...pendentesLocais].sort((a, b) =>
+        String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    }
+  }
 
   if (filters.busca) {
     list = list.filter(c => matchBuscaTexto(filters.busca, {
@@ -18942,6 +18960,111 @@ async function createContratoViaRPC(payload) {
   const { data, error } = await _supabase.rpc('create_contrato_with_number', { p_data: payload });
   if (error) throw error;
   return data;
+}
+
+/* ---- Fallback local (localStorage) de contratos/propostas -----
+   Usado quando o Supabase está indisponível ou o insert falha, para a
+   proposta gerada ainda aparecer na tabela de Contratos. */
+const _CONTRATOS_LOCAIS_KEY = 'crm_contratos';
+
+function _carregarContratosLocais() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(_CONTRATOS_LOCAIS_KEY) || '[]');
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+
+function _gravarContratosLocais(lista) {
+  try { localStorage.setItem(_CONTRATOS_LOCAIS_KEY, JSON.stringify(lista)); }
+  catch (e) { console.warn('[Contratos] Falha ao gravar localStorage:', e); }
+}
+
+function _salvarPropostaLocal(payload) {
+  const registro = {
+    ...payload,
+    id: payload.id || (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `local-${Date.now()}`),
+    created_at: payload.created_at || new Date().toISOString(),
+    _local: true
+  };
+  const lista = _carregarContratosLocais();
+  lista.unshift(registro);
+  _gravarContratosLocais(lista);
+  return registro;
+}
+
+function _excluirContratoLocal(id) {
+  _gravarContratosLocais(_carregarContratosLocais().filter(c => c.id !== id));
+}
+
+function _gerarNumeroProposta() {
+  return `PROP-${Date.now().toString().slice(-4)}`;
+}
+
+/* Monta o payload de proposta com as colunas REAIS da tabela contratos.
+   A RPC create_contrato_with_number IGNORA tipo_contrato/pdf_storage_path,
+   por isso a proposta é gravada por insert direto (com numero PROP-XXXX). */
+function _montarPropostaPayload(dados) {
+  const agora = new Date().toISOString();
+  return {
+    numero_contrato: _gerarNumeroProposta(),
+    contratante_nome: dados.propostoA,
+    lead_id: dados.leadId || null,
+    centro_custo_id: dados.centroCustoId || null,
+    tipo_contrato: 'proposta',
+    status: 'gerado',
+    valor_total: dados.valorTotal,
+    quantidade_parcelas: 1,
+    servicos: {
+      basesProjeto: dados.basesProjeto || '',
+      tituloPeriodo: dados.tituloPeriodo || '',
+      itens: (dados.itens || []).map(i => ({
+        descricao: i.descricao,
+        quantidade: i.quantidade,
+        valor_unitario: i.valor_unitario,
+        acoes: i.acoes,
+        subtotal: i.subtotal
+      }))
+    },
+    descricao_servicos: dados.descricaoServicos || 'Proposta Comercial',
+    data_evento: dados.dataProposta,
+    data_emissao: agora.split('T')[0],
+    conteudo_contrato: dados.htmlContent,
+    pdf_storage_path: dados.pdfStoragePath || null,
+    gerado_em: agora,
+    membro_id: currentUser?.id || null,
+    owner_id: currentUser?.id || null,
+    updated_at: agora
+  };
+}
+
+/* Persiste a proposta: insert direto no Supabase com retries (número
+   duplicado / coluna inexistente) e queda para localStorage se tudo falhar. */
+async function _salvarPropostaComoContrato(payloadBase) {
+  if (_supabase) {
+    let payload = { ...payloadBase };
+    for (let tentativa = 0; tentativa < 4; tentativa++) {
+      const tentativaPayload = tentativa === 0 ? payload : { ...payload, numero_contrato: _gerarNumeroProposta() };
+      const { data, error } = await _supabase.from('contratos').insert(tentativaPayload).select().single();
+      if (!error && data) return { origem: 'supabase', contrato: data };
+
+      const msg = String(error?.message || '');
+      const det = String(error?.details || '');
+      // Coluna que o banco ainda não tem → remove e repete (mesma lógica do _patchContrato)
+      const mCol = msg.match(/column\s+(?:[\w"]+\.)?"?(\w+)"?\s+does not exist/i)
+        || msg.match(/Could not find the '(\w+)' column/i)
+        || det.match(/column\s+(?:[\w"]+\.)?"?(\w+)"?\s+does not exist/i);
+      if (mCol && Object.prototype.hasOwnProperty.call(payload, mCol[1])) {
+        console.warn('[Proposta] Coluna ausente — removendo do INSERT e repetindo:', mCol[1]);
+        delete payload[mCol[1]];
+        continue;
+      }
+      // Numero duplicado → novo número e repete
+      if (error?.code === '23505') continue;
+      console.warn('[Proposta] INSERT Supabase falhou, usando localStorage:', error?.message || error);
+      break;
+    }
+  }
+  return { origem: 'local', contrato: _salvarPropostaLocal(payloadBase) };
 }
 
 /* PATCH com queda automática de colunas que o banco ainda não tem   (PGRST204: "column ... does not exist" / "Could not find the 'x' column"):
@@ -19072,22 +19195,26 @@ function renderContratosTable(list) {
   }
 
   tbody.innerHTML = list.map(c => {
-    const servicoDesc = c.descricao_servicos || (Array.isArray(c.servicos) ? c.servicos.join(', ') : '') || '—';
+    const servicoDesc = _textoServicosContrato(c) || '—';
     const dataEvento = fmtDateBR(c.data_evento);
     const geradoEm = c.gerado_em ? new Date(c.gerado_em).toLocaleDateString('pt-BR') : '—';
     const valor = fmtCurrency(c.valor_total);
-    const pdfBtn = c.pdf_storage_path
-      ? `<button class="btn-ghost btn-sm" onclick="contratoDownloadPDF('${c.id}')" title="Baixar PDF" aria-label="Baixar PDF"><i data-lucide="download"></i></button>`
-      : `<button class="btn-ghost btn-sm" onclick="contratoGeneratePDF('${c.id}')" title="Gerar PDF" aria-label="Gerar PDF"><i data-lucide="file-text"></i></button>`;
+    const ehProposta = c.tipo_contrato === 'proposta';
+    // Proposta → visualizar/baixar o PDF gerado; contrato → baixar ou gerar
+    const pdfBtn = ehProposta
+      ? `<button class="btn-ghost btn-sm" onclick="contratoVerPropostaPDF('${c.id}')" title="Visualizar / Baixar PDF" aria-label="Visualizar PDF da proposta"><i data-lucide="eye"></i></button>`
+      : c.pdf_storage_path
+        ? `<button class="btn-ghost btn-sm" onclick="contratoDownloadPDF('${c.id}')" title="Baixar PDF" aria-label="Baixar PDF"><i data-lucide="download"></i></button>`
+        : `<button class="btn-ghost btn-sm" onclick="contratoGeneratePDF('${c.id}')" title="Gerar PDF" aria-label="Gerar PDF"><i data-lucide="file-text"></i></button>`;
 
     const canDelete = canManageContratos();
-    const deleteAllowed = ['rascunho', 'cancelado'].includes(c.status);
+    const deleteAllowed = ['rascunho', 'cancelado'].includes(c.status) || ehProposta;
     const deleteDisabled = canDelete && !deleteAllowed;
     const deleteTitle = deleteDisabled
       ? 'Não é possível excluir contratos com este status'
-      : 'Excluir contrato';
+      : ehProposta ? 'Excluir proposta' : 'Excluir contrato';
     const deleteBtn = canDelete
-      ? `<button class="btn-ghost btn-sm${deleteDisabled ? ' btn-disabled' : ''}" onclick="contratoExcluir('${c.id}', '${c.numero_contrato || ''}', '${c.contratante_nome || ''}', '${c.status}')" title="${deleteTitle}" aria-label="${deleteTitle}"${deleteDisabled ? ' disabled' : ''}><i data-lucide="trash-2"></i></button>`
+      ? `<button class="btn-ghost btn-sm${deleteDisabled ? ' btn-disabled' : ''}" onclick="contratoExcluir('${c.id}', '${c.numero_contrato || ''}', '${c.contratante_nome || ''}', '${c.status}', '${c.tipo_contrato || ''}')" title="${deleteTitle}" aria-label="${deleteTitle}"${deleteDisabled ? ' disabled' : ''}><i data-lucide="trash-2"></i></button>`
       : '';
 
     const nomeEmpresa = c.centro_custo_id
@@ -19974,6 +20101,15 @@ async function openNovoContratoModal(opts = {}) {
 
 /* ---- Open modal to edit an existing contrato ----- */
 async function contratoEdit(id) {
+  // Proposta Comercial → fluxo de edição próprio (modal de proposta), e não
+  // o modal de contrato de eventos (que falhava com "Erro ao carregar contrato")
+  const registro = (_contratosData || []).find(c => c && c.id === id)
+    || _carregarContratosLocais().find(c => c && c.id === id);
+  if (registro?.tipo_contrato === 'proposta') {
+    await abrirModalEdicaoProposta(id);
+    return;
+  }
+
   if (!_supabase) return;
   const { data, error } = await _supabase.from('contratos').select('*').eq('id', id).single();
   if (error || !data) { toast('Erro ao carregar contrato.', 'error'); return; }
@@ -20654,6 +20790,39 @@ async function contratoDownloadPDF(id) {
   window.open(signedData.signedUrl, '_blank');
 }
 
+/* Abre o PDF de uma proposta: URL assinada do Storage (quando houver upload)
+   ou prévia do HTML salvo (conteudo_contrato) — cobre o fallback local. */
+async function contratoVerPropostaPDF(id) {
+  let c = (_contratosData || []).find(x => x.id === id);
+
+  if (!c && _supabase) {
+    const { data, error } = await _supabase
+      .from('contratos')
+      .select('pdf_storage_path, conteudo_contrato, contratante_nome')
+      .eq('id', id)
+      .single();
+    if (!error && data) c = data;
+  }
+
+  if (_supabase && c?.pdf_storage_path) {
+    const { data: signedData, error: signedErr } = await _supabase.storage
+      .from('contratos')
+      .createSignedUrl(c.pdf_storage_path, 600);
+    if (!signedErr && signedData?.signedUrl) {
+      window.open(signedData.signedUrl, '_blank');
+      return;
+    }
+    console.warn('[Proposta] URL assinada falhou:', signedErr?.message);
+  }
+
+  if (c?.conteudo_contrato) {
+    _abrirPreviewContrato(c.conteudo_contrato, { somenteLeitura: true });
+    return;
+  }
+
+  toast('PDF da proposta indisponível.', 'error');
+}
+
 /* ---- Generate PDF from current modal form ----- */
 async function contratoGenerateFromModal() {
   const missing = validateContratoForm();
@@ -20854,9 +21023,10 @@ async function _confirmContratoCancel() {
 let _contratoDeleteTargetId = null;
 let _contratoDeleteTargetStatus = null;
 
-function contratoExcluir(id, numero, contratante, status) {
+function contratoExcluir(id, numero, contratante, status, tipo = '') {
   if (!canManageContratos()) return;
-  if (!['rascunho', 'cancelado'].includes(status)) {
+  const ehProposta = tipo === 'proposta';
+  if (!ehProposta && !['rascunho', 'cancelado'].includes(status)) {
     toast('Não é possível excluir contratos com este status.', 'error');
     return;
   }
@@ -20892,14 +21062,25 @@ function _closeContratoDeleteModal() {
 
 async function _confirmContratoDelete() {
   if (!_contratoDeleteTargetId) return;
+  const id = _contratoDeleteTargetId;
+  const contrato = (_contratosData || []).find(c => c.id === id);
+  const numero = contrato?.numero_contrato || '';
+  const storagePath = contrato?.assinado_storage_path;
+  const ehLocal = !!contrato?._local || (!contrato && String(id).startsWith('local-'));
+
+  // Proposta salva só no localStorage (fallback offline) → remove local
+  if (ehLocal && !_supabase) {
+    _closeContratoDeleteModal();
+    _excluirContratoLocal(id);
+    await refreshContratosTable();
+    toast(`Proposta ${numero} excluída com sucesso!`, 'success');
+    return;
+  }
+
   if (!_supabase) {
     toast('Erro de conexão. Recarregue a página.', 'error');
     return;
   }
-  const id = _contratoDeleteTargetId;
-  const contrato = _contratosData.find(c => c.id === id);
-  const numero = contrato?.numero_contrato || '';
-  const storagePath = contrato?.assinado_storage_path;
   _closeContratoDeleteModal();
   try {
     // 1. Remover PDF assinado do Storage (se existir)
@@ -20930,6 +21111,9 @@ async function _confirmContratoDelete() {
         throw error;
       }
     }
+
+    // 2b. Se existir cópia local (fallback), remove também
+    _excluirContratoLocal(id);
 
     // 3. Recarregar do banco para refletir o estado real
     await refreshContratosTable();
@@ -21344,6 +21528,706 @@ async function _contratoUploadAssinado() {
   }, 400);
 }
 
+/* ==========================================================================
+   MÓDULO: PROPOSTA COMERCIAL EM PDF
+   ========================================================================== */
+
+let _propostaItens = [];
+
+/* Estado de edição de uma proposta já existente (id/numero preservados) */
+let _propostaEditandoId = null;
+let _propostaEditandoNumero = null;
+
+/* Normaliza a coluna `servicos` de uma proposta para o formulário de edição.
+   Formatos aceitos:
+   - wrapper { basesProjeto, tituloPeriodo, itens }  (propostas novas)
+   - array de strings / de objetos { descricao, ... } (registros antigos)
+   - vazio → usa descricao_servicos como título */
+function _normalizaServicosProposta(c) {
+  const raw = c && c.servicos;
+
+  if (raw && typeof raw === 'object' && !Array.isArray(raw) && Array.isArray(raw.itens)) {
+    return {
+      basesProjeto: raw.basesProjeto || '',
+      tituloPeriodo: raw.tituloPeriodo || '',
+      itens: raw.itens.filter(i => i && typeof i === 'object')
+    };
+  }
+
+  if (Array.isArray(raw)) {
+    const itens = raw
+      .map(s => (typeof s === 'string' ? { descricao: s, quantidade: 1, valor_unitario: 0, acoes: 1, subtotal: 0 } : (s && s.descricao ? s : null)))
+      .filter(Boolean);
+    return {
+      basesProjeto: '',
+      tituloPeriodo: c?.descricao_servicos || (itens[0]?.descricao ?? ''),
+      itens
+    };
+  }
+
+  return {
+    basesProjeto: '',
+    tituloPeriodo: c?.descricao_servicos || '',
+    itens: []
+  };
+}
+
+/* Texto exibido na coluna "Serviços" da tabela (aceita os 3 formatos acima). */
+function _textoServicosContrato(c) {
+  const { itens } = _normalizaServicosProposta(c);
+  if (itens.length) {
+    const txt = itens.map(i => i.descricao || '').filter(Boolean).join(', ');
+    if (txt) return txt;
+  }
+  return c?.descricao_servicos || '';
+}
+
+function _propostaCriarItemVazio() {
+  return {
+    descricao: '',
+    quantidade: 1,
+    valor_unitario: 0,
+    acoes: 1,
+    subtotal: 0
+  };
+}
+
+function propostaAdicionarItem(item = null) {
+  _propostaItens.push(item || _propostaCriarItemVazio());
+  propostaRenderizarItens();
+  propostaRecalcularTotais();
+}
+
+function propostaRemoverItem(index) {
+  _propostaItens.splice(index, 1);
+  if (_propostaItens.length === 0) {
+    _propostaItens.push(_propostaCriarItemVazio());
+  }
+  propostaRenderizarItens();
+  propostaRecalcularTotais();
+}
+
+function propostaRecalcularTotais() {
+  let total = 0;
+  _propostaItens.forEach((item, idx) => {
+    const qde = Math.max(parseInt(item.quantidade) || 0, 0);
+    const unit = parseMoeda(item.valor_unitario);
+    const acoes = Math.max(parseInt(item.acoes) || 0, 0);
+    const sub = Math.round(qde * unit * acoes * 100) / 100;
+    item.subtotal = sub;
+    total += sub;
+
+    const subEl = document.getElementById(`propostaSubtotal_${idx}`);
+    if (subEl) subEl.textContent = fmtCurrency(sub);
+  });
+
+  total = Math.round(total * 100) / 100;
+  const totalDisplay = document.getElementById('propostaTotalDisplay');
+  if (totalDisplay) totalDisplay.textContent = fmtCurrency(total);
+  return total;
+}
+
+function propostaRenderizarItens() {
+  const tbody = document.getElementById('propostaItensTbody');
+  if (!tbody) return;
+
+  tbody.innerHTML = _propostaItens.map((item, idx) => {
+    return `
+      <tr data-index="${idx}">
+        <td style="text-align: center; font-weight: 600;">${idx + 1}</td>
+        <td>
+          <input type="text" class="proposta-input-table proposta-item-desc" 
+                 placeholder="Ex.: PROMOTORAS - NORTH SHOPPING" 
+                 value="${escapeHtml(item.descricao || '')}" 
+                 data-idx="${idx}" data-field="descricao" />
+        </td>
+        <td>
+          <input type="number" class="proposta-input-table proposta-item-qde" 
+                 min="1" value="${item.quantidade || 1}" 
+                 data-idx="${idx}" data-field="quantidade" />
+        </td>
+        <td>
+          <input type="text" class="proposta-input-table proposta-item-unit" 
+                 placeholder="0,00" 
+                 value="${item.valor_unitario !== undefined && item.valor_unitario !== null ? item.valor_unitario : ''}" 
+                 data-idx="${idx}" data-field="valor_unitario" />
+        </td>
+        <td>
+          <input type="number" class="proposta-input-table proposta-item-acoes" 
+                 min="1" value="${item.acoes || 1}" 
+                 data-idx="${idx}" data-field="acoes" />
+        </td>
+        <td class="proposta-col-subtotal-val" id="propostaSubtotal_${idx}">
+          ${fmtCurrency(item.subtotal || 0)}
+        </td>
+        <td style="text-align: center;">
+          <button type="button" class="btn-ghost btn-sm text-red-500 hover:text-red-700" 
+                  onclick="propostaRemoverItem(${idx})" title="Remover item" aria-label="Remover item ${idx + 1}">
+            <i data-lucide="trash-2"></i>
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  // Bind input listeners
+  tbody.querySelectorAll('.proposta-input-table').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      const field = e.target.dataset.field;
+      let val = e.target.value;
+      if (field === 'quantidade' || field === 'acoes') {
+        val = Math.max(parseInt(val) || 1, 1);
+      } else if (field === 'valor_unitario') {
+        val = parseMoeda(val);
+      }
+      if (_propostaItens[idx]) {
+        _propostaItens[idx][field] = val;
+      }
+      propostaRecalcularTotais();
+    });
+  });
+
+  if (typeof initIcons === 'function') initIcons();
+}
+
+function _renderPropostaLeadOptions(filter = '') {
+  const container = document.getElementById('propostaLeadSearchOptions');
+  if (!container) return;
+  const b = (filter || '').trim();
+  const list = b ? _contratosLeadsList.filter(l =>
+    matchBuscaTexto(b, {
+      textos: [l.nome, l.cpf_cnpj || l.cpf || l.cnpj],
+      telefones: [l.telefone]
+    })
+  ) : _contratosLeadsList;
+
+  if (!list.length) {
+    container.innerHTML = '<div class="lead-searchable__empty">Nenhum lead encontrado.</div>';
+    return;
+  }
+
+  container.innerHTML = list.map(l => {
+    const cpf = l.cpf_cnpj || l.cpf || l.cnpj || '';
+    const tel = l.telefone || '';
+    const meta = [cpf, tel].filter(Boolean).join(' · ');
+    return `<div class="lead-searchable__option" role="option" data-proposta-lead-id="${l.id}">
+      <div class="lead-searchable__option-name">${escapeHtml(l.nome || '—')}</div>
+      ${meta ? `<div class="lead-searchable__option-meta">${escapeHtml(meta)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function _initPropostaLeadSearchable() {
+  const control = document.getElementById('propostaLeadSearchControl');
+  const dropdown = document.getElementById('propostaLeadSearchDropdown');
+  const input = document.getElementById('propostaLeadSearchInput');
+  const options = document.getElementById('propostaLeadSearchOptions');
+  if (!control || !dropdown || !input || !options) return;
+
+  control.addEventListener('click', () => {
+    const isOpen = dropdown.style.display !== 'none';
+    if (isOpen) {
+      dropdown.style.display = 'none';
+      control.setAttribute('aria-expanded', 'false');
+    } else {
+      dropdown.style.display = '';
+      control.setAttribute('aria-expanded', 'true');
+      input.value = '';
+      _renderPropostaLeadOptions('');
+      input.focus();
+    }
+  });
+
+  input.addEventListener('input', () => {
+    _renderPropostaLeadOptions(input.value);
+  });
+
+  options.addEventListener('click', (e) => {
+    const opt = e.target.closest('[data-proposta-lead-id]');
+    if (!opt) return;
+    const leadId = opt.dataset.propostaLeadId;
+    const lead = _contratosLeadsList.find(l => l.id === leadId);
+    if (!lead) return;
+
+    _selectPropostaLead(lead);
+    dropdown.style.display = 'none';
+    control.setAttribute('aria-expanded', 'false');
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!control.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = 'none';
+      control.setAttribute('aria-expanded', 'false');
+    }
+  });
+}
+
+function _selectPropostaLead(lead) {
+  const hidden = document.getElementById('propostaLeadId');
+  const placeholder = document.getElementById('propostaLeadSearchPlaceholder');
+  const valEl = document.getElementById('propostaLeadSearchValue');
+  const inputPropostoA = document.getElementById('propostaPropostoA');
+
+  if (hidden) hidden.value = lead.id || '';
+  if (placeholder) placeholder.style.display = 'none';
+  if (valEl) {
+    valEl.textContent = lead.nome || 'Lead selecionado';
+    valEl.style.display = '';
+  }
+  if (inputPropostoA) {
+    inputPropostoA.value = lead.nome || '';
+  }
+  if (lead.centro_custo_id) {
+    const empresaSelect = document.getElementById('propostaEmpresa');
+    if (empresaSelect && Array.from(empresaSelect.options).some(o => o.value === lead.centro_custo_id)) {
+      empresaSelect.value = lead.centro_custo_id;
+    }
+  }
+}
+
+function _resetPropostaLeadSearchable() {
+  const hidden = document.getElementById('propostaLeadId');
+  const placeholder = document.getElementById('propostaLeadSearchPlaceholder');
+  const valEl = document.getElementById('propostaLeadSearchValue');
+  const dropdown = document.getElementById('propostaLeadSearchDropdown');
+  if (hidden) hidden.value = '';
+  if (placeholder) placeholder.style.display = '';
+  if (valEl) {
+    valEl.textContent = '';
+    valEl.style.display = 'none';
+  }
+  if (dropdown) dropdown.style.display = 'none';
+}
+
+async function abrirModalPropostaComercial(opts = {}) {
+  const modalOverlay = document.getElementById('modalPropostaOverlay');
+  if (!modalOverlay) return;
+
+  // Carrega leads caso ainda não estejam em memória
+  if (!_contratosLeadsList || !_contratosLeadsList.length) {
+    _contratosLeadsList = await loadContratoLeads();
+  }
+
+  // Preenche empresas no select #propostaEmpresa
+  const empresaSelect = document.getElementById('propostaEmpresa');
+  if (empresaSelect) {
+    empresaSelect.innerHTML = '<option value="">Selecione a empresa</option>';
+    const empresas = getContratoEmpresasLista({ incluirTodos: false });
+    empresas.forEach(cc => {
+      const opt = document.createElement('option');
+      opt.value = cc.id;
+      opt.textContent = cc.nome;
+      empresaSelect.appendChild(opt);
+    });
+    // Edição: preserva a empresa já salva na proposta
+    if (opts.centroCustoId && !Array.from(empresaSelect.options).some(o => o.value === opts.centroCustoId)) {
+      const opt = document.createElement('option');
+      opt.value = opts.centroCustoId;
+      opt.textContent = _nomeEmpresaPorId(opts.centroCustoId) || 'Empresa salva';
+      empresaSelect.appendChild(opt);
+    }
+    if (opts.centroCustoId) {
+      empresaSelect.value = opts.centroCustoId;
+    } else {
+      // Se existir Blue PRO, pré-seleciona
+      const bluePro = empresas.find(cc => ehEmpresaBluePro(cc.nome));
+      if (bluePro) {
+        empresaSelect.value = bluePro.id;
+      } else if (empresas.length > 0) {
+        empresaSelect.value = empresas[0].id;
+      }
+    }
+  }
+
+  // Estado de edição (mesma proposta, mesmo id/numero) ou nova proposta
+  _propostaEditandoId = opts.editandoId || null;
+  _propostaEditandoNumero = opts.editandoNumero || null;
+  const ehEdicao = !!_propostaEditandoId;
+
+  const btnGerar = document.getElementById('btnGerarPropostaPdf');
+  if (btnGerar) {
+    btnGerar.innerHTML = ehEdicao
+      ? '<i data-lucide="save"></i> Salvar Alterações / Atualizar PDF'
+      : '<i data-lucide="file-text"></i> Prévia / Gerar PDF';
+  }
+  const modalTitle = document.getElementById('modalPropostaTitle');
+  if (modalTitle) {
+    modalTitle.textContent = ehEdicao
+      ? `Editar Proposta Comercial – ${_propostaEditandoNumero || ''}`
+      : 'Emitir Proposta Comercial';
+  }
+
+  // Reset fields
+  _resetPropostaLeadSearchable();
+  const inputPropostoA = document.getElementById('propostaPropostoA');
+  if (inputPropostoA) inputPropostoA.value = opts.propostoA || '';
+
+  // Vincula o lead salvo (edição) sem sobrescrever o "Proposto a"
+  if (opts.leadId) {
+    const hiddenLead = document.getElementById('propostaLeadId');
+    if (hiddenLead) hiddenLead.value = opts.leadId;
+    const lead = (_contratosLeadsList || []).find(l => l && l.id === opts.leadId);
+    const placeholder = document.getElementById('propostaLeadSearchPlaceholder');
+    const valEl = document.getElementById('propostaLeadSearchValue');
+    if (placeholder) placeholder.style.display = 'none';
+    if (valEl) {
+      valEl.textContent = lead?.nome || opts.propostoA || 'Lead selecionado';
+      valEl.style.display = '';
+    }
+  }
+
+  const inputBases = document.getElementById('propostaBasesProjeto');
+  if (inputBases) inputBases.value = opts.basesProjeto || 'PANFLETAGEM';
+
+  const inputData = document.getElementById('propostaData');
+  if (inputData) inputData.value = opts.data || new Date().toISOString().split('T')[0];
+
+  const inputTitulo = document.getElementById('propostaTituloPeriodo');
+  if (inputTitulo) inputTitulo.value = opts.tituloPeriodo || 'PANFLETAGEM - 10 e 11/10 - 16H ÀS 20H';
+
+  // Reset itens com linhas padrão ou fornecidas
+  _propostaItens = [];
+  if (Array.isArray(opts.itens) && opts.itens.length) {
+    opts.itens.forEach(i => propostaAdicionarItem({
+      descricao: i.descricao || '',
+      quantidade: i.quantidade ?? 1,
+      valor_unitario: i.valor_unitario ?? 0,
+      acoes: i.acoes ?? 1,
+      subtotal: i.subtotal ?? 0
+    }));
+  } else {
+    propostaAdicionarItem({
+      descricao: 'PROMOTORAS - NORTH SHOPPING MARACANAÚ',
+      quantidade: 2,
+      valor_unitario: 150,
+      acoes: 2
+    });
+    propostaAdicionarItem({
+      descricao: 'COORDENAÇÃO - NORTH SHOPPING MARACANAÚ',
+      quantidade: 1,
+      valor_unitario: 180,
+      acoes: 2
+    });
+  }
+
+  modalOverlay.style.display = 'flex';
+  if (typeof initIcons === 'function') initIcons();
+}
+
+/* Abre o modal de Proposta Comercial já preenchido com uma proposta salva,
+   preservando id/numero para atualização (sem duplicar registro). */
+async function abrirModalEdicaoProposta(id) {
+  if (!id) { toast('Proposta não encontrada.', 'error'); return; }
+
+  // 1) Recupera o registro (memória → localStorage → banco)
+  let c = (_contratosData || []).find(x => x && x.id === id);
+  if (!c) c = _carregarContratosLocais().find(x => x && x.id === id);
+  if (!c && _supabase) {
+    const { data, error } = await _supabase.from('contratos').select('*').eq('id', id).single();
+    if (!error && data) c = data;
+  }
+  if (!c) { toast('Proposta não encontrada.', 'error'); return; }
+
+  if (c.tipo_contrato !== 'proposta') {
+    toast('Este registro não é uma Proposta Comercial.', 'error');
+    return;
+  }
+
+  // 2) Recupera campos e itens completos
+  const { basesProjeto, tituloPeriodo, itens } = _normalizaServicosProposta(c);
+
+  // 3) Abre o mesmo modal com tudo preenchido (total recalculado ao adicionar)
+  await abrirModalPropostaComercial({
+    propostoA: c.contratante_nome || '',
+    basesProjeto: basesProjeto || tituloPeriodo || 'PANFLETAGEM',
+    tituloPeriodo: tituloPeriodo || c.descricao_servicos || '',
+    data: paraISODate(c.data_evento) || new Date().toISOString().split('T')[0],
+    leadId: c.lead_id || null,
+    centroCustoId: c.centro_custo_id || null,
+    itens: itens.length ? itens : null,
+    editandoId: c.id,
+    editandoNumero: c.numero_contrato || ''
+  });
+}
+
+/* Atualiza uma proposta existente mantendo id e numero_contrato (PROP-...).
+   Trata o fallback local (localStorage) e o banco. */
+async function _atualizarPropostaExistente(id, payload) {
+  const { numero_contrato: _ignorado, ...patch } = payload;
+  patch.id = id; // id original preservado
+  patch.updated_at = new Date().toISOString();
+
+  const listaLocal = _carregarContratosLocais();
+  const idxLocal = listaLocal.findIndex(c => c && c.id === id);
+
+  // Sem banco → só o registro local
+  if (!_supabase) {
+    if (idxLocal > -1) {
+      listaLocal[idxLocal] = { ...listaLocal[idxLocal], ...patch, id, _local: true };
+      _gravarContratosLocais(listaLocal);
+      return { origem: 'local', contrato: listaLocal[idxLocal] };
+    }
+    return { origem: 'local', contrato: _salvarPropostaLocal({ ...payload, id }) };
+  }
+
+  const { data, error } = await _patchContrato(id, patch);
+  if (!error && data) {
+    // Mantém a cópia local em sincronia (se existir) para a tabela não duplicar
+    if (idxLocal > -1) {
+      listaLocal[idxLocal] = { ...listaLocal[idxLocal], ...patch, id };
+      _gravarContratosLocais(listaLocal);
+    }
+    return { origem: 'supabase', contrato: data };
+  }
+
+  // Registro só existe no fallback local → atualiza lá
+  if (idxLocal > -1) {
+    listaLocal[idxLocal] = { ...listaLocal[idxLocal], ...patch, id, _local: true };
+    _gravarContratosLocais(listaLocal);
+    return { origem: 'local', contrato: listaLocal[idxLocal] };
+  }
+
+  console.warn('[Proposta] Falha ao atualizar no banco:', error?.message || error);
+  return { origem: 'local', contrato: _salvarPropostaLocal({ ...payload, id }) };
+}
+
+function fecharModalPropostaComercial() {
+  const modalOverlay = document.getElementById('modalPropostaOverlay');
+  _propostaEditandoId = null;
+  _propostaEditandoNumero = null;
+  if (!modalOverlay) return;
+  modalOverlay.classList.remove('modal-proposta-overlay--exportando');
+  modalOverlay.style.pointerEvents = '';
+  modalOverlay.style.display = 'none';
+}
+
+function _propostaMarcarExportando(exportando) {
+  const overlay = document.getElementById('modalPropostaOverlay');
+  if (!overlay) return;
+  overlay.classList.toggle('modal-proposta-overlay--exportando', !!exportando);
+  overlay.style.pointerEvents = exportando ? 'none' : 'auto';
+}
+
+async function propostaGerarPDF() {
+  const h2c = window.html2canvas;
+  const { jsPDF } = window.jspdf || {};
+
+  if (typeof h2c !== 'function') {
+    toast('Biblioteca html2canvas não foi carregada.', 'error');
+    return;
+  }
+  if (typeof jsPDF !== 'function') {
+    toast('Biblioteca jsPDF não foi carregada.', 'error');
+    return;
+  }
+
+  const propostoA = document.getElementById('propostaPropostoA')?.value.trim();
+  if (!propostoA) {
+    toast('Informe o nome do cliente / empresa em "Proposto a".', 'warning');
+    document.getElementById('propostaPropostoA')?.focus();
+    return;
+  }
+
+  const centroCustoId = document.getElementById('propostaEmpresa')?.value || null;
+  const basesProjeto = document.getElementById('propostaBasesProjeto')?.value.trim() || '';
+  const dataProposta = document.getElementById('propostaData')?.value || new Date().toISOString().split('T')[0];
+  const tituloPeriodo = document.getElementById('propostaTituloPeriodo')?.value.trim() || basesProjeto || 'PROPOSTA COMERCIAL';
+  const leadId = document.getElementById('propostaLeadId')?.value || null;
+
+  const itensValidos = _propostaItens.filter(i => (i.descricao || '').trim());
+  if (!itensValidos.length) {
+    toast('Adicione pelo menos um item/serviço à proposta.', 'warning');
+    return;
+  }
+
+  const valorTotal = propostaRecalcularTotais();
+  toast('Gerando PDF da Proposta Comercial…', 'info');
+
+  const btnGerar = document.getElementById('btnGerarPropostaPdf');
+  const btnGerarHtmlOriginal = btnGerar ? btnGerar.innerHTML : '';
+  if (btnGerar) {
+    btnGerar.disabled = true;
+    btnGerar.innerHTML = '<span class="proposta-btn-spinner" aria-hidden="true"></span> Gerando PDF...';
+  }
+  _propostaMarcarExportando(true);
+
+  // Monta HTML das páginas da Proposta Comercial
+  const propostaData = {
+    propostoA,
+    basesProjeto,
+    dataProposta,
+    tituloPeriodo,
+    valorTotal,
+    itens: itensValidos
+  };
+
+  const htmlContent = buildPropostaComercialPages(propostaData);
+  const A4_W_PX = 794;
+
+  const exportRoot = document.createElement('div');
+  exportRoot.id = 'propostaPdfExport';
+  exportRoot.style.cssText = `
+    position: fixed !important;
+    top: 0 !important;
+    left: -100000px !important;
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    width: ${A4_W_PX}px !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    z-index: -1 !important;
+  `;
+  exportRoot.innerHTML = htmlContent;
+  document.body.appendChild(exportRoot);
+
+  try {
+    // Espera renderização e fontes
+    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(r => setTimeout(r, 300));
+    if (document.fonts?.ready) {
+      try { await document.fonts.ready; } catch (_) {}
+    }
+
+    const pages = Array.from(exportRoot.querySelectorAll('.proposta-pagina'));
+    if (!pages.length) {
+      toast('Falha ao renderizar páginas do PDF.', 'error');
+      return;
+    }
+
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+    pdf.setProperties({
+      title: `Proposta_Comercial_${propostoA.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
+      author: 'Agência Blue PRO',
+      creator: 'CRM Blue PRO'
+    });
+
+    const A4_W_MM = 210;
+    const A4_H_MM = 297;
+
+    for (let i = 0; i < pages.length; i++) {
+      // Devolve o quadro ao navegador entre páginas para a UI não travar
+      await new Promise(r => setTimeout(r, 0));
+
+      const page = pages[i];
+      page.style.display = 'block';
+      page.style.visibility = 'visible';
+
+      const canvas = await h2c(page, {
+        scale: 2,
+        willReadFrequently: true,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        width: A4_W_PX,
+        height: 1123,
+        windowWidth: A4_W_PX,
+        windowHeight: 1123
+      });
+
+      if (!canvas) continue;
+      const imgData = canvas.toDataURL('image/png');
+      if (i > 0) pdf.addPage('a4', 'portrait');
+      pdf.addImage(imgData, 'PNG', 0, 0, A4_W_MM, A4_H_MM);
+    }
+
+    const pdfBlob = pdf.output('blob');
+    if (!pdfBlob || pdfBlob.size < 1000) {
+      toast('Erro ao gerar arquivo PDF.', 'error');
+      return;
+    }
+
+    const nomeSlug = propostoA.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '');
+    const filename = `Proposta_${nomeSlug}_${dataProposta}_${Date.now()}.pdf`;
+    // Edição reutiliza o mesmo arquivo no Storage (evita órfãos e duplicidade)
+    let storagePath = `${centroCustoId || 'geral'}/${filename}`;
+    if (_propostaEditandoId) {
+      const existente = (_contratosData || []).find(x => x && x.id === _propostaEditandoId)
+        || _carregarContratosLocais().find(x => x && x.id === _propostaEditandoId);
+      if (existente?.pdf_storage_path) storagePath = existente.pdf_storage_path;
+    }
+
+    // Upload Supabase Storage
+    let uploadSucesso = false;
+    if (_supabase) {
+      const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
+      const { error: uploadErr } = await _supabase.storage
+        .from('contratos')
+        .upload(storagePath, pdfFile, { contentType: 'application/pdf', upsert: true });
+
+      if (uploadErr) {
+        console.warn('[Proposta] Falha ao enviar para o storage:', uploadErr);
+      } else {
+        uploadSucesso = true;
+      }
+    }
+
+    // Persistência na listagem de contratos do CRM (Supabase + fallback local)
+    const propostaPayload = _montarPropostaPayload({
+      propostoA,
+      leadId,
+      centroCustoId,
+      valorTotal,
+      itens: itensValidos,
+      basesProjeto,
+      tituloPeriodo,
+      descricaoServicos: tituloPeriodo || basesProjeto || 'Proposta Comercial',
+      dataProposta,
+      htmlContent,
+      pdfStoragePath: uploadSucesso ? storagePath : null
+    });
+
+    // Edição atualiza o MESMO registro (id e numero PROP-... preservados);
+    // nova proposta insere. Nos dois casos o PDF é regenerado.
+    const ehEdicao = !!_propostaEditandoId;
+    const { origem, contrato: contratoSalvo } = ehEdicao
+      ? await _atualizarPropostaExistente(_propostaEditandoId, propostaPayload)
+      : await _salvarPropostaComoContrato(propostaPayload);
+
+    // Download / Abertura do PDF
+    if (uploadSucesso) {
+      const { data: signedData } = await _supabase.storage.from('contratos').createSignedUrl(storagePath, 600);
+      if (signedData?.signedUrl) {
+        window.open(signedData.signedUrl, '_blank');
+      } else {
+        const urlBlob = URL.createObjectURL(pdfBlob);
+        window.open(urlBlob, '_blank');
+      }
+    } else {
+      const urlBlob = URL.createObjectURL(pdfBlob);
+      window.open(urlBlob, '_blank');
+    }
+
+    // Fecha o modal, registra o resultado e atualiza a tabela com os filtros atuais
+    fecharModalPropostaComercial();
+    const numeroProposta = contratoSalvo?.numero_contrato || '';
+    if (ehEdicao) {
+      toast('Proposta comercial atualizada com sucesso!', 'success');
+    } else if (origem === 'supabase') {
+      toast(`Proposta ${numeroProposta} gerada e registrada com sucesso!`, 'success');
+    } else {
+      toast(`Proposta ${numeroProposta} gerada! Registrada localmente (sem conexão com o banco).`, 'warning');
+    }
+    await refreshContratosTable();
+  } catch (err) {
+    console.error('[Proposta] Erro ao gerar PDF:', err);
+    toast('Erro ao gerar proposta: ' + err.message, 'error');
+  } finally {
+    _propostaMarcarExportando(false);
+    if (btnGerar) {
+      btnGerar.disabled = false;
+      btnGerar.innerHTML = btnGerarHtmlOriginal;
+      if (typeof initIcons === 'function') initIcons();
+    }
+    if (exportRoot && document.body.contains(exportRoot)) {
+      document.body.removeChild(exportRoot);
+    }
+  }
+}
+
 async function initContratos() {
   if (_contratosInited) {
     // Repopula a cada visita: centrosCustoData pode ter chegado depois
@@ -21376,16 +22260,27 @@ async function initContratos() {
     opt.addEventListener('click', () => {
       if (opt.disabled) return;
       const tipo = opt.dataset.tipo;
-      // "Contrato Parcelado" só abre o submenu 2x–5x
-      if (tipo === 'parcelado') {
-        _alternaSubmenuParcelado();
-        return;
-      }
+      if (tipo === 'parcelado') { _alternaSubmenuParcelado(); return; }
+      if (tipo === 'proposta') { _fechaMenuNovoContrato(); abrirModalPropostaComercial(); return; }
       const fluxo = ['50', '2', '3', '4', '5'].includes(tipo) ? tipo : '100';
       _fechaMenuNovoContrato();
       openNovoContratoModal({ tipo: fluxo });
     });
   });
+
+  // Bind modal Proposta Comercial
+  document.getElementById('btnFecharPropostaX')?.addEventListener('click', fecharModalPropostaComercial);
+  document.getElementById('btnCancelarProposta')?.addEventListener('click', fecharModalPropostaComercial);
+  document.getElementById('modalPropostaOverlay')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) fecharModalPropostaComercial();
+  });
+  document.getElementById('btnAdicionarItemProposta')?.addEventListener('click', () => {
+    propostaAdicionarItem();
+  });
+  document.getElementById('btnGerarPropostaPdf')?.addEventListener('click', async () => {
+    await propostaGerarPDF();
+  });
+  _initPropostaLeadSearchable();
   document.addEventListener('click', (e) => {
     const wrap = document.getElementById('contratosAddWrap');
     if (wrap && !wrap.contains(e.target)) _fechaMenuNovoContrato();
@@ -21524,9 +22419,17 @@ async function initContratos() {
 window.contratoEdit = contratoEdit;
 window.contratoGeneratePDF = contratoGeneratePDF;
 window.contratoDownloadPDF = contratoDownloadPDF;
+window.contratoVerPropostaPDF = contratoVerPropostaPDF;
 window.contratoAcoes = contratoAcoes;
 window.contratoExcluir = contratoExcluir;
 window._contratoUploadAssinado = _contratoUploadAssinado;
+window.abrirModalPropostaComercial = abrirModalPropostaComercial;
+window.abrirModalEdicaoProposta = abrirModalEdicaoProposta;
+window.fecharModalPropostaComercial = fecharModalPropostaComercial;
+window.propostaAdicionarItem = propostaAdicionarItem;
+window.propostaRemoverItem = propostaRemoverItem;
+window.propostaRecalcularTotais = propostaRecalcularTotais;
+window.propostaGerarPDF = propostaGerarPDF;
 
 // app.js é um módulo (index.html carrega <script type="module">): declarações
 // de topo NÃO ficam em window. Qualquer onclick inline gera ReferenceError se a

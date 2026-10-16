@@ -12412,3 +12412,1005 @@ textarea:focus-visible,
   .desp-table-wrap { display: none; }
   .desp-cards { display: block; padding-top: 2px; }
 }
+
+/* ==========================================================================
+   MODAL DE PROPOSTA COMERCIAL & ESTILOS DO PDF
+   ========================================================================== */
+
+.modal-proposta-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modal-proposta-container {
+  background: #ffffff;
+  color: #1e293b;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 960px;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.45);
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+
+.theme-dark .modal-proposta-container {
+  background: #0f172a;
+  color: #f1f5f9;
+  border-color: #334155;
+}
+
+.modal-proposta-head {
+  padding: 18px 24px;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f8fafc;
+}
+
+.theme-dark .modal-proposta-head {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+.modal-proposta-head-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.modal-proposta-head-title h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
+  color: #0f172a;
+}
+
+.theme-dark .modal-proposta-head-title h2 {
+  color: #f8fafc;
+}
+
+.modal-proposta-head-title p {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin: 2px 0 0;
+}
+
+.theme-dark .modal-proposta-head-title p {
+  color: #94a3b8;
+}
+
+.modal-proposta-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-proposta-section {
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.theme-dark .modal-proposta-section {
+  border-color: #1e293b;
+}
+
+.modal-proposta-section-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #2563eb;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.proposta-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.proposta-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .proposta-grid-2,
+  .proposta-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Tabela dinâmica de itens no modal */
+.proposta-itens-table-wrap {
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 14px;
+}
+
+.theme-dark .proposta-itens-table-wrap {
+  border-color: #334155;
+}
+
+.proposta-itens-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.proposta-itens-table th {
+  background: #f1f5f9;
+  color: #475569;
+  font-weight: 600;
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.theme-dark .proposta-itens-table th {
+  background: #1e293b;
+  color: #94a3b8;
+  border-color: #334155;
+}
+
+.proposta-itens-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.theme-dark .proposta-itens-table td {
+  border-color: #1e293b;
+}
+
+.proposta-input-table {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: inherit;
+  font-size: 0.875rem;
+  box-sizing: border-box;
+}
+
+.theme-dark .proposta-input-table {
+  background: #1e293b;
+  border-color: #475569;
+  color: #f8fafc;
+}
+
+.proposta-input-table:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.proposta-col-subtotal-val {
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.theme-dark .proposta-col-subtotal-val {
+  color: #f8fafc;
+}
+
+/* Totalizador em tempo real e ações de itens */
+.proposta-itens-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.proposta-total-box {
+  background: rgba(220, 38, 38, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  padding: 8px 18px;
+  border-radius: 12px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: 0.5px;
+}
+
+.theme-dark .proposta-total-box {
+  background: rgba(220, 38, 38, 0.22);
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.modal-proposta-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  background: #f8fafc;
+}
+
+.theme-dark .modal-proposta-footer {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+/* ==========================================================================
+   ESTILOS DE RENDERIZAÇÃO DO PDF DA PROPOSTA COMERCIAL (A4: 794px x 1123px)
+   Paleta e medidas extraídas do modelo oficial
+   "PROPOSTA COMERCIAL - IAP-4.pdf"
+   ========================================================================== */
+
+:root,
+.theme-light,
+.theme-dark {
+  --proposta-navy: #002d72;
+  --proposta-indigo: #17028a;
+  --proposta-capa-titulo: #043d74;
+  --proposta-banda: #afc6e5;
+  --proposta-linha-num: #a5cbff;
+  --proposta-linha-tinta: #ecf4ff;
+  --proposta-badge: #b82400;
+  --proposta-texto: #1f1f1f;
+  --proposta-arcos: #f4dff8;
+  --proposta-arcos-capa: #e4e8f0;
+  --proposta-amarelo: #ffd51e;
+  --proposta-verde: #08583f;
+  --proposta-fonte-display: 'Barlow Condensed', 'Arial Narrow', 'Helvetica Neue', sans-serif;
+}
+
+.proposta-documento {
+  background: #808080;
+}
+
+.proposta-pagina {
+  position: relative !important;
+  box-sizing: border-box !important;
+  width: 794px !important;
+  min-height: 1123px !important;
+  height: 1123px !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  background: #ffffff !important;
+  color: var(--proposta-texto) !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  -webkit-font-smoothing: antialiased !important;
+}
+
+.proposta-logo-img {
+  width: auto !important;
+  object-fit: contain !important;
+  display: block !important;
+  background: transparent !important;
+  mix-blend-mode: multiply !important;
+}
+
+/* --------------------------------------------
+   Rodapé — página 1 em texto; 2+ na faixa navy
+   -------------------------------------------- */
+.proposta-rodape {
+  position: absolute !important;
+  z-index: 5 !important;
+  font-family: var(--proposta-fonte-display) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.3px !important;
+}
+
+.proposta-rodape--texto {
+  right: 35px !important;
+  bottom: 16px !important;
+  font-size: 19px !important;
+  color: var(--proposta-navy) !important;
+}
+
+.proposta-rodape--barra {
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  height: 38px !important;
+  background: var(--proposta-navy) !important;
+  color: #ffffff !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  padding: 0 38px !important;
+  font-size: 18px !important;
+}
+
+.proposta-rodape__empresa {
+  position: absolute !important;
+  left: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 38px !important;
+  box-sizing: border-box !important;
+  padding-left: 35px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  line-height: 1.3 !important;
+  letter-spacing: 0 !important;
+  color: #ffffff !important;
+  text-align: left !important;
+  white-space: nowrap !important;
+  z-index: 10 !important;
+}
+
+.proposta-rodape__empresa-linha {
+  margin: 0 !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  line-height: 1.3 !important;
+  color: #ffffff !important;
+}
+
+/* ==========================================================================
+   PÁGINA 1 · CAPA
+   ========================================================================== */
+.proposta-pagina--capa {
+  padding: 0 !important;
+}
+
+.proposta-capa__circulos {
+  position: absolute !important;
+  inset: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+  z-index: 0 !important;
+}
+
+.proposta-capa__circulo {
+  position: absolute !important;
+  display: block !important;
+  border: 1.5px solid var(--proposta-arcos-capa) !important;
+  border-radius: 50% !important;
+  box-sizing: border-box !important;
+  transform: translate(-50%, -50%) !important;
+}
+
+.proposta-capa__circulo--tr {
+  left: 880px !important;
+  top: -120px !important;
+}
+
+.proposta-capa__circulo--bl {
+  left: 150px !important;
+  top: 1010px !important;
+}
+
+.proposta-capa__header {
+  position: absolute !important;
+  left: 10px !important;
+  top: 36px !important;
+  z-index: 2 !important;
+}
+
+.proposta-capa__header .proposta-logo-img {
+  width: 292px !important;
+}
+
+.proposta-capa__hero {
+  position: absolute !important;
+  left: 86px !important;
+  top: 210px !important;
+  z-index: 2 !important;
+}
+
+.proposta-capa__titulo {
+  font-family: var(--proposta-fonte-display) !important;
+  font-size: 123px !important;
+  font-weight: 600 !important;
+  color: var(--proposta-capa-titulo) !important;
+  line-height: 120px !important;
+  letter-spacing: -1px !important;
+  margin: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.proposta-capa__watermark {
+  position: absolute !important;
+  right: 9px !important;
+  bottom: 246px !important;
+  width: 425px !important;
+  height: auto !important;
+  z-index: 1 !important;
+  pointer-events: none !important;
+}
+
+.proposta-capa__bottom {
+  position: absolute !important;
+  left: 81px !important;
+  bottom: 133px !important;
+  z-index: 2 !important;
+}
+
+.proposta-capa__proposto-label {
+  font-size: 30px !important;
+  font-weight: 800 !important;
+  letter-spacing: 6px !important;
+  color: var(--proposta-navy) !important;
+  margin-bottom: 14px !important;
+  line-height: 1 !important;
+}
+
+.proposta-capa__proposto-nome {
+  font-size: 19px !important;
+  font-weight: 800 !important;
+  color: var(--proposta-navy) !important;
+  text-transform: uppercase !important;
+  line-height: 1 !important;
+}
+
+/* ==========================================================================
+   PÁGINA 2 · INSTITUCIONAL
+   ========================================================================== */
+.proposta-pagina--institucional {
+  padding: 0 !important;
+}
+
+.proposta-inst__foto {
+  position: absolute !important;
+  top: 0 !important;
+  right: 0 !important;
+  width: 317px !important;
+  height: 427px !important;
+  background-repeat: no-repeat !important;
+  background-size: 100% 100% !important;
+  z-index: 1 !important;
+  pointer-events: none !important;
+}
+
+.proposta-inst__header {
+  position: relative !important;
+  z-index: 2 !important;
+  width: 320px !important;
+  margin: 34px 0 0 61px !important;
+}
+
+.proposta-inst__header .proposta-logo-img {
+  width: 189px !important;
+}
+
+.proposta-inst__logo-line {
+  height: 3px !important;
+  background: var(--proposta-navy) !important;
+  width: 300px !important;
+  margin: 8px 0 0 3px !important;
+}
+
+.proposta-inst__conteudo {
+  position: relative !important;
+  z-index: 2 !important;
+  width: 409px !important;
+  margin: 0 0 0 51px !important;
+}
+
+.proposta-inst__bloco {
+  margin-bottom: 0 !important;
+}
+
+.proposta-inst__titulo {
+  font-family: var(--proposta-fonte-display) !important;
+  font-size: 47px !important;
+  font-weight: 600 !important;
+  color: var(--proposta-navy) !important;
+  letter-spacing: 0 !important;
+  margin: 32px 0 6px 0 !important;
+  line-height: 1.1 !important;
+}
+
+.proposta-inst__texto {
+  font-size: 15px !important;
+  line-height: 20px !important;
+  color: var(--proposta-texto) !important;
+  text-align: justify !important;
+  margin: 0 !important;
+}
+
+.proposta-inst__bloco--bases .proposta-inst__titulo {
+  margin-top: 54px !important;
+}
+
+.proposta-bases-lista {
+  margin-top: 8px !important;
+}
+
+.proposta-bases-item {
+  font-size: 17px !important;
+  font-weight: 800 !important;
+  color: var(--proposta-navy) !important;
+  text-transform: uppercase !important;
+  margin: 6px 0 !important;
+  line-height: 1.3 !important;
+}
+
+.proposta-inst__bg-curves {
+  position: absolute !important;
+  inset: 0 !important;
+  pointer-events: none !important;
+  z-index: 0 !important;
+}
+
+.proposta-inst__bg-curves span {
+  position: absolute !important;
+  display: block !important;
+  left: 860px !important;
+  top: 1180px !important;
+  transform: translate(-50%, -50%) !important;
+  border: 1.5px solid var(--proposta-arcos) !important;
+  border-radius: 50% !important;
+  box-sizing: border-box !important;
+}
+
+/* ==========================================================================
+   PÁGINA 3+ · TABELA COMERCIAL & CUSTOS
+   ========================================================================== */
+.proposta-pagina--tabela {
+  padding: 88px 51px 46px !important;
+}
+
+.proposta-tab__band {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 87px !important;
+  background: var(--proposta-banda) !important;
+  z-index: 1 !important;
+}
+
+.proposta-tab__band .proposta-logo-img {
+  position: absolute !important;
+  left: 47px !important;
+  top: 1px !important;
+  width: 203px !important;
+}
+
+.proposta-tab__line {
+  position: absolute !important;
+  left: 0 !important;
+  top: 75px !important;
+  width: 297px !important;
+  height: 3px !important;
+  background: var(--proposta-line-azul, #004aad) !important;
+}
+
+.proposta-tab__data {
+  position: absolute !important;
+  right: 26px !important;
+  top: 14px !important;
+  text-align: right !important;
+  color: var(--proposta-navy) !important;
+  line-height: 1.1 !important;
+}
+
+.proposta-tab__data-label {
+  font-size: 26px !important;
+  font-weight: 500 !important;
+}
+
+.proposta-tab__data-val {
+  font-size: 34px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.5px !important;
+}
+
+.proposta-ribbon-wrap {
+  position: relative !important;
+  z-index: 2 !important;
+  margin: 0 0 19px -51px !important;
+}
+
+.proposta-ribbon {
+  position: relative !important;
+  width: 544px !important;
+  height: 97px !important;
+  background: var(--proposta-navy) !important;
+  color: #ffffff !important;
+  display: flex !important;
+  align-items: center !important;
+  padding: 0 0 0 51px !important;
+  font-family: var(--proposta-fonte-display) !important;
+  font-size: 37px !important;
+  font-weight: 700 !important;
+  line-height: 1.18 !important;
+  letter-spacing: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.proposta-ribbon::after {
+  content: '' !important;
+  position: absolute !important;
+  right: -41px !important;
+  top: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  border-left: 41px solid var(--proposta-navy) !important;
+  border-top: 48.5px solid transparent !important;
+  border-bottom: 48.5px solid transparent !important;
+}
+
+.proposta-tabela-container {
+  position: relative !important;
+  z-index: 2 !important;
+}
+
+.proposta-tabela {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  table-layout: fixed !important;
+}
+
+.proposta-tabela th {
+  background: var(--proposta-indigo) !important;
+  color: #ffffff !important;
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  padding: 11px 6px !important;
+  border: 1.5px solid var(--proposta-indigo) !important;
+  text-align: center !important;
+  text-transform: none !important;
+}
+
+.proposta-tabela td {
+  padding: 16px 10px !important;
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  border: 1.5px solid var(--proposta-indigo) !important;
+  color: #111111 !important;
+  vertical-align: middle !important;
+}
+
+.proposta-tabela__tr--odd td {
+  background: #ffffff !important;
+}
+
+.proposta-tabela__tr--odd td.proposta-col--num {
+  background: var(--proposta-linha-num) !important;
+}
+
+.proposta-tabela__tr--even td {
+  background: var(--proposta-linha-tinta) !important;
+}
+
+.proposta-tabela__tr--even td.proposta-col--num {
+  background: #ffffff !important;
+}
+
+.proposta-col--num {
+  width: 67px !important;
+  text-align: center !important;
+  text-transform: none !important;
+}
+
+.proposta-col--desc {
+  text-align: left !important;
+  padding-left: 14px !important;
+}
+
+.proposta-tabela td.proposta-col--desc {
+  text-transform: uppercase !important;
+}
+
+.proposta-col--qde {
+  width: 71px !important;
+  text-align: center !important;
+}
+
+.proposta-col--unit {
+  width: 101px !important;
+  text-align: center !important;
+}
+
+.proposta-col--acoes {
+  width: 72px !important;
+  text-align: center !important;
+}
+
+.proposta-col--subtotal {
+  width: 119px !important;
+  text-align: center !important;
+}
+
+.proposta-tabela__total-wrapper {
+  display: flex !important;
+  justify-content: flex-end !important;
+  margin-top: 18px !important;
+  padding-right: 5px !important;
+}
+
+.proposta-tabela__total-badge {
+  background: var(--proposta-badge) !important;
+  color: #ffffff !important;
+  padding: 6px 16px !important;
+  border-radius: 9999px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  font-size: 16px !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.5px !important;
+}
+
+/* ==========================================================================
+   PÁGINA 4 · SERVIÇOS EXTRAS
+   ========================================================================== */
+.proposta-pagina--extras {
+  padding: 0 60px 52px !important;
+}
+
+.proposta-extras__marca-agua {
+  position: absolute !important;
+  inset: 0 !important;
+  pointer-events: none !important;
+  z-index: 0 !important;
+  overflow: hidden !important;
+  opacity: 0.12 !important;
+}
+
+.proposta-extras__marca-agua-circulo {
+  position: absolute !important;
+  display: block !important;
+  left: 513px !important;
+  top: 446px !important;
+  width: 137px !important;
+  height: 137px !important;
+  border-radius: 50% !important;
+  background: #ecc7f4 !important;
+}
+
+.proposta-extras__marca-agua-img {
+  position: absolute !important;
+  display: block !important;
+  left: 500px !important;
+  top: 380px !important;
+  width: 425px !important;
+  height: auto !important;
+}
+
+.proposta-dots-grid {
+  position: absolute !important;
+  display: grid !important;
+  grid-template-columns: repeat(6, 7px) !important;
+  column-gap: 27px !important;
+  row-gap: 26px !important;
+  z-index: 0 !important;
+}
+
+.proposta-dots-grid span {
+  width: 7px !important;
+  height: 7px !important;
+  border-radius: 50% !important;
+  background: #9333ea !important;
+  display: block !important;
+}
+
+.proposta-dots-grid--top-left {
+  top: 6px !important;
+  left: 11px !important;
+}
+
+.proposta-dots-grid--bottom-right {
+  bottom: 44px !important;
+  right: 16px !important;
+}
+
+.proposta-extras__header-pill {
+  position: relative !important;
+  z-index: 2 !important;
+  background: var(--proposta-indigo) !important;
+  color: #ffffff !important;
+  padding: 24px 40px !important;
+  border-radius: 30px !important;
+  text-align: center !important;
+  margin: 117px auto 0 !important;
+  max-width: 696px !important;
+}
+
+.proposta-extras__header-pill h2 {
+  font-size: 33px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0 !important;
+  line-height: 1.28 !important;
+  margin: 0 !important;
+  text-transform: uppercase !important;
+}
+
+.proposta-extras__grid {
+  position: relative !important;
+  z-index: 2 !important;
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  margin-top: 40px !important;
+}
+
+.proposta-extras__col {
+  list-style: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.proposta-extras__col:first-child {
+  text-align: right !important;
+  padding-right: 14px !important;
+}
+
+.proposta-extras__col:last-child {
+  text-align: left !important;
+  padding-left: 14px !important;
+  border-left: 1.5px solid #d5dcea !important;
+}
+
+.proposta-extras__col li {
+  font-size: 20px !important;
+  font-weight: 800 !important;
+  color: var(--proposta-navy) !important;
+  margin-bottom: 10px !important;
+  line-height: 1.3 !important;
+}
+
+.proposta-extras__cta-box {
+  position: relative !important;
+  z-index: 2 !important;
+  margin-top: 26px !important;
+  text-align: center !important;
+}
+
+.proposta-extras__yellow-banner {
+  background: var(--proposta-amarelo) !important;
+  color: var(--proposta-navy) !important;
+  font-size: 19px !important;
+  font-weight: 800 !important;
+  padding: 7px 22px !important;
+  border-radius: 6px !important;
+  display: inline-block !important;
+  margin-bottom: 14px !important;
+}
+
+.proposta-extras__site-link {
+  display: block !important;
+  font-size: 20px !important;
+  font-weight: 800 !important;
+  color: var(--proposta-navy) !important;
+  text-decoration: underline !important;
+  margin-bottom: 18px !important;
+}
+
+.proposta-extras__zap-wrap {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 26px !important;
+}
+
+.proposta-extras__zap-doodle-img {
+  width: 172px !important;
+  height: auto !important;
+  display: block !important;
+}
+
+.proposta-extras__zap-pill {
+  background: var(--proposta-verde) !important;
+  color: #ffffff !important;
+  font-size: 30px !important;
+  font-weight: 800 !important;
+  padding: 10px 34px !important;
+  border-radius: 9999px !important;
+  letter-spacing: 0.5px !important;
+}
+
+/* ==========================================================================
+   PÁGINA 5 · CONTRACAPA
+   ========================================================================== */
+.proposta-pagina--contracapa {
+  padding: 0 !important;
+}
+
+.proposta-contracapa__center {
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  top: 465px !important;
+  text-align: center !important;
+  z-index: 1 !important;
+}
+
+.proposta-contracapa__logo {
+  width: 439px !important;
+  height: auto !important;
+  margin: 0 auto !important;
+}
+
+.proposta-contracapa__links {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 6px !important;
+  margin-top: 128px !important;
+}
+
+.proposta-contracapa__insta {
+  display: flex !important;
+  align-items: center !important;
+  gap: 9px !important;
+  color: var(--proposta-navy) !important;
+  font-size: 26px !important;
+  font-weight: 800 !important;
+}
+
+.proposta-contracapa__insta-icon {
+  width: 26px !important;
+  height: 26px !important;
+}
+
+.proposta-contracapa__site {
+  color: var(--proposta-navy) !important;
+  font-size: 26px !important;
+  font-weight: 800 !important;
+  text-decoration: underline !important;
+}
+
+/* ==========================================================================
+   ESTADOS DE CARREGAMENTO / EXPORTAÇÃO DO PDF
+   ========================================================================== */
+#btnGerarPropostaPdf:disabled {
+  opacity: 0.75 !important;
+  cursor: wait !important;
+  pointer-events: none !important;
+}
+
+.proposta-btn-spinner {
+  display: inline-block !important;
+  width: 14px !important;
+  height: 14px !important;
+  margin-right: 6px !important;
+  border: 2px solid rgba(255, 255, 255, 0.45) !important;
+  border-top-color: #ffffff !important;
+  border-radius: 50% !important;
+  vertical-align: -2px !important;
+  animation: proposta-btn-spin 0.7s linear infinite !important;
+}
+
+@keyframes proposta-btn-spin {
+  to { transform: rotate(360deg); }
+}
+
+.modal-proposta-overlay--exportando {
+  pointer-events: none !important;
+}
+
+.modal-proposta-overlay--exportando .modal-proposta-container {
+  opacity: 0.6 !important;
+  transition: opacity 0.15s ease !important;
+}

@@ -71,7 +71,7 @@ const CONTRATO_3X = {
 };
 
 describe('Menu "+ Adicionar contrato"', () => {
-  it('oferece 100%, 50%, parcelado 2x–5x e a proposta desabilitada', () => {
+  it('oferece 100%, 50%, parcelado 2x–5x e a Proposta Comercial ativa', () => {
     assert.match(indexHtml, /id="btnNovoContrato" disabled/);
     assert.match(indexHtml, /id="contratosAddDropdown"/);
     assert.match(indexHtml, /data-tipo="100"[^>]*>[\s\S]*?Contrato 100%/);
@@ -81,7 +81,7 @@ describe('Menu "+ Adicionar contrato"', () => {
       assert.match(indexHtml, new RegExp(`data-tipo="${n}"[^>]*>Parcelado ${n}x`),
         `sem a opção Parcelado ${n}x`);
     }
-    assert.match(indexHtml, /data-tipo="proposta"[^>]*disabled[^>]*>[\s\S]*?Proposta para o cliente[\s\S]*?Em breve/);
+    assert.match(indexHtml, /data-tipo="proposta"[^>]*>[\s\S]*?Proposta Comercial[\s\S]*?PDF/);
   });
 
   it('abre o modal com o tipo escolhido (submenu 2x–5x incluído)', () => {
@@ -92,7 +92,7 @@ describe('Menu "+ Adicionar contrato"', () => {
     assert.ok(appJs.includes("querySelectorAll('.contratos-add-option[data-tipo]')"),
       'sem handler das opções do menu');
     const idx = appJs.indexOf("querySelectorAll('.contratos-add-option[data-tipo]')");
-    const trecho = appJs.slice(idx, idx + 500);
+    const trecho = appJs.slice(idx, idx + 800);
     assert.ok(trecho.includes("tipo === 'parcelado'"), 'não trata o toggle do parcelado');
     assert.ok(trecho.includes('_alternaSubmenuParcelado()'), 'não abre o submenu 2x–5x');
     assert.ok(trecho.includes('openNovoContratoModal({ tipo: fluxo })'),
