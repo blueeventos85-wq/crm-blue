@@ -2,6 +2,40 @@
 
 > Atualização visual aplicada em cima da estrutura existente — sem reconstruir a tela.
 
+## v1.8.0 · 16/10/2026 — Performance da geração do PDF + assets embutidos + edição de proposta
+
+### ⚡ Performance (`app.js` → `propostaGerarPDF`)
+- Escala do `html2canvas` reduzida de `2` para **`1.5`** (1191×1684px ≈ 220 DPI) — nitidez perfeita para A4 com ~45% menos pixels, memória e CPU
+- `setTimeout(r, 16)` entre lâminas devolve **1 quadro** à UI (antes `0`), eliminando o congelamento do navegador durante a renderização
+- Canvas passado **direto** ao `pdf.addImage(canvas, 'PNG')` — remove a string base64 intermediária de `canvas.toDataURL()`, que era o gargalo de memória do loop
+- Memória de cada lâmina liberada logo após a gravação (`canvas.width = canvas.height = 0`)
+- PDF aberto via `pdf.output('blob')` + `URL.createObjectURL(blob)` — sem conversões redundantes
+
+### 🖼️ Assets embutidos em Data URI (`src/lib/contrato/proposta_assets_base64.js`)
+- Novo módulo com os 5 PNGs realmente usados pelo builder em base64: `LOGO_BLUE_PRO_BASE64`, `WATERMARK_CAPA_BASE64`, `FOTO_INSTITUCIONAL_BASE64`, `WATERMARK_P4_BASE64`, `ZAP_DOODLE_BASE64`
+- Aliases com os nomes pedidos: `CAPA_BASE_BASE64`, `FOTO_BEIRAMAR_BASE64`, `SERVICOS_EXTRAS_BASE64`, `CONTRACAPA_BASE64`
+- `proposta_pdf.js` usa essas constantes como padrão → **0 requisições de rede**, eliminando 404/CORS no localhost e no deploy
+- Assets não referenciados pelo builder (`capa-base.png`, `apresentacao-base.png`, `servicos-extras.png`, `contracapa.png` — ~9 MB) **não** foram embutidos, para não inflar o bundle
+
+### 🚀 Deploy (`vercel.json`)
+- Corrigido o rewrite catch-all `/(.*) → /index.html`, que capturava `/assets/*` antes do filesystem e fazia as imagens voltarem como `index.html` (causa raiz do PDF sem logo/fotos em produção)
+- Novo padrão `/((?!assets/).*)` isola o diretório de assets: rotas do SPA continuam no `index.html`, arquivos estáticos são servidos normalmente
+
+### ✏️ Edição de Proposta Comercial pela tabela de Contratos (`app.js`)
+- `contratoEdit` roteia `tipo_contrato === 'proposta'` para `abrirModalEdicaoProposta(id)` **antes** de exigir Supabase (acabava com o toast "Erro ao carregar contrato")
+- `abrirModalEdicaoProposta(id)` recupera o registro (memória → localStorage → banco) e preenche Empresa Emitente, Proposto a, Bases do Projeto, Título/Período, Data e a lista completa de itens
+- Modo edição: botão vira **"Salvar Alterações / Atualizar PDF"**, título vira **"Editar Proposta Comercial – PROP-XXXX"**
+- `servicos` agora grava wrapper JSONB `{ basesProjeto, tituloPeriodo, itens:[...] }` (antes só descrições); `_normalizaServicosProposta` lê wrapper, array de strings ou de objetos
+- `_atualizarPropostaExistente` usa `_patchContrato` mantendo **id e `numero_contrato`** (sem duplicar) e sincroniza o fallback local; sem banco, atualiza o `localStorage`
+- PDF regenerado e enviado reutilizando o `pdf_storage_path` existente (sem arquivo órfão)
+
+### 🏷️ Contracapa
+- CNPJ atualizado para **`59.417.603/0001-36`** (substitui `50.159.695/0001-27`)
+
+### 🧪 Validação
+- `npm test` — **587/587** (novos testes de performance, base64, rewrite do `vercel.json` e edição)
+- `npm run build` — ok
+
 ## v1.7.0 · 16/10/2026 — Proposta Comercial em PDF (5 páginas A4)
 
 ### 🧾 Builder de PDF (`src/lib/contrato/proposta_pdf.js`)

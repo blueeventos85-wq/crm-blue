@@ -6,6 +6,21 @@
    ============================================ */
 
 import { fmtDateBR, fmtCurrency } from './formato.js';
+import {
+  LOGO_BLUE_PRO_BASE64,
+  WATERMARK_CAPA_BASE64,
+  FOTO_INSTITUCIONAL_BASE64,
+  WATERMARK_P4_BASE64,
+  ZAP_DOODLE_BASE64
+} from './proposta_assets_base64.js';
+
+export {
+  LOGO_BLUE_PRO_BASE64,
+  WATERMARK_CAPA_BASE64,
+  FOTO_INSTITUCIONAL_BASE64,
+  WATERMARK_P4_BASE64,
+  ZAP_DOODLE_BASE64
+} from './proposta_assets_base64.js';
 
 export const A4_LARGURA_PX = 794;
 export const A4_ALTURA_PX = 1123;
@@ -27,11 +42,13 @@ export const PROPOSTA_CORES = {
   lineAzul: '#004AAD'
 };
 
-export const PROPOSTA_LOGO_TRANSPARENTE_PADRAO = '/assets/proposta/logo_blue_pro_transparente.png';
-export const PROPOSTA_WATERMARK_PADRAO = '/assets/proposta/marca-agua-loop.png';
-export const PROPOSTA_WATERMARK_P4_PADRAO = '/assets/proposta/marca-agua-p4.png';
-export const PROPOSTA_SKYLINE_PADRAO = '/assets/proposta/skyline-fortaleza.png';
-export const PROPOSTA_ZAP_DOODLE_PADRAO = '/assets/proposta/chama-no-zap.png';
+/* Assets padrão: Data URIs embutidas (0 requisições de rede, sem 404/CORS
+   no deploy). Os caminhos em /assets/ continuam válidos como override. */
+export const PROPOSTA_LOGO_TRANSPARENTE_PADRAO = LOGO_BLUE_PRO_BASE64;
+export const PROPOSTA_WATERMARK_PADRAO = WATERMARK_CAPA_BASE64;
+export const PROPOSTA_WATERMARK_P4_PADRAO = WATERMARK_P4_BASE64;
+export const PROPOSTA_SKYLINE_PADRAO = FOTO_INSTITUCIONAL_BASE64;
+export const PROPOSTA_ZAP_DOODLE_PADRAO = ZAP_DOODLE_BASE64;
 
 function esc(valor) {
   return String(valor ?? '')

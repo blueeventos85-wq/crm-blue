@@ -58,8 +58,18 @@ describe('Módulo de Proposta Comercial — Builder de PDF (proposta_pdf.js)', (
     assert.ok(html.includes('R$&nbsp;1.500,00') || html.includes('1.500,00'), 'não contém total formatado');
     assert.ok(html.includes('AUMENTE SUAS VENDAS'), 'não contém seção de serviços extras');
     assert.ok(html.includes('chama no ZAP'), 'não contém doodle do whatsapp');
-    assert.ok(html.includes('marca-agua-p4.png'), 'não contém marca d\'água da página de extras');
-    assert.ok(html.includes('chama-no-zap.png'), 'não contém imagem do doodle do whatsapp');
+    assert.ok(
+      html.includes('proposta-extras__marca-agua-img'),
+      'não contém marca d\'água da página de extras'
+    );
+    assert.ok(
+      html.includes('proposta-extras__zap-doodle-img'),
+      'não contém imagem do doodle do whatsapp'
+    );
+    assert.ok(
+      (html.match(/data:image\/png;base64,/g) || []).length >= 8,
+      'assets da proposta não estão embutidos em Data URI (esperado ≥ 8 imagens)'
+    );
     assert.ok(html.includes('(85) 9 9149-9320'), 'não contém telefone do whatsapp');
     assert.ok(html.includes('@agenciabluepro'), 'não contém instagram');
     assert.ok(html.includes('www.agenciabluepro.com.br'), 'não contém site');
@@ -97,19 +107,23 @@ describe('Módulo de Proposta Comercial — Builder de PDF (proposta_pdf.js)', (
     assert.ok(html.includes('Página: 6/6'));
   });
 
-  it('usa a logo sem fundo branco por padrão e o asset PNG transparente existe', () => {
+  it('usa a logo sem fundo branco por padrão e embute os assets em Data URI', () => {
     const html = buildPropostaComercialPages({
       propostoA: 'LOGO TRANSPARENTE',
       itens: [{ descricao: 'SERVIÇO', quantidade: 1, valor_unitario: 100, acoes: 1, subtotal: 100 }]
     });
 
-    assert.equal(
-      PROPOSTA_LOGO_TRANSPARENTE_PADRAO,
-      '/assets/proposta/logo_blue_pro_transparente.png'
+    assert.ok(
+      PROPOSTA_LOGO_TRANSPARENTE_PADRAO.startsWith('data:image/png;base64,'),
+      'padrão da logo deve ser Data URI embutida (sem requisição de rede)'
     );
     assert.ok(
-      html.includes('/assets/proposta/logo_blue_pro_transparente.png'),
-      'builder não usa a logo transparente'
+      html.includes('src="data:image/png;base64,'),
+      'builder não embute a logo transparente como Data URI'
+    );
+    assert.ok(
+      html.includes("background-image: url('data:image/png;base64,"),
+      'builder não embute a foto institucional como Data URI'
     );
     assert.ok(
       !html.includes('/assets/logo_blue_pro.png'),
@@ -210,11 +224,31 @@ describe('Performance e estados de exportação do PDF (app.js + styles.css)', (
     );
   });
 
-  it('html2canvas usa willReadFrequently e devolve o quadro entre páginas', () => {
+  it('html2canvas usa willReadFrequently, escala 1.5 e devolve o quadro entre páginas', () => {
     assert.ok(appJs.includes('willReadFrequently: true'), 'willReadFrequently ausente');
     assert.ok(
-      appJs.includes('await new Promise(r => setTimeout(r, 0))'),
-      'não há rendição entre páginas para a UI não travar'
+      appJs.includes('await new Promise(r => setTimeout(r, 16))'),
+      'não há rendição de 1 quadro (16ms) entre páginas para a UI não travar'
+    );
+    assert.ok(
+      appJs.includes('scale: 1.5'),
+      'escala de captura não foi reduzida para 1.5 (performance)'
+    );
+    assert.ok(
+      appJs.includes('useCORS: true'),
+      'useCORS ausente no html2canvas'
+    );
+    assert.ok(
+      appJs.includes("pdf.addImage(canvas, 'PNG'"),
+      'canvas não é passado direto ao jsPDF (deveria evitar toDataURL intermediário)'
+    );
+    // Escopado à função da proposta (outras telas usam toDataURL em outros contextos)
+    const iniPropostaGerarPDF = appJs.indexOf('async function propostaGerarPDF');
+    const fimPropostaGerarPDF = appJs.indexOf('window.propostaGerarPDF');
+    const corpoProposta = appJs.slice(iniPropostaGerarPDF, fimPropostaGerarPDF);
+    assert.ok(
+      !corpoProposta.includes("toDataURL('image/png')"),
+      'ainda há conversão base64 intermediária via canvas.toDataURL no loop da proposta'
     );
   });
 
@@ -362,5 +396,69 @@ describe('Contracapa — CNPJ atualizado (proposta_pdf.js)', () => {
     const fonte = readFileSync(join(root, 'src/lib/contrato/proposta_pdf.js'), 'utf8');
     assert.ok(fonte.includes('CNPJ: 59.417.603/0001-36'), 'novo CNPJ ausente no builder');
     assert.ok(!fonte.includes('50.159.695/0001-27'), 'CNPJ antigo ainda presente no builder');
+  });
+});
+
+describe('Deploy — assets da proposta embutidos e rewrite do SPA seguro', () => {
+  it('vercel.json não redireciona /assets/* para index.html', () => {
+    const vercel = JSON.parse(readFileSync(join(root, 'vercel.json'), 'utf8'));
+    const rewrites = vercel.rewrites || [];
+    const catchAll = rewrites.find(r => r.source === '/(.*)');
+    assert.ok(
+      !catchAll,
+      'rewrite catch-all /(.*) captura /assets/* antes do filesystem (causa 404 das imagens em produção)'
+    );
+    const fonteDosRewrites = JSON.stringify(rewrites);
+    assert.ok(
+      fonteDosRewrites.includes('assets/'),
+      'nenhum rewrite isola /assets/ — o SPA vai continuar engolindo as imagens'
+    );
+  });
+
+  it('módulo de assets embute os 5 PNGs usados pelo builder em Data URI', async () => {
+    const assets = await import('../src/lib/contrato/proposta_assets_base64.js');
+    const esperados = [
+      'LOGO_BLUE_PRO_BASE64',
+      'WATERMARK_CAPA_BASE64',
+      'FOTO_INSTITUCIONAL_BASE64',
+      'WATERMARK_P4_BASE64',
+      'ZAP_DOODLE_BASE64',
+      'CAPA_BASE_BASE64',
+      'FOTO_BEIRAMAR_BASE64',
+      'SERVICOS_EXTRAS_BASE64',
+      'CONTRACAPA_BASE64'
+    ];
+    for (const nome of esperados) {
+      assert.equal(typeof assets[nome], 'string', `${nome} ausente`);
+      assert.ok(
+        assets[nome].startsWith('data:image/png;base64,'),
+        `${nome} não é Data URI PNG`
+      );
+      assert.ok(assets[nome].length > 200, `${nome} parece vazio`);
+    }
+  });
+
+  it('builder usa Data URIs por padrão (0 requisições de rede, sem 404/CORS)', () => {
+    const fonte = readFileSync(join(root, 'src/lib/contrato/proposta_pdf.js'), 'utf8');
+    const padroes = fonte.match(/PROPOSTA_[A-Z0-9_]+_PADRAO = [A-Z0-9_]+;/g) || [];
+    assert.equal(padroes.length, 5, 'esperava 5 constantes padrão de asset');
+    assert.ok(
+      !/PROPOSTA_[A-Z0-9_]+_PADRAO = '\/assets\//.test(fonte),
+      'padrões ainda apontam para caminho de arquivo em vez de Data URI'
+    );
+  });
+
+  it('assets pesados não referenciados não foram embutidos (evita +12 MB no bundle)', () => {
+    // Ignora o cabeçalho de documentação, que cita os nomes dos arquivos descartados
+    const assets = readFileSync(join(root, 'src/lib/contrato/proposta_assets_base64.js'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    const descartados = ['capa-base.png', 'apresentacao-base.png', 'servicos-extras.png', 'contracapa.png'];
+    for (const nome of descartados) {
+      assert.ok(
+        !assets.includes(nome),
+        `${nome} foi embutida sem ser usada pelo builder (inflaria o bundle)`
+      );
+    }
+    assert.ok(assets.length < 260_000, 'módulo base64 acima de 260 KB — revisar assets');
   });
 });

@@ -22109,15 +22109,17 @@ async function propostaGerarPDF() {
     const A4_H_MM = 297;
 
     for (let i = 0; i < pages.length; i++) {
-      // Devolve o quadro ao navegador entre páginas para a UI não travar
-      await new Promise(r => setTimeout(r, 0));
+      // Cede ~1 quadro (16ms) à UI entre lâminas para o navegador não congelar
+      await new Promise(r => setTimeout(r, 16));
 
       const page = pages[i];
       page.style.display = 'block';
       page.style.visibility = 'visible';
 
+      // scale 1.5 = 1191x1684px ≈ 220 DPI: nitidez perfeita para A4 com
+      // ~45% menos pixels/memória/CPU que scale 2 (1588x2246).
       const canvas = await h2c(page, {
-        scale: 2,
+        scale: 1.5,
         willReadFrequently: true,
         useCORS: true,
         backgroundColor: '#ffffff',
@@ -22129,11 +22131,14 @@ async function propostaGerarPDF() {
       });
 
       if (!canvas) continue;
-      const imgData = canvas.toDataURL('image/png');
       if (i > 0) pdf.addPage('a4', 'portrait');
-      pdf.addImage(imgData, 'PNG', 0, 0, A4_W_MM, A4_H_MM);
+      // Passa o canvas direto ao jsPDF: elimina a string base64 intermediária
+      // de canvas.toDataURL() (o picote de Base64 era o gargalo de memória).
+      pdf.addImage(canvas, 'PNG', 0, 0, A4_W_MM, A4_H_MM);
+      canvas.width = canvas.height = 0; // libera a memória da lâmina já gravada
     }
 
+    // Blob direto (sem passar por base64) → pronto para upload e prévia
     const pdfBlob = pdf.output('blob');
     if (!pdfBlob || pdfBlob.size < 1000) {
       toast('Erro ao gerar arquivo PDF.', 'error');
