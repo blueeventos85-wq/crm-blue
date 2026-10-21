@@ -19078,9 +19078,11 @@ function _montarPropostaPayload(dados) {
       tituloPeriodo: dados.tituloPeriodo || '',
       itens: (dados.itens || []).map(i => ({
         descricao: i.descricao,
+        detalhamento: i.detalhamento || '',
         quantidade: i.quantidade,
         valor_unitario: i.valor_unitario,
         acoes: i.acoes,
+        incluso_pacote: i.incluso_pacote === true,
         subtotal: i.subtotal
       }))
     },
@@ -21615,7 +21617,9 @@ function _normalizaServicosProposta(c) {
 
   if (Array.isArray(raw)) {
     const itens = raw
-      .map(s => (typeof s === 'string' ? { descricao: s, quantidade: 1, valor_unitario: 0, acoes: 1, subtotal: 0 } : (s && s.descricao ? s : null)))
+      .map(s => (typeof s === 'string'
+        ? { descricao: s, detalhamento: '', quantidade: 1, valor_unitario: 0, acoes: 1, incluso_pacote: false, subtotal: 0 }
+        : (s && s.descricao ? s : null)))
       .filter(Boolean);
     return {
       basesProjeto: '',
@@ -21644,9 +21648,11 @@ function _textoServicosContrato(c) {
 function _propostaCriarItemVazio() {
   return {
     descricao: '',
+    detalhamento: '',
     quantidade: 1,
     valor_unitario: 0,
     acoes: 1,
+    incluso_pacote: false,
     subtotal: 0
   };
 }
@@ -21672,12 +21678,12 @@ function propostaRecalcularTotais() {
     const qde = Math.max(parseInt(item.quantidade) || 0, 0);
     const unit = parseMoeda(item.valor_unitario);
     const acoes = Math.max(parseInt(item.acoes) || 0, 0);
-    const sub = Math.round(qde * unit * acoes * 100) / 100;
+    const sub = item.incluso_pacote ? 0 : Math.round(qde * unit * acoes * 100) / 100;
     item.subtotal = sub;
     total += sub;
 
     const subEl = document.getElementById(`propostaSubtotal_${idx}`);
-    if (subEl) subEl.textContent = fmtCurrency(sub);
+    if (subEl) subEl.textContent = item.incluso_pacote ? 'INCLUSO' : fmtCurrency(sub);
   });
 
   total = Math.round(total * 100) / 100;
@@ -21699,6 +21705,10 @@ function propostaRenderizarItens() {
                  placeholder="Ex.: PROMOTORAS - NORTH SHOPPING" 
                  value="${escapeHtml(item.descricao || '')}" 
                  data-idx="${idx}" data-field="descricao" />
+          <textarea class="proposta-input-table proposta-item-detalhamento"
+                    placeholder="Detalhamento / Itens Inclusos (opcional)"
+                    data-idx="${idx}" data-field="detalhamento"
+                    rows="2">${escapeHtml(item.detalhamento || '')}</textarea>
         </td>
         <td>
           <input type="number" class="proposta-input-table proposta-item-qde" 
@@ -21708,8 +21718,15 @@ function propostaRenderizarItens() {
         <td>
           <input type="text" class="proposta-input-table proposta-item-unit" 
                  placeholder="0,00" 
-                 value="${item.valor_unitario !== undefined && item.valor_unitario !== null ? item.valor_unitario : ''}" 
-                 data-idx="${idx}" data-field="valor_unitario" />
+                 value="${item.incluso_pacote ? '' : (item.valor_unitario !== undefined && item.valor_unitario !== null ? item.valor_unitario : '')}" 
+                 data-idx="${idx}" data-field="valor_unitario"
+                 ${item.incluso_pacote ? 'disabled' : ''} />
+          <label class="proposta-incluso-label">
+            <input type="checkbox" class="proposta-item-incluso"
+                   data-idx="${idx}" data-field="incluso_pacote"
+                   ${item.incluso_pacote ? 'checked' : ''} />
+            Incluso no pacote
+          </label>
         </td>
         <td>
           <input type="number" class="proposta-input-table proposta-item-acoes" 
@@ -21717,7 +21734,7 @@ function propostaRenderizarItens() {
                  data-idx="${idx}" data-field="acoes" />
         </td>
         <td class="proposta-col-subtotal-val" id="propostaSubtotal_${idx}">
-          ${fmtCurrency(item.subtotal || 0)}
+          ${item.incluso_pacote ? 'INCLUSO' : fmtCurrency(item.subtotal || 0)}
         </td>
         <td style="text-align: center;">
           <button type="button" class="btn-ghost btn-sm text-red-500 hover:text-red-700" 
@@ -21742,6 +21759,26 @@ function propostaRenderizarItens() {
       }
       if (_propostaItens[idx]) {
         _propostaItens[idx][field] = val;
+      }
+      propostaRecalcularTotais();
+    });
+  });
+
+  // Bind "Incluso no pacote" checkboxes
+  tbody.querySelectorAll('.proposta-item-incluso').forEach(box => {
+    box.addEventListener('change', (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      const item = _propostaItens[idx];
+      if (!item) return;
+      item.incluso_pacote = e.target.checked;
+      if (item.incluso_pacote) {
+        item.valor_unitario = 0;
+      }
+      const row = e.target.closest('tr');
+      const unitInput = row ? row.querySelector('.proposta-item-unit') : null;
+      if (unitInput) {
+        unitInput.disabled = item.incluso_pacote;
+        if (item.incluso_pacote) unitInput.value = '';
       }
       propostaRecalcularTotais();
     });
@@ -21950,9 +21987,11 @@ async function abrirModalPropostaComercial(opts = {}) {
   if (Array.isArray(opts.itens) && opts.itens.length) {
     opts.itens.forEach(i => propostaAdicionarItem({
       descricao: i.descricao || '',
+      detalhamento: i.detalhamento || '',
       quantidade: i.quantidade ?? 1,
       valor_unitario: i.valor_unitario ?? 0,
       acoes: i.acoes ?? 1,
+      incluso_pacote: i.incluso_pacote === true,
       subtotal: i.subtotal ?? 0
     }));
   } else {

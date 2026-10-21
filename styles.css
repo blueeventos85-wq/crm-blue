@@ -12614,6 +12614,37 @@ textarea:focus-visible,
   color: #f8fafc;
 }
 
+/* Pacotes: detalhamento por linha + flag "Incluso no pacote" */
+.proposta-item-detalhamento {
+  margin-top: 6px;
+  min-height: 48px;
+  resize: vertical;
+  line-height: 1.4;
+}
+
+.proposta-incluso-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.proposta-incluso-label input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+  accent-color: #17028a;
+}
+
+.theme-dark .proposta-incluso-label {
+  color: #94a3b8;
+}
+
 /* Totalizador em tempo real e ações de itens */
 .proposta-itens-actions-bar {
   display: flex;
@@ -13117,6 +13148,25 @@ textarea:focus-visible,
 }
 
 .proposta-tabela td.proposta-col--desc {
+  text-transform: uppercase !important;
+}
+
+/* Pacotes no PDF: título em negrito + detalhamento em fonte regular */
+.proposta-tabela__detalhamento {
+  margin-top: 6px !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  line-height: 1.45 !important;
+  text-transform: none !important;
+  color: #333333 !important;
+  letter-spacing: 0 !important;
+}
+
+.proposta-tabela__incluso {
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  color: var(--proposta-indigo) !important;
+  letter-spacing: 0.5px !important;
   text-transform: uppercase !important;
 }
 

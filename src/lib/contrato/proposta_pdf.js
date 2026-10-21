@@ -106,14 +106,18 @@ export const TEXTO_INSTITUCIONAL_EMPRESA =
   'resultados para nossos clientes. Por meio de uma enorme variedade de serviços, fornecemos orientação ' +
   'estratégica, apresentando a solução certa para cada cliente que atendemos.';
 
-/* Calcula a quantidade de páginas e divide os itens da tabela */
-export function particionarItensTabela(itens = [], limitePorPagina = 7) {
+/* Calcula a quantidade de páginas e divide os itens da tabela.
+   Itens com detalhamento (pacotes) são mais altos → 5 por página;
+   itens simples seguem com 7. Limite explícito sempre respeitado. */
+export function particionarItensTabela(itens = [], limitePorPagina = null) {
   if (!Array.isArray(itens) || itens.length === 0) {
     return [[]];
   }
+  const temDetalhamento = itens.some(i => i && typeof i.detalhamento === 'string' && i.detalhamento.trim());
+  const limite = limitePorPagina ?? (temDetalhamento ? 5 : 7);
   const chunks = [];
-  for (let i = 0; i < itens.length; i += limitePorPagina) {
-    chunks.push(itens.slice(i, i + limitePorPagina));
+  for (let i = 0; i < itens.length; i += limite) {
+    chunks.push(itens.slice(i, i + limite));
   }
   return chunks;
 }
@@ -243,20 +247,28 @@ function _renderPaginaTabela({
   const rowsHtml = itensChunk.map((item, idx) => {
     const num = offsetIndex + idx + 1;
     const desc = esc(_v(item.descricao));
+    const detalhamento = typeof item.detalhamento === 'string' ? item.detalhamento.trim() : '';
+    const incluso = item.incluso_pacote === true;
     const qde = parseInt(item.quantidade) || 1;
     const valorUnit = Number(item.valor_unitario) || 0;
     const acoes = parseInt(item.acoes) || 1;
-    const subtotal = Number(item.subtotal !== undefined ? item.subtotal : qde * valorUnit * acoes);
+    const subtotal = incluso ? 0 : Number(item.subtotal !== undefined ? item.subtotal : qde * valorUnit * acoes);
     const isOdd = idx % 2 === 0;
+    const detalhamentoHtml = detalhamento
+      ? `<div class="proposta-tabela__detalhamento">${esc(detalhamento).replace(/\n/g, '<br>')}</div>`
+      : '';
+    const valorHtml = incluso
+      ? '<span class="proposta-tabela__incluso">INCLUSO</span>'
+      : fmtCurrency(subtotal);
 
     return `
       <tr class="${isOdd ? 'proposta-tabela__tr--odd' : 'proposta-tabela__tr--even'}">
         <td class="proposta-col--num">${num}</td>
-        <td class="proposta-col--desc">${desc}</td>
+        <td class="proposta-col--desc">${desc}${detalhamentoHtml}</td>
         <td class="proposta-col--qde">${qde}</td>
-        <td class="proposta-col--unit">${fmtCurrency(valorUnit)}</td>
+        <td class="proposta-col--unit">${incluso ? fmtCurrency(0) : fmtCurrency(valorUnit)}</td>
         <td class="proposta-col--acoes">${acoes}</td>
-        <td class="proposta-col--subtotal">${fmtCurrency(subtotal)}</td>
+        <td class="proposta-col--subtotal">${valorHtml}</td>
       </tr>
     `;
   }).join('');
@@ -404,7 +416,7 @@ export function buildPropostaComercialPages(proposta = {}) {
   const watermarkUrl = proposta.watermarkUrl || PROPOSTA_WATERMARK_PADRAO;
   const skylineUrl = proposta.skylineUrl || PROPOSTA_SKYLINE_PADRAO;
   const itens = Array.isArray(proposta.itens) ? proposta.itens : [];
-  const chunks = particionarItensTabela(itens, 7);
+  const chunks = particionarItensTabela(itens);
   const qtdPaginasTabela = chunks.length;
 
   // Total de páginas = Capa (1) + Institucional (1) + Tabelas (N) + Extras (1) + Contracapa (1)

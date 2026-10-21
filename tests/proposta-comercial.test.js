@@ -462,3 +462,158 @@ describe('Deploy — assets da proposta embutidos e rewrite do SPA seguro', () =
     assert.ok(assets.length < 260_000, 'módulo base64 acima de 260 KB — revisar assets');
   });
 });
+
+/* ===========================================================
+   Pacotes / Combos — detalhamento + "Incluso no pacote"
+   =========================================================== */
+describe('Pacotes na Proposta Comercial — app.js', () => {
+  function extrairFuncao(nome) {
+    const inicio = appJs.indexOf(`function ${nome}(`);
+    assert.notEqual(inicio, -1, `função ${nome} não encontrada em app.js`);
+    const fim = appJs.indexOf('\n}', inicio);
+    assert.ok(fim > inicio, `fim da função ${nome} não encontrado`);
+    return appJs.slice(inicio, fim + 2);
+  }
+
+  it('_propostaCriarItemVazio cria itens com detalhamento e incluso_pacote', () => {
+    const src = extrairFuncao('_propostaCriarItemVazio');
+    assert.ok(src.includes(`detalhamento: ''`), 'item vazio sem campo detalhamento');
+    assert.ok(src.includes(`incluso_pacote: false`), 'item vazio sem flag incluso_pacote');
+  });
+
+  it('propostaRenderizarItens renderiza textarea de detalhamento por linha', () => {
+    const src = extrairFuncao('propostaRenderizarItens');
+    assert.ok(src.includes('proposta-item-detalhamento'), 'textarea de detalhamento ausente');
+    assert.ok(src.includes(`data-field="detalhamento"`), 'textarea sem data-field');
+  });
+
+  it('propostaRenderizarItens renderiza checkbox "Incluso no pacote"', () => {
+    const src = extrairFuncao('propostaRenderizarItens');
+    assert.ok(src.includes('proposta-item-incluso'), 'checkbox incluso ausente');
+    assert.ok(src.includes(`data-field="incluso_pacote"`), 'checkbox sem data-field');
+    assert.ok(src.includes('Incluso no pacote'), 'label do checkbox ausente');
+  });
+
+  it('checkbox incluso zera o valor e desabilita o input de Valor Unit.', () => {
+    const src = extrairFuncao('propostaRenderizarItens');
+    assert.ok(src.includes('item.incluso_pacote = e.target.checked'), 'listener de change ausente');
+    assert.ok(src.includes('unitInput.disabled = item.incluso_pacote'), 'input não é desabilitado');
+  });
+
+  it('propostaRecalcularTotais zera subtotal de item incluso e exibe INCLUSO', () => {
+    const src = extrairFuncao('propostaRecalcularTotais');
+    assert.ok(src.includes('item.incluso_pacote ? 0 :'), 'subtotal não é zerado para item incluso');
+    assert.ok(src.includes(`item.incluso_pacote ? 'INCLUSO' :`), 'célula de subtotal não exibe INCLUSO');
+  });
+
+  it('payload persiste detalhamento e incluso_pacote no JSONB dos itens', () => {
+    const src = extrairFuncao('_montarPropostaPayload');
+    assert.ok(src.includes('detalhamento: i.detalhamento'), 'payload sem detalhamento');
+    assert.ok(src.includes('incluso_pacote: i.incluso_pacote === true'), 'payload sem incluso_pacote');
+  });
+
+  it('restauração na edição preserva detalhamento e incluso_pacote', () => {
+    const idx = appJs.indexOf('opts.itens.forEach(i => propostaAdicionarItem({');
+    assert.notEqual(idx, -1, 'loop de restauração de itens não encontrado');
+    const trecho = appJs.slice(idx, idx + 400);
+    assert.ok(trecho.includes('detalhamento: i.detalhamento'), 'restauração descarta detalhamento');
+    assert.ok(trecho.includes('incluso_pacote: i.incluso_pacote === true'), 'restauração descarta incluso_pacote');
+  });
+
+  it('formato legado de serviços ganha os defaults dos campos novos', () => {
+    const src = extrairFuncao('_normalizaServicosProposta');
+    assert.ok(src.includes(`detalhamento: '', quantidade: 1`), 'itens legados sem default de detalhamento');
+    assert.ok(src.includes('incluso_pacote: false'), 'itens legados sem default de incluso_pacote');
+  });
+});
+
+describe('Pacotes na Proposta Comercial — PDF (proposta_pdf.js)', () => {
+  it('particionarItensTabela usa 5 por página quando há detalhamento', () => {
+    const itens = Array.from({ length: 10 }, (_, i) => ({
+      descricao: `Item ${i + 1}`,
+      detalhamento: '1 locutor + 3 promotoras'
+    }));
+    const chunks = particionarItensTabela(itens);
+    assert.equal(chunks.length, 2);
+    assert.equal(chunks[0].length, 5);
+    assert.equal(chunks[1].length, 5);
+  });
+
+  it('particionarItensTabela segue com 7 por página sem detalhamento', () => {
+    const itens = Array.from({ length: 10 }, (_, i) => ({ descricao: `Item ${i + 1}` }));
+    const chunks = particionarItensTabela(itens);
+    assert.equal(chunks.length, 2);
+    assert.equal(chunks[0].length, 7);
+    assert.equal(chunks[1].length, 3);
+  });
+
+  it('limite explícito continua sendo respeitado', () => {
+    const itens = Array.from({ length: 10 }, (_, i) => ({
+      descricao: `Item ${i + 1}`,
+      detalhamento: 'x'
+    }));
+    const chunks = particionarItensTabela(itens, 7);
+    assert.equal(chunks[0].length, 7);
+  });
+
+  it('linha de pacote renderiza título + detalhamento em fonte regular', () => {
+    const html = buildPropostaComercialPages({
+      propostoA: 'EMPRESA CLIENTE TESTE',
+      basesProjeto: 'PANFLETAGEM',
+      dataProposta: '2026-10-20',
+      tituloPeriodo: 'BLITZ PROMOCIONAL',
+      valorTotal: 1100,
+      itens: [{
+        descricao: 'BLITZ PROMOCIONAL',
+        detalhamento: '1 locutor + caixa de som e microfone + 3 promotoras',
+        quantidade: 1,
+        valor_unitario: 1100,
+        acoes: 1,
+        subtotal: 1100
+      }]
+    });
+    assert.ok(html.includes('proposta-tabela__detalhamento'), 'div de detalhamento ausente no PDF');
+    assert.ok(html.includes('1 locutor + caixa de som e microfone + 3 promotoras'), 'texto do detalhamento ausente');
+    assert.ok(html.includes('BLITZ PROMOCIONAL'), 'título do pacote ausente');
+  });
+
+  it('item "Incluso no pacote" renderiza INCLUSO e ignora o subtotal salvo', () => {
+    const html = buildPropostaComercialPages({
+      propostoA: 'EMPRESA CLIENTE TESTE',
+      basesProjeto: 'PANFLETAGEM',
+      dataProposta: '2026-10-20',
+      tituloPeriodo: 'COMBO TESTE',
+      valorTotal: 1000,
+      itens: [
+        { descricao: 'PROMOTORAS', quantidade: 2, valor_unitario: 500, acoes: 1, subtotal: 1000 },
+        { descricao: 'CAIXA DE SOM', quantidade: 1, valor_unitario: 0, acoes: 1, subtotal: 999, incluso_pacote: true }
+      ]
+    });
+    assert.ok(html.includes('proposta-tabela__incluso'), 'badge INCLUSO ausente no PDF');
+    assert.ok(html.includes('>INCLUSO</span>'), 'marcação do INCLUSO não encontrada');
+    assert.ok(!html.includes('999,00'), 'subtotal de item incluso vazou para o PDF');
+  });
+
+  it('item sem detalhamento e sem flag mantém o layout atual (6 colunas)', () => {
+    const html = buildPropostaComercialPages({
+      propostoA: 'EMPRESA CLIENTE TESTE',
+      basesProjeto: 'PANFLETAGEM',
+      dataProposta: '2026-10-20',
+      tituloPeriodo: 'AÇÃO NORMAL',
+      valorTotal: 900,
+      itens: [{ descricao: 'PROMOTORA DE VENDAS', quantidade: 2, valor_unitario: 150, acoes: 3, subtotal: 900 }]
+    });
+    assert.ok(html.includes('Valor Unit.'), 'coluna Valor Unit. sumiu do PDF');
+    assert.ok(!html.includes('proposta-tabela__detalhamento'), 'detalhamento fantasma em item simples');
+    assert.ok(html.includes('900,00'), 'subtotal normal ausente');
+  });
+});
+
+describe('Pacotes na Proposta Comercial — CSS', () => {
+  it('estilos de detalhamento e checkbox existem no styles.css', () => {
+    assert.ok(stylesCss.includes('.proposta-item-detalhamento'), 'CSS do textarea de detalhamento ausente');
+    assert.ok(stylesCss.includes('.proposta-incluso-label'), 'CSS do checkbox incluso ausente');
+    assert.ok(stylesCss.includes('.proposta-tabela__detalhamento'), 'CSS do detalhamento no PDF ausente');
+    assert.ok(stylesCss.includes('.proposta-tabela__incluso'), 'CSS do INCLUSO no PDF ausente');
+  });
+});
