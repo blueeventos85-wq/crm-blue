@@ -234,9 +234,33 @@ describe('Regra aplicada · Cliente da Base', () => {
     assert.ok(src.includes(`.eq('owner_id', filterMemberId)`));
   });
 
-  it('exatamente 5 pontos de chamada + 1 definição do helper', () => {
+  it('exatamente 6 pontos de chamada + 1 definição do helper + loadContratoLeads', () => {
+    // 8 = 1 definição + 5 usos diretos + 2 na linha do guard typeof em loadContratoLeads
     const total = (appSource.match(/canViewAllLeadsClientes/g) || []).length;
-    assert.equal(total, 6, `esperado 6 ocorrências (1 definição + 5 usos), encontrado ${total}`);
+    assert.equal(total, 8, `esperado 8 ocorrências, encontrado ${total}`);
+  });
+});
+
+/* ===========================================================
+   Suite: Aplicação — Modal Gerar Contrato (Selecionar Lead)
+   =========================================================== */
+describe('Regra aplicada · Modal Gerar Contrato (loadContratoLeads)', () => {
+  const src = extrairFuncaoAsync('loadContratoLeads');
+
+  it('busca de leads do modal usa canViewAllLeadsClientes', () => {
+    assert.ok(src.includes('canViewAllLeadsClientes()'),
+      'loadContratoLeads não usa a permissão can_leads_view_all');
+  });
+
+  it('loadContratoLeads não usa mais canViewAllData (admin-only)', () => {
+    assert.ok(!src.includes('canViewAllData()'),
+      'loadContratoLeads ainda restringe a lista a Administrador');
+  });
+
+  it('mantém filtro de 3 colunas (membro/qualificador/owner) sem permissão', () => {
+    assert.ok(src.includes(`.eq('membro_id', filterId)`));
+    assert.ok(src.includes(`.eq('qualificador_id', filterId)`));
+    assert.ok(src.includes(`.eq('owner_id', filterId)`));
   });
 });
 

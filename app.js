@@ -18916,7 +18916,7 @@ function resolveServicoNamesFromLead(lead) {
 async function loadContratoLeads() {
   if (!_supabase) return [];
 
-  const canViewAll = typeof canViewAllData === 'function' ? canViewAllData() : false;
+  const canViewAll = typeof canViewAllLeadsClientes === 'function' ? canViewAllLeadsClientes() : false;
   const filterId = canViewAll ? null : (typeof getCurrentUserId === 'function' ? getCurrentUserId() : null);
 
   let data = null;
