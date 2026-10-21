@@ -510,7 +510,7 @@
               </div>
               <div class="kanban-meta">
                 <span class="meta-pill"><i data-lucide="users"></i> <span id="kanbanTotal">0</span> leads</span>
-                <span class="meta-pill"><i data-lucide="circle-dollar-sign"></i> R$ <span id="kanbanValue">0</span></span>
+                <span class="meta-pill"><i data-lucide="circle-dollar-sign"></i> <span id="kanbanValue">R$ 0,00</span></span>
               </div>
             </div>
             <div class="kanban-board" id="kanbanBoard">
@@ -3224,7 +3224,7 @@
 
           <div class="form-group">
             <label>Quantidade de Horas</label>
-            <input type="number" name="quantidadeHoras" placeholder="0" min="1" step="1" />
+            <input type="text" name="quantidadeHoras" placeholder="00:00" inputmode="numeric" maxlength="5" autocomplete="off" />
             <span class="form-error" data-error="quantidadeHoras"></span>
           </div>
           <div class="form-group">

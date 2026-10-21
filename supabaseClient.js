@@ -3,6 +3,8 @@
    Configuração e helpers para integração
    ============================================ */
 
+import { formatarQuantidadeHoras } from './src/lib/lead/horas.js';
+
 /* --- Console override: desativar logs em produção --- */
 (function() {
   if (window.location.hostname !== 'localhost' && !window.location.hostname.startsWith('127.')) {
@@ -257,7 +259,7 @@ async function fetchLeadsSupabase(filterMemberId) {
       cidade: row.cidade || '',
       estado: row.estado || '',
       cep: row.cep || '',
-      quantidadeHoras: row.quantidade_horas || 0,
+      quantidadeHoras: formatarQuantidadeHoras(row.quantidade_horas),
       horaInicio: row.hora_inicio || '',
       horaFinal: row.hora_final || '',
       segmento: '',
@@ -303,7 +305,7 @@ async function insertLeadSupabase(data) {
     hora_inicio: hora_inicio || null,
     hora_final: hora_final || null,
     endereco_evento,
-    quantidade_horas,
+    quantidade_horas: formatarQuantidadeHoras(quantidade_horas) || null,
     temperatura,
     honorarios: parseBrazilianCurrency(honorarios),
     observacoes,
@@ -648,7 +650,7 @@ async function fetchClientsSupabase(filterMemberId) {
       cidade: row.cidade || '',
       estado: row.estado || '',
       cep: row.cep || '',
-      quantidadeHoras: row.quantidade_horas || 0,
+      quantidadeHoras: formatarQuantidadeHoras(row.quantidade_horas),
       horaInicio: row.hora_inicio || '',
       horaFinal: row.hora_final || '',
       observacoes: row.observacoes || '',
@@ -753,8 +755,7 @@ async function updateLeadSupabase(id, data) {
   }
 
   if ('quantidade_horas' in payload) {
-    const n = parseInt(payload.quantidade_horas, 10);
-    payload.quantidade_horas = isNaN(n) ? 0 : n;
+    payload.quantidade_horas = formatarQuantidadeHoras(payload.quantidade_horas) || null;
   }
 
   if ('tipo_servico_id' in payload) {

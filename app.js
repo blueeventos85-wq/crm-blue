@@ -21,6 +21,12 @@ import {
 import { fmtDateBR, fmtTimeBR, fmtCurrency, numeroExtenso } from './src/lib/contrato/formato.js';
 import { buildContratoBluePro, ehEmpresaBluePro } from './src/lib/contrato/bluepro.js';
 import { buildPropostaComercialPages } from './src/lib/contrato/proposta_pdf.js';
+import {
+  formatarQuantidadeHoras,
+  mascararQuantidadeHoras,
+  validarQuantidadeHoras,
+  quantidadeHorasParaDecimal
+} from './src/lib/lead/horas.js';
 
 const $ = (s, ctx = document) => ctx.querySelector(s);
 const $$ = (s, ctx = document) => Array.from(ctx.querySelectorAll(s));
@@ -5149,7 +5155,7 @@ function openClientInLeadModal(card) {
   const fullLead = leads.find(l => String(l.id) === String(client.id));
   const telefone = fullLead ? (fullLead.telefone || '') : (client.telefone || '');
   const enderecoEvento = fullLead ? (fullLead.enderecoEvento || '') : (client.enderecoEvento || '');
-  const quantidadeHoras = fullLead ? (fullLead.quantidadeHoras || '') : (client.quantidadeHoras || '');
+  const quantidadeHoras = formatarQuantidadeHoras(fullLead ? fullLead.quantidadeHoras : client.quantidadeHoras);
   const observacoes = fullLead ? (fullLead.observacoes || '') : (client.observacoes || '');
   const honorariosVal = fullLead ? (fullLead.honorarios || 0) : (client.honorarios || 0);
 
@@ -5209,7 +5215,7 @@ function openClientInLeadModal(card) {
     createdAt: client.eventDate ? `Evento em ${formatEventDate(client.eventDate)}` : '—',
     history: [
       { icon: 'user-check', title: 'Cliente na base', meta: 'Dados cadastrais', desc: `${svcNames.length} serviço(s) vinculado(s)` },
-      ...(honorariosVal > 0 ? [{ icon: 'banknote', title: 'Valor de Faturamento definido', meta: `R$ ${honorariosVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, desc: '' }] : [])
+      ...(honorariosVal > 0 ? [{ icon: 'banknote', title: 'Valor de Faturamento definido', meta: formatCurrency(honorariosVal), desc: '' }] : [])
     ]
   });
 
@@ -6662,7 +6668,7 @@ function cadencesSummary() {
   const allLeads = getSearchFilteredLeads();
   return getVisibleCadences(currentCrmEmpresaFilter).map(c => {
     const list = allLeads.filter(l => l.status === c.id);
-    const value = list.reduce((s, l) => s + (l.honorarios || 0), 0);
+    const value = sumHonorarios(list);
     return { id: c.id, label: c.label, count: list.length, value, color: c.color };
   });
 }
@@ -6678,7 +6684,7 @@ function renderCadenceGrid() {
         <span class="cadence-card-name" title="${c.label}">${c.label}</span>
         <span class="cadence-card-badge">${c.count}</span>
       </div>
-      <div class="cadence-card-value">${c.value > 0 ? 'R$ ' + c.value.toLocaleString('pt-BR') : '—'}</div>
+      <div class="cadence-card-value">${c.value > 0 ? formatCurrency(c.value) : '—'}</div>
     </div>
   `).join('');
 
@@ -6953,7 +6959,7 @@ function renderKanban() {
   board.innerHTML = visibleCadences.map(c => {
     const list = allLeads.filter(l => l.status === c.id);
     const total = list.length;
-    const totalFat = list.reduce((a, l) => a + (Number(l.honorarios) || 0), 0);
+    const totalFat = sumHonorarios(list);
     const isHighlighted = activeCadenceFilter === c.id;
     const expanded = kanbanExpanded[c.id] || VISIBLE_CARDS_PER_COLUMN;
     const showCount = Math.min(total, expanded);
@@ -6967,7 +6973,7 @@ function renderKanban() {
         <div class="kanban-col-head">
           <span class="kanban-col-title">${c.label}</span>
           <span class="kanban-col-count" aria-label="${total} leads">${total}</span>
-          ${totalFat > 0 ? `<span class="kanban-col-fat" title="Faturamento total">${formatBRL(totalFat)}</span>` : ''}
+          ${totalFat > 0 ? `<span class="kanban-col-fat" title="Faturamento total">${formatCurrency(totalFat)}</span>` : ''}
         </div>
         <div class="kanban-col-list" data-drop-zone="${c.id}">
           ${cards || '<div class="kanban-empty">Nenhum lead nesta etapa</div>'}
@@ -7040,8 +7046,7 @@ function updateKanbanMeta(visible) {
   const valEl = $('#kanbanValue');
   if (totalEl) totalEl.textContent = visible.length;
   if (valEl) {
-    const sum = visible.reduce((s, l) => s + (l.honorarios || 0), 0);
-    valEl.textContent = sum.toLocaleString('pt-BR');
+    valEl.textContent = formatCurrency(sumHonorarios(visible));
   }
 }
 
@@ -7941,6 +7946,10 @@ function openLeadModal(id) {
     }
   });
 
+  // Quantidade de Horas: normaliza legado numérico (2 → "02:00")
+  const qtdHorasField = $('#leadModal [name="quantidadeHoras"]');
+  if (qtdHorasField) qtdHorasField.value = formatarQuantidadeHoras(lead.quantidadeHoras);
+
   // Desabilitar campo telefone se não tem permissão de exclusão
   const telField = $('#leadModal [name="telefone"]');
   if (telField) {
@@ -8091,6 +8100,36 @@ function bindHonMask() {
     const raw = val > 0 ? String(Math.round(val * 100)) : '';
     newHonEl.value = raw;
     newHonEl.setSelectionRange(raw.length, raw.length);
+  });
+}
+
+/* Máscara do campo "Quantidade de Horas" (HH:mm).
+   Os dígitos são formatados com ":" automático; no blur o valor
+   legado/parcial é normalizado ("2" → "02:00"), mantendo formatos
+   inválidos intactos para a validação do save apontar o campo. */
+function bindQtdHorasMask() {
+  const el = $('#leadModal [name="quantidadeHoras"]');
+  if (!el || el.dataset.horasMask === '1') return;
+  el.dataset.horasMask = '1';
+
+  el.addEventListener('input', () => {
+    const caret = el.selectionStart ?? el.value.length;
+    const digitosAntes = el.value.slice(0, caret).replace(/\D/g, '').length;
+    el.value = mascararQuantidadeHoras(el.value);
+
+    // Recoloca o cursor após a mesma quantidade de dígitos digitados
+    let contados = 0;
+    let pos = 0;
+    while (pos < el.value.length && contados < digitosAntes) {
+      if (/\d/.test(el.value[pos])) contados++;
+      pos++;
+    }
+    el.setSelectionRange(pos, pos);
+  });
+
+  el.addEventListener('blur', () => {
+    const fmt = formatarQuantidadeHoras(el.value);
+    if (fmt) el.value = fmt;
   });
 }
 
@@ -8469,7 +8508,7 @@ async function loadLeadActivities(leadId) {
      - Data do Evento (dataEvento) (opcional)
      - Tipo de Serviço (tiposServico) *  →  ao menos 1 chip selecionado
    Campos opcionais:
-     - Endereço do Evento, Quantidade de Horas, Valor de Faturamento, Observações
+     - Endereço do Evento, Quantidade de Horas (HH:mm), Valor de Faturamento, Observações
    ============================================ */
 async function saveLead() {
   const isNew = currentLeadId === null;
@@ -8515,6 +8554,9 @@ async function saveLead() {
   if (!fields.tiposServico || fields.tiposServico.length === 0) {
     errors.tiposServico = 'Selecione ao menos um serviço';
   }
+  if (!validarQuantidadeHoras(fields.quantidadeHoras)) {
+    errors.quantidadeHoras = 'Formato inválido. Use hh:mm (minutos de 00 a 59)';
+  }
 
   // Mostrar erros
   $$('.form-error').forEach(e => e.textContent = '');
@@ -8550,11 +8592,8 @@ async function saveLead() {
   }
   if (fields.honorarios < 0) fields.honorarios = 0;
 
-  if (fields.quantidadeHoras) {
-    fields.quantidadeHoras = parseInt(fields.quantidadeHoras, 10) || 0;
-  } else {
-    fields.quantidadeHoras = 0;
-  }
+  // Quantidade de Horas: normaliza para "HH:mm" (vazio → '')
+  fields.quantidadeHoras = formatarQuantidadeHoras(fields.quantidadeHoras);
 
   const now = new Date();
   const nowStr = now.toLocaleString('pt-BR');
@@ -8636,7 +8675,7 @@ async function saveLead() {
         cidade: fields.cidade || '',
         estado: fields.estado || '',
         cep: fields.cep || '',
-        quantidade_horas: fields.quantidadeHoras || 0,
+        quantidade_horas: fields.quantidadeHoras || null,
         servicos_selecionados: (fields.tiposServico || []).join(', ') || null,
         temperatura: fields.thermal || 'frio',
         honorarios: fields.honorarios,
@@ -8725,7 +8764,7 @@ async function saveLead() {
         cidade: fields.cidade || '',
         estado: fields.estado || '',
         cep: fields.cep || '',
-        quantidade_horas: fields.quantidadeHoras || 0,
+        quantidade_horas: fields.quantidadeHoras || null,
         servicos_selecionados: (fields.tiposServico || []).join(', ') || null,
         temperatura: fields.thermal || 'frio',
         honorarios: fields.honorarios,
@@ -9459,6 +9498,9 @@ function initCRM() {
   // Salvar
   $('#leadSaveBtn').addEventListener('click', saveLead);
 
+  // Máscara de Quantidade de Horas (HH:mm)
+  bindQtdHorasMask();
+
   const leadTelInput = $('#leadModal [name="telefone"]');
   if (leadTelInput) {
     leadTelInput.addEventListener('input', () => {
@@ -9671,8 +9713,26 @@ function formatBRShort(d) {
   if (!d) return '—';
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
+/* Helper global de formatação monetária — BRL sempre com centavos
+   (R$ X.XXX,XX). Único ponto de formatação de valores exibidos no app. */
+function formatCurrency(value) {
+  const n = Number(value);
+  return (Number.isFinite(n) ? n : 0).toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+/* Soma canônica de faturamento: mesma fonte de cálculo para os cards
+   de resumo, os cabeçalhos das colunas do kanban e o totalizador do topo.
+   Não arredonda antes da exibição — os centavos são resolvidos só no
+   formatCurrency (ponto flutuante real, sem parseInt/Math.round/toFixed). */
+function sumHonorarios(list) {
+  return (list || []).reduce((total, l) => total + parseMoeda(l && l.honorarios), 0);
+}
 function formatBRL(v) {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return formatCurrency(v);
 }
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -11997,7 +12057,7 @@ function _bindHonTooltip(canvas) {
       tip.className = 'dash-chart-tooltip';
       canvas.parentElement.appendChild(tip);
     }
-    tip.textContent = `${hit.label}: R$ ${hit.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    tip.textContent = `${hit.label}: ${formatCurrency(hit.value)}`;
     tip.style.display = 'block';
     tip.style.left = Math.min(x + 12, Math.max(rect.width - 180, 0)) + 'px';
     tip.style.top = Math.max(y - 36, 0) + 'px';
@@ -12008,8 +12068,7 @@ function _bindHonTooltip(canvas) {
 function renderHonorariosChart(honData) {
   const canvas = document.getElementById('chartHon');
   const totalEl = document.getElementById('honTotal');
-  const fmt = (v) => 'R$ ' + (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (totalEl) totalEl.textContent = fmt(honData.total);
+  if (totalEl) totalEl.textContent = formatCurrency(honData.total);
   if (!canvas) return;
   const byMonth = honData.byMonth || [];
   const ctx = canvas.getContext('2d');
@@ -12091,7 +12150,7 @@ function _fatRowsFallback() {
 }
 
 function _fatFmtBRL(v) {
-  return 'R$ ' + (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatCurrency(v);
 }
 
 function _fatRender() {
@@ -18060,8 +18119,8 @@ function renderCentrosCustoGrid() {
     const isTodos = cc.nome === 'Todos';
     const leadCount = isTodos ? leads.length : leads.filter(l => l._centroCustoId === cc.id).length;
     const totalHonorarios = isTodos
-      ? leads.reduce((sum, l) => sum + (l.honorarios || 0), 0)
-      : leads.filter(l => l._centroCustoId === cc.id).reduce((sum, l) => sum + (l.honorarios || 0), 0);
+      ? sumHonorarios(leads)
+      : sumHonorarios(leads.filter(l => l._centroCustoId === cc.id));
     const iconColor = isTodos ? 'var(--blue-600)' : getCentroCustoColor(cc.nome);
 
     return `
@@ -18081,7 +18140,7 @@ function renderCentrosCustoGrid() {
             <span class="cc-card-stat-label">Lead${leadCount !== 1 ? 's' : ''}</span>
           </div>
           <div class="cc-card-stat">
-            <span class="cc-card-stat-value">R$ ${totalHonorarios.toLocaleString('pt-BR')}</span>
+            <span class="cc-card-stat-value">${formatCurrency(totalHonorarios)}</span>
             <span class="cc-card-stat-label">Faturamento</span>
           </div>
         </div>
@@ -19258,7 +19317,7 @@ function fillContratoFromLead(lead) {
   set('contratoEstado', lead.estado || '');
   set('contratoCep', lead.cep || '');
   set('contratoEnderecoEvento', lead.endereco_evento || '');
-  set('contratoQtdHoras', lead.quantidade_horas || '');
+  set('contratoQtdHoras', quantidadeHorasParaDecimal(lead.quantidade_horas));
   if (lead.data_evento) set('contratoDataEvento', paraISODate(lead.data_evento) || '');
   if (lead.hora_inicio) set('contratoHoraInicio', lead.hora_inicio.substring(0, 5));
   if (lead.hora_final) set('contratoHoraFim', lead.hora_final.substring(0, 5));
@@ -22493,7 +22552,7 @@ function finSlugify(s) {
 }
 
 function finFormatBRL(v) {
-  return Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  return formatCurrency(v);
 }
 
 function finFormatDate(isoDate) {
