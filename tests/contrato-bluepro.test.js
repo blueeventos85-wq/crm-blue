@@ -121,11 +121,11 @@ describe('buildContratoBluePro() — template oficial preenchido', () => {
   });
 
   it('mantém ética com promotores, não aliciamento e multa de 30%', () => {
-    assert.ok(html.includes('● Não aliciar:'));
-    assert.ok(html.includes('● Não prometer vantagens:'));
-    assert.ok(html.includes('● Não pegar contatos dos promotores:'));
-    assert.ok(html.includes('● Manter contato somente com a CONTRATADA:'));
-    assert.ok(html.includes('● Receber fotos e relatórios finais somente da CONTRATADA:'));
+    assert.ok(html.includes('>3.5</span> Não aliciar:'));
+    assert.ok(html.includes('>3.6</span> Não prometer vantagens:'));
+    assert.ok(html.includes('>3.7</span> Não pegar contatos dos promotores:'));
+    assert.ok(html.includes('>3.8</span> Manter contato somente com a CONTRATADA:'));
+    assert.ok(html.includes('>3.9</span> Receber fotos e relatórios finais somente da CONTRATADA:'));
     assert.ok(html.includes('multa de 30% do valor total do contrato'));
     assert.ok(html.includes('foro da comarca de Fortaleza - CE.'));
   });
@@ -136,6 +136,19 @@ describe('buildContratoBluePro() — template oficial preenchido', () => {
     assert.ok(html.includes('brindes de divulgação e apoio para a ação'));
     assert.ok(html.includes('Responsabilizar-se por ponto de energia'));
     assert.ok(html.includes('Blitz Promocional'));
+  });
+
+  it('página 2 usa subcláusulas 3.1 a 3.9 em sequência, sem marcadores de lista', () => {
+    const pagina2 = html.split('class="contrato-pagina contrato-page-break"')[1] || '';
+    assert.ok(pagina2, 'página 2 ausente');
+    assert.doesNotMatch(pagina2, /[●•○▪◦]/, 'página 2 ainda contém bullets');
+    const numeros = [...pagina2.matchAll(/contrato-subclausula-num">([^<]+)</g)].map(m => m[1]);
+    assert.deepEqual(
+      numeros,
+      ['3.1', '3.2', '3.3', '3.4', '3.5', '3.6', '3.7', '3.8', '3.9']
+    );
+    const paragrafos = pagina2.match(/<p class="contrato-subclausula">/g) || [];
+    assert.equal(paragrafos.length, 9);
   });
 
   it('não herda cláusulas de locação/festa da Blue Eventos', () => {
@@ -172,6 +185,7 @@ describe('buildContratoBluePro() — template oficial preenchido', () => {
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const appJs = readFileSync(join(root, 'app.js'), 'utf8');
+const stylesCss = readFileSync(join(root, 'styles.css'), 'utf8');
 
 /** Extrai o corpo de uma função top-level (contagem de chaves). */
 function extractFn(source, header) {
@@ -227,5 +241,16 @@ describe('app.js — derivação para o template Blue PRO', () => {
     assert.ok(corpo, 'contratoGeneratePDF ausente');
     assert.ok(corpo.includes('_CONTRATO_MARCADORES_EVENTOS'), 'não detecta conteúdo obsoleto');
     assert.ok(corpo.includes('buildPDFContent(contrato, modeloPdf'), 'não regenera o conteúdo');
+  });
+});
+
+describe('styles.css — recuo das subcláusulas numeradas', () => {
+  it('número na margem com recuo pendente e texto justificado', () => {
+    assert.ok(stylesCss.includes('.contrato-subclausulas'), 'regra do container ausente');
+    assert.ok(stylesCss.includes('.contrato-subclausula'), 'regra do item ausente');
+    assert.ok(stylesCss.includes('.contrato-subclausula-num'), 'regra do número ausente');
+    assert.match(stylesCss, /\.contrato-subclausula\s*\{[^}]*text-indent:\s*-10mm/, 'sem recuo pendente');
+    assert.match(stylesCss, /\.contrato-subclausula\s*\{[^}]*text-align:\s*justify/, 'item não justificado');
+    assert.match(stylesCss, /\.contrato-subclausula-num\s*\{[^}]*text-indent:\s*0/, 'número herdando o recuo');
   });
 });

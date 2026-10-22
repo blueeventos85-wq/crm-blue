@@ -136,20 +136,27 @@ const OBRIGACOES_CONTRATADA = [
    Sem qualquer menção a convidados, danos a equipamentos,
    reserva de data ou regras de festa/locação. */
 const OBRIGACOES_CONTRATANTE = [
-  '● Pagamento: Realizar o pagamento conforme disposto na cláusula 4ª deste contrato, caso não haja pagamento será realizada inclusão aos órgãos de proteção ao crédito.',
-  '● Responsável: Designar um responsável, através de pessoa especialmente credenciada, para atendimento a dúvidas e para as reuniões referentes a este contrato, se necessário for.',
-  '● Materiais e deslocamento: Caso a contratante não solicite os serviços de Coordenação oferecidos pela contratada, a mesma deverá se responsabilizar por equipamentos, acessórios, distribuição de material ou brindes de divulgação e apoio para a ação, assim como deslocamento do pessoal quando for necessário.',
-  '● Ponto de energia: Responsabilizar-se por ponto de energia caso seja contratado o serviço de Blitz Promocional.',
-  '● Não aliciar: Não fazer qualquer tipo de abordagem ou tentativa de persuasão para recrutar ou desviar promotores contratados por terceiros.',
-  '● Não prometer vantagens: Abster-se de fazer promessas ou oferecer benefícios indevidos aos promotores contratados com o intuito de influenciar seu desempenho ou fidelidade à CONTRATADA.',
-  '● Não pegar contatos dos promotores: É vedado obter, de forma não autorizada, os dados de contato pessoal ou profissional dos promotores contratados, como telefone, e-mail ou endereço.',
-  '● Manter contato somente com a CONTRATADA: Estabelecer comunicação exclusivamente com a empresa contratante, a CONTRATADA, evitando qualquer tipo de interação direta com os promotores contratados fora do âmbito profissional estabelecido.',
-  '● Receber fotos e relatórios finais somente da CONTRATADA: Receber e analisar apenas fotos e relatórios finais, provenientes dos promotores contratados, conforme as orientações e procedimentos estabelecidos.'
+  'Pagamento: Realizar o pagamento conforme disposto na cláusula 4ª deste contrato, caso não haja pagamento será realizada inclusão aos órgãos de proteção ao crédito.',
+  'Responsável: Designar um responsável, através de pessoa especialmente credenciada, para atendimento a dúvidas e para as reuniões referentes a este contrato, se necessário for.',
+  'Materiais e deslocamento: Caso a contratante não solicite os serviços de Coordenação oferecidos pela contratada, a mesma deverá se responsabilizar por equipamentos, acessórios, distribuição de material ou brindes de divulgação e apoio para a ação, assim como deslocamento do pessoal quando for necessário.',
+  'Ponto de energia: Responsabilizar-se por ponto de energia caso seja contratado o serviço de Blitz Promocional.',
+  'Não aliciar: Não fazer qualquer tipo de abordagem ou tentativa de persuasão para recrutar ou desviar promotores contratados por terceiros.',
+  'Não prometer vantagens: Abster-se de fazer promessas ou oferecer benefícios indevidos aos promotores contratados com o intuito de influenciar seu desempenho ou fidelidade à CONTRATADA.',
+  'Não pegar contatos dos promotores: É vedado obter, de forma não autorizada, os dados de contato pessoal ou profissional dos promotores contratados, como telefone, e-mail ou endereço.',
+  'Manter contato somente com a CONTRATADA: Estabelecer comunicação exclusivamente com a empresa contratante, a CONTRATADA, evitando qualquer tipo de interação direta com os promotores contratados fora do âmbito profissional estabelecido.',
+  'Receber fotos e relatórios finais somente da CONTRATADA: Receber e analisar apenas fotos e relatórios finais, provenientes dos promotores contratados, conforme as orientações e procedimentos estabelecidos.'
 ];
 
 const _lista = (itens) => `
       <div class="contrato-clausula contrato-lista-container">
         ${itens.map(t => `<p>${esc(t)}</p>`).join('\n        ')}
+      </div>`;
+
+/* Subcláusulas numeradas (3.1, 3.2, ...) — número na margem com
+   recuo pendente, texto justificado e espaçamento uniforme. */
+const _subclausulas = (base, itens) => `
+      <div class="contrato-clausula contrato-subclausulas">
+        ${itens.map((t, i) => `<p class="contrato-subclausula"><span class="contrato-subclausula-num">${base}.${i + 1}</span> ${esc(t)}</p>`).join('\n        ')}
       </div>`;
 
 /* Monta o contrato Blue PRO completo (4 páginas A4). */
@@ -216,7 +223,7 @@ export function buildContratoBluePro({
       <p class="contrato-clausula contrato-justificado">
         Cláusula 3ª. São direitos e deveres da CONTRATANTE:
       </p>
-      ${_lista(OBRIGACOES_CONTRATANTE)}`
+      ${_subclausulas('3', OBRIGACOES_CONTRATANTE)}`
   }));
 
   /* ---- Página 3: custo, pagamento e prazo ---- */
