@@ -19792,17 +19792,14 @@ function validateContratoForm() {
   if (!emEdicao && !document.getElementById('contratoEmpresa')?.value) {
     missing.push({ id: 'contratoEmpresa', label: 'Empresa' });
   }
-  // Parcelamento (50% ou 2x–5x): datas e valores de cada parcela são obrigatórios
+  // Parcelamento (50% ou 2x–5x): valor de cada parcela é obrigatório
+  // (datas de vencimento foram removidas dos formulários)
   const nParcelas = _parcelasDaCondicao(document.getElementById('contratoCondicaoPagamento')?.value);
   if (nParcelas >= 2) {
     for (let i = 1; i <= nParcelas; i++) {
-      [
-        { id: 'contratoValorP' + i, label: `Valor da ${i}ª parcela` },
-        { id: 'contratoVencimentoP' + i, label: `Data da ${i}ª parcela` }
-      ].forEach(campo => {
-        const el = document.getElementById(campo.id);
-        if (!el || !(el.value || '').trim()) missing.push(campo);
-      });
+      const campo = { id: 'contratoValorP' + i, label: `Valor da ${i}ª parcela` };
+      const el = document.getElementById(campo.id);
+      if (!el || !(el.value || '').trim()) missing.push(campo);
     }
   }
   if (missing.length) {
@@ -19820,13 +19817,13 @@ function collectContratoFormData() {
 
   let parcelas = [];
   if (qtdParcelas === 1) {
-    parcelas = [{ parcela: 1, valor: valorTotal, vencimento: paraISODate(document.getElementById('contratoVencimentoP1')?.value) || '' }];
+    parcelas = [{ parcela: 1, valor: valorTotal, vencimento: '' }];
   } else {
     for (let i = 1; i <= qtdParcelas; i++) {
       parcelas.push({
         parcela: i,
         valor: parseMoeda(document.getElementById('contratoValorP' + i)?.value),
-        vencimento: paraISODate(document.getElementById('contratoVencimentoP' + i)?.value) || ''
+        vencimento: ''
       });
     }
   }
@@ -20052,20 +20049,13 @@ function _aplicaSplitParcelas() {
   set('contratoValorP' + n, Math.round((total - soma) * 100) / 100);
 }
 
-/* Mostra/esconde as parcelas (até a 5ª) e ajusta os labels. */
+/* Mostra/esconde as linhas de valor das parcelas (até a 5ª). */
 function _sincronizaParcelasUI({ split = false } = {}) {
   const condicao = document.getElementById('contratoCondicaoPagamento')?.value || '1';
   const n = _parcelasDaCondicao(condicao);
   for (let i = 2; i <= 5; i++) {
-    const mostrar = i <= n ? '' : 'none';
-    ['rowParcelaVal' + i, 'rowParcelaVenc' + i].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.style.display = mostrar;
-    });
-  }
-  for (let i = 1; i <= n; i++) {
-    const l = document.getElementById('labelDataP' + i);
-    if (l) l.textContent = condicao === '50' ? `Data da ${i}ª Parcela` : `Vencimento ${i}ª Parcela`;
+    const el = document.getElementById('rowParcelaVal' + i);
+    if (el) el.style.display = i <= n ? '' : 'none';
   }
   if (n >= 2 && split) _aplicaSplitParcelas();
 }
@@ -20234,7 +20224,6 @@ async function contratoEdit(id) {
   for (let i = 1; i <= 5; i++) {
     if (parcelas[i - 1]) {
       set('contratoValorP' + i, parseMoeda(parcelas[i - 1].valor) || '');
-      set('contratoVencimentoP' + i, paraISODate(parcelas[i - 1].vencimento) || '');
     }
   }
 
@@ -20254,9 +20243,8 @@ const _contratoFormFields = [
   'contratoEstado', 'contratoCep', 'contratoServicosDesc', 'contratoDataEvento',
   'contratoHoraInicio', 'contratoHoraFim', 'contratoQtdHoras',
   'contratoEnderecoEvento', 'contratoValorTotal', 'contratoCondicaoPagamento',
-  'contratoValorP1', 'contratoVencimentoP1', 'contratoValorP2', 'contratoVencimentoP2',
-  'contratoValorP3', 'contratoVencimentoP3', 'contratoValorP4', 'contratoVencimentoP4',
-  'contratoValorP5', 'contratoVencimentoP5'
+  'contratoValorP1', 'contratoValorP2', 'contratoValorP3',
+  'contratoValorP4', 'contratoValorP5'
 ];
 
 function _snapshotContratoForm() {
@@ -20298,10 +20286,10 @@ function _contratoTrapFocus(e) {
 }
 
 function _contratoKeydown(e) {
+  // ESC desativado: o pop-up só fecha pelo botão "X" (ou botões internos).
   if (e.key === 'Escape') {
     e.preventDefault();
     e.stopPropagation();
-    _requestCloseContratoModal();
   }
   _contratoTrapFocus(e);
 }
@@ -22374,9 +22362,8 @@ async function initContratos() {
   // Bind modal Proposta Comercial
   document.getElementById('btnFecharPropostaX')?.addEventListener('click', fecharModalPropostaComercial);
   document.getElementById('btnCancelarProposta')?.addEventListener('click', fecharModalPropostaComercial);
-  document.getElementById('modalPropostaOverlay')?.addEventListener('click', (e) => {
-    if (e.target === e.currentTarget) fecharModalPropostaComercial();
-  });
+  // Overlay backdrop click: desativado — o pop-up de Proposta não fecha ao clicar fora
+  // (somente pelo botão "X" / botões internos).
   document.getElementById('btnAdicionarItemProposta')?.addEventListener('click', () => {
     propostaAdicionarItem();
   });
@@ -22473,10 +22460,8 @@ async function initContratos() {
   // Cancel button
   document.getElementById('btnContratoCancel')?.addEventListener('click', _requestCloseContratoModal);
 
-  // Overlay backdrop click
-  document.getElementById('contratoOverlay')?.addEventListener('click', (e) => {
-    if (e.target === e.currentTarget) _requestCloseContratoModal();
-  });
+  // Overlay backdrop click: desativado — o pop-up de contrato não fecha ao clicar fora
+  // (somente pelo botão "X" / botões internos).
 
   // Discard confirmation modal
   document.getElementById('contratoDiscardCancel')?.addEventListener('click', _closeContratoDiscardModal);

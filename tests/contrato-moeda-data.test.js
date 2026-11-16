@@ -128,14 +128,12 @@ describe('Contratos · parseMoeda/paraISODate aplicados no payload', () => {
       'parseFloat legado ainda lê os campos de valor');
   });
 
-  it('collectContratoFormData usa paraISODate em datas e vencimentos', () => {
+  it('collectContratoFormData usa paraISODate na data do evento (vencimentos removidos)', () => {
     const corpo = extractFn(appJs, 'function collectContratoFormData()');
     assert.ok(corpo.includes("paraISODate(document.getElementById('contratoDataEvento')?.value)"),
       'data_evento sem paraISODate');
-    assert.ok(corpo.includes("paraISODate(document.getElementById('contratoVencimentoP1')?.value)"),
-      'vencimento da parcela 1 sem paraISODate');
-    assert.ok(corpo.includes("paraISODate(document.getElementById('contratoVencimentoP' + i)?.value)"),
-      'vencimento das parcelas sem paraISODate');
+    assert.ok(!corpo.includes('contratoVencimentoP'),
+      'collect ainda lê campos de vencimento removidos');
   });
 
   it('_aplicaSplitParcelas usa parseMoeda no total', () => {
@@ -158,7 +156,8 @@ describe('Contratos · parseMoeda/paraISODate aplicados no payload', () => {
     assert.ok(corpo.includes('paraISODate(data.data_evento)'), 'data_evento sem conversão na edição');
     assert.ok(corpo.includes('parseMoeda(data.valor_total)'), 'valor_total sem conversão na edição');
     assert.ok(corpo.includes('parseMoeda(parcelas[i - 1].valor)'), 'valor da parcela sem conversão');
-    assert.ok(corpo.includes('paraISODate(parcelas[i - 1].vencimento)'), 'vencimento sem conversão');
+    assert.ok(!corpo.includes('paraISODate(parcelas[i - 1].vencimento)'),
+      'ainda preenche vencimento de parcela removido');
   });
 });
 

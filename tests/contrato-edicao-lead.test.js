@@ -116,7 +116,7 @@ describe('validateContratoForm · lead obrigatório apenas na criação', () => 
 
   it('mantém as validações de parcelas', () => {
     assert.ok(corpo.includes("id: 'contratoValorP' + i"), 'validação de valor da parcela removida');
-    assert.ok(corpo.includes("id: 'contratoVencimentoP' + i"), 'validação de vencimento da parcela removida');
+    assert.ok(!corpo.includes("id: 'contratoVencimentoP' + i"), 'validação de vencimento ainda presente');
   });
 });
 

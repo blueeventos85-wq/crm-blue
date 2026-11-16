@@ -125,10 +125,12 @@ describe('Modal — condições de pagamento e parcelas dinâmicas', () => {
     }
     for (const n of [3, 4, 5]) {
       assert.ok(indexHtml.includes(`id="rowParcelaVal${n}"`), `sem a linha de valor da parcela ${n}`);
-      assert.ok(indexHtml.includes(`id="rowParcelaVenc${n}"`), `sem a linha de vencimento da parcela ${n}`);
+      assert.ok(!indexHtml.includes(`id="rowParcelaVenc${n}"`), `linha de vencimento da parcela ${n} ainda presente`);
       assert.ok(indexHtml.includes(`id="contratoValorP${n}"`), `sem o campo de valor da parcela ${n}`);
-      assert.ok(indexHtml.includes(`id="contratoVencimentoP${n}"`), `sem o campo de data da parcela ${n}`);
+      assert.ok(!indexHtml.includes(`id="contratoVencimentoP${n}"`), `campo de vencimento da parcela ${n} ainda presente`);
     }
+    assert.ok(!/contratoVencimentoP/.test(indexHtml), 'campo de vencimento de parcela ainda presente no HTML');
+    assert.ok(!/Vencimento \dª Parcela/.test(indexHtml), 'label de vencimento de parcela ainda presente no HTML');
   });
 
   it('converte a condição no número de parcelas (1 | 2 | até 5)', () => {
@@ -153,20 +155,20 @@ describe('Modal — condições de pagamento e parcelas dinâmicas', () => {
       'valor total não dispara o rateio');
   });
 
-  it('ajusta labels e linhas das parcelas conforme a condição', () => {
+  it('ajusta as linhas de valor das parcelas conforme a condição', () => {
     const corpo = extractFn(appJs, 'function _sincronizaParcelasUI(');
     assert.ok(corpo, '_sincronizaParcelasUI ausente');
-    assert.ok(corpo.includes('Data da'), 'label do 50% ausente');
-    assert.ok(corpo.includes('Vencimento'), 'label do parcelado ausente');
+    assert.ok(!corpo.includes('labelDataP'), 'ainda referencia labels de vencimento removidos');
+    assert.ok(!corpo.includes('rowParcelaVenc'), 'ainda referencia linhas de vencimento removidas');
     assert.ok(corpo.includes("rowParcelaVal' + i"), 'não mostra/esconde as linhas em loop');
     assert.ok(corpo.includes('i <= 5'), 'não considera até a 5ª parcela');
   });
 
-  it('exige datas e valores de cada parcela na validação', () => {
+  it('exige valores de cada parcela na validação (sem vencimento)', () => {
     const corpo = extractFn(appJs, 'function validateContratoForm()');
     assert.ok(corpo, 'validateContratoForm ausente');
     assert.ok(corpo.includes("id: 'contratoValorP' + i"), 'não valida o valor da parcela i');
-    assert.ok(corpo.includes("id: 'contratoVencimentoP' + i"), 'não valida a data da parcela i');
+    assert.ok(!corpo.includes("id: 'contratoVencimentoP' + i"), 'ainda valida a data de vencimento da parcela');
   });
 
   it('collect grava todas as parcelas escolhidas', () => {
