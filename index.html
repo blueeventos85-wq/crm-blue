@@ -785,14 +785,15 @@
 
         <!-- ============ FINANCEIRO ============ -->
         <section class="page" id="page-financeiro">
-          <!-- Abas de visão: Extrato Geral | Contas Recorrentes -->
+          <!-- Abas de visão: Extrato Geral | Pendências | Contas Recorrentes -->
           <div class="fin-view-tabs seg-control" id="finViewTabs" role="tablist" aria-label="Visão do financeiro">
             <button class="seg active" data-finview="extrato" role="tab" aria-selected="true">Extrato Geral</button>
+            <button class="seg" data-finview="pendencias" role="tab" aria-selected="false">Pendências</button>
             <button class="seg" data-finview="recorrentes" role="tab" aria-selected="false">Contas Recorrentes / Fixas</button>
           </div>
 
-          <div id="finViewExtrato">
-          <div class="fin-toolbar">
+          <!-- Toolbar compartilhada: Extrato + Pendências (oculta em Contas Recorrentes) -->
+          <div class="fin-toolbar" id="finToolbar">
             <div class="seg-control" id="finPeriodSeg" role="tablist" aria-label="Filtro de período">
               <button class="seg active" data-period="month" role="tab" aria-selected="true">Mês</button>
               <button class="seg" data-period="week" role="tab" aria-selected="false">Semana</button>
@@ -819,6 +820,7 @@
             </button>
           </div>
 
+          <div id="finViewExtrato">
           <div class="fin-cards" id="finCards">
             <div class="fin-card fin-card-receitas">
               <span class="fin-card-label"><i data-lucide="trending-up"></i> Receitas</span>
@@ -857,6 +859,21 @@
             </div>
           </div>
           </div><!-- /#finViewExtrato -->
+
+          <!-- ============ PENDÊNCIAS ============ -->
+          <div id="finViewPendencias" class="fin-pend-view" hidden>
+            <div class="fin-list-wrap">
+              <div class="fin-list-head">
+                <h3>Pendências</h3>
+                <span class="fin-count" id="finPendCount">0 pendências</span>
+              </div>
+              <p class="fin-pend-note">
+                Lançamentos aguardando confirmação — não são transações efetivadas e
+                por isso não entram nos cards de saldo nem no Extrato.
+              </p>
+              <div class="fin-list" id="finPendList"></div>
+            </div>
+          </div><!-- /#finViewPendencias -->
 
           <!-- ============ CONTAS RECORRENTES / FIXAS ============ -->
           <div id="finViewRecorrentes" class="desp-view" hidden>

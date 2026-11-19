@@ -11198,6 +11198,10 @@ textarea:focus-visible,
   margin-bottom: 18px;
 }
 
+/* Toolbar/acoes ocultas por aba (ex.: "Nova Transação" fora do Extrato) */
+.fin-toolbar[hidden],
+.fin-toolbar [hidden] { display: none !important; }
+
 .fin-custom-range {
   display: inline-flex;
   align-items: center;
@@ -11453,6 +11457,71 @@ textarea:focus-visible,
   height: 28px;
   opacity: 0.5;
 }
+
+/* ============================================
+   FINANCEIRO · ABA PENDÊNCIAS
+   ============================================ */
+.fin-pend-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.fin-pend-view[hidden] { display: none !important; }
+
+.fin-pend-note {
+  font-size: 12px;
+  color: var(--muted-text);
+  margin: -2px 0 10px;
+  line-height: 1.45;
+}
+
+.fin-pend-group {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-text);
+  padding: 14px 8px 4px;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.fin-pend-group:first-child { padding-top: 2px; }
+
+/* Erro de consulta (RLS/permissão) — visível em vez de lista vazia */
+.fin-error { color: var(--error); }
+.fin-error p { color: var(--error); }
+.fin-error code {
+  font-size: 11px;
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.fin-error-hint { font-size: 12px; opacity: 0.85; }
+
+/* Aviso de possíveis duplicatas (somente leitura — nada é excluído) */
+.fin-pend-dup {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #B45309;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+
+.theme-dark .fin-pend-dup { color: #FCD34D; }
+
+/* Badges de status das pendências */
+.fin-badge-status-pendente,
+.fin-badge-status-aguardando,
+.fin-badge-status-em_aberto { background: rgba(245, 158, 11, 0.15); color: #D97706; }
+.fin-badge-status-confirmado,
+.fin-badge-status-recebido,
+.fin-badge-status-pago { background: rgba(16, 185, 129, 0.15); color: #10B981; }
+.fin-badge-status-cancelado,
+.fin-badge-status-recusado { background: rgba(239, 68, 68, 0.15); color: #EF4444; }
 
 .fin-chart-box {
   position: relative;
@@ -11936,6 +12005,19 @@ textarea:focus-visible,
   color: #A78BFA;
 }
 
+/* --- Pendências: erro e status no escuro (após as regras genéricas de badge) --- */
+.theme-dark #page-financeiro .fin-error,
+.theme-dark #page-financeiro .fin-error p { color: #F87171; }
+.theme-dark #page-financeiro .fin-error code { background: rgba(248, 113, 113, 0.16); }
+.theme-dark #page-financeiro .fin-badge-status-pendente,
+.theme-dark #page-financeiro .fin-badge-status-aguardando,
+.theme-dark #page-financeiro .fin-badge-status-em_aberto { color: #FBBF24; }
+.theme-dark #page-financeiro .fin-badge-status-confirmado,
+.theme-dark #page-financeiro .fin-badge-status-recebido,
+.theme-dark #page-financeiro .fin-badge-status-pago { color: #34D399; }
+.theme-dark #page-financeiro .fin-badge-status-cancelado,
+.theme-dark #page-financeiro .fin-badge-status-recusado { color: #F87171; }
+
 /* --- Modais: container --- */
 .theme-dark #finTransacaoModal,
 .theme-dark #finCategoriaModal {
@@ -12059,7 +12141,7 @@ textarea:focus-visible,
    ============================================ */
 .fin-view-tabs { margin-bottom: 20px; }
 .desp-view { display: flex; flex-direction: column; gap: 16px; }
-.desp-view[hidden], #finViewExtrato[hidden] { display: none !important; }
+.desp-view[hidden], #finViewExtrato[hidden], #finViewPendencias[hidden] { display: none !important; }
 .desp-header {
   display: flex;
   flex-wrap: wrap;

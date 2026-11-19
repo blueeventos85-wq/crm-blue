@@ -22555,6 +22555,9 @@ let _finChart = null;
 let _finChartTipo = 'despesa';   // aba ativa do gráfico de categorias: 'despesa' | 'receita'
 let _finCategorias = [];
 let _finTransacoes = [];
+let _finPendencias = [];
+let _finTransacoesError = null;   // mensagem de erro da última busca (extrato)
+let _finPendenciasError = null;   // mensagem de erro da última busca (pendências)
 let _finMembros = [];
 let _finSelectedCategoriaId = null;
 let _finSelectedTipo = 'despesa';
@@ -22822,12 +22825,20 @@ function bindFinControls() {
 
 async function refreshFinanceiro() {
   const { start, end } = getFinPeriodRange();
-  const [cats, txs] = await Promise.all([
+  const [cats, txsRes, pendRes] = await Promise.all([
     fetchFinanceiroCategoriasSupabase(),
-    fetchFinanceiroTransacoesSupabase({ start, end })
+    fetchFinanceiroTransacoesSupabase({ start, end }),
+    fetchFinanceiroPendenciasSupabase()
   ]);
   _finCategorias = cats || [];
-  _finTransacoes = txs || [];
+  _finTransacoes = (txsRes && txsRes.data) || [];
+  _finTransacoesError = (txsRes && txsRes.error)
+    ? (txsRes.error.message || String(txsRes.error))
+    : null;
+  _finPendencias = (pendRes && pendRes.data) || [];
+  _finPendenciasError = (pendRes && pendRes.error)
+    ? (pendRes.error.message || String(pendRes.error))
+    : null;
   renderFinanceiro();
 }
 
@@ -22900,11 +22911,20 @@ function renderFinanceiro() {
 
   renderFinList(list);
   renderFinChart(list);
+  renderFinPendencias();
 }
 
 function renderFinList(list) {
   const wrap = document.getElementById('finList');
   if (!wrap) return;
+
+  if (_finTransacoesError) {
+    wrap.innerHTML = `<div class="fin-empty fin-error"><i data-lucide="alert-triangle"></i>
+      <p>Erro ao carregar o extrato: ${escapeHtml(_finTransacoesError)}</p>
+      <p class="fin-error-hint">Verifique permissões e políticas RLS da tabela <code>financeiro_transacoes</code>.</p></div>`;
+    initIcons();
+    return;
+  }
 
   if (!list.length) {
     wrap.innerHTML = '<div class="fin-empty"><i data-lucide="inbox"></i><p>Nenhuma transação no período</p></div>';
@@ -23096,6 +23116,167 @@ function renderFinChart(list) {
       }
     }
   });
+}
+
+/* --- Pendências (public.financeiro_pendencias) -------------------------
+   Somente LEITURA: nada é copiado para financeiro_transacoes, nenhum
+   status é alterado e nenhum registro é excluído. ---------------------- */
+
+function finPendFavorecido(p) {
+  return p.favorecido || p.favorecido_nome || p.beneficiario || '';
+}
+
+function finPendRawVenc(p) {
+  return p.vencimento || p.data_vencimento || p.vence_em || null;
+}
+
+// Normaliza o vencimento para 'YYYY-MM-DD'; null = sem data reconhecida.
+function finPendVencIso(p) {
+  const raw = finPendRawVenc(p);
+  if (!raw) return null;
+  const s = String(raw).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = s.match(/^(\d{2})[/-](\d{2})[/-](\d{4})/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  return null; // formato não reconhecido → tratado como "sem data" (nunca é escondido)
+}
+
+function finPendVencLabel(p) {
+  const iso = finPendVencIso(p);
+  if (iso) return { iso, label: finFormatDate(iso) };
+  const raw = finPendRawVenc(p);
+  return { iso: null, label: raw ? String(raw) : 'Sem data' };
+}
+
+function finPendTipoLabel(p) {
+  const t = String(p.tipo || '').trim();
+  return t || 'pendência';
+}
+
+function finPendIsReceita(p) {
+  return String(p.tipo || '').toLowerCase().includes('receita');
+}
+
+function getFinFilteredPendencias() {
+  const { start, end } = getFinPeriodRange();
+  const base = _finPendencias.filter(p => {
+    if (!finEmpresaMatches(finState.empresaId, p)) return false;
+    if (finState.userId !== 'all') {
+      if (finState.userId === 'sistema') {
+        if (p.user_id) return false;
+      } else if (p.user_id !== finState.userId) {
+        return false;
+      }
+    }
+    if (finState.search) {
+      const hay = `${p.descricao || ''} ${finPendFavorecido(p)}`.toLowerCase();
+      if (!hay.includes(finState.search)) return false;
+    }
+    return true;
+  });
+
+  const comData = [];
+  const semData = [];
+  base.forEach(p => {
+    const { iso } = finPendVencLabel(p);
+    if (!iso) { semData.push(p); return; }          // sem data: sempre visível
+    if (start && iso < start) return;               // fora do período: respeita filtro
+    if (end && iso > end) return;
+    comData.push(p);
+  });
+
+  const byVenc = (a, b) => {
+    const ia = finPendVencIso(a) || '';
+    const ib = finPendVencIso(b) || '';
+    if (ia === ib) return 0;
+    return ia < ib ? -1 : 1;
+  };
+  comData.sort(byVenc);
+  semData.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  return { comData, semData };
+}
+
+// Duplicatas por (tipo, descrição, favorecido, valor, vencimento).
+// Apenas CONTAGEM para exibição — nenhum registro é excluído.
+function finPendCountDuplicadas(rows) {
+  const counts = new Map();
+  rows.forEach(p => {
+    const key = [
+      String(p.tipo || '').trim().toLowerCase(),
+      String(p.descricao || '').trim().toLowerCase(),
+      finPendFavorecido(p).trim().toLowerCase(),
+      Number(p.valor) || 0,
+      finPendVencIso(p) || ''
+    ].join('|');
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  let extras = 0;
+  counts.forEach(n => { if (n > 1) extras += n - 1; });
+  return extras;
+}
+
+function finPendRowHtml(p) {
+  const isReceita = finPendIsReceita(p);
+  const tipo = finPendTipoLabel(p);
+  const { label } = finPendVencLabel(p);
+  const fav = finPendFavorecido(p);
+  const status = String(p.status || p.situacao || '').trim();
+  const statusCls = status ? ` fin-badge-status-${finSlugify(status)}` : '';
+  const valor = Number(p.valor) || 0;
+  const desc = p.descricao || 'Sem descrição';
+  const empresa = finEmpresaLabel(p.empresa_id);
+  const iconBg = isReceita ? 'rgba(16,185,129,.15)' : 'rgba(239,68,68,.15)';
+  const iconColor = isReceita ? '#10B981' : '#EF4444';
+  return `
+      <div class="fin-row ${isReceita ? 'receita' : 'despesa'}">
+        <span class="fin-row-icon" style="background:${iconBg};color:${iconColor}"><i data-lucide="${isReceita ? 'trending-up' : 'trending-down'}"></i></span>
+        <div class="fin-row-main">
+          <strong>${escapeHtml(desc)}</strong>
+          <span class="fin-row-meta">${fav ? 'Favorecido: ' + escapeHtml(fav) + ' · ' : ''}Vencimento: ${escapeHtml(label)}${empresa ? ' · ' + escapeHtml(empresa) : ''} <span class="fin-badge">${escapeHtml(tipo)}</span>${status ? `<span class="fin-badge${statusCls}">${escapeHtml(status)}</span>` : ''}</span>
+        </div>
+        <span class="fin-row-value ${isReceita ? 'receita' : 'despesa'}">${isReceita ? '+' : '−'} ${finFormatBRL(valor)}</span>
+      </div>`;
+}
+
+function renderFinPendencias() {
+  const wrap = document.getElementById('finPendList');
+  const count = document.getElementById('finPendCount');
+  if (!wrap) return;
+
+  if (_finPendenciasError) {
+    if (count) count.textContent = 'erro na consulta';
+    wrap.innerHTML = `<div class="fin-empty fin-error"><i data-lucide="alert-triangle"></i>
+      <p>Erro ao carregar pendências: ${escapeHtml(_finPendenciasError)}</p>
+      <p class="fin-error-hint">Verifique permissões e políticas RLS da tabela <code>financeiro_pendencias</code>.</p></div>`;
+    initIcons();
+    return;
+  }
+
+  const { comData, semData } = getFinFilteredPendencias();
+  const total = comData.length + semData.length;
+  if (count) count.textContent = `${total} pendência${total === 1 ? '' : 's'}`;
+
+  if (!total) {
+    wrap.innerHTML = '<div class="fin-empty"><i data-lucide="inbox"></i><p>Nenhuma pendência no período</p></div>';
+    initIcons();
+    return;
+  }
+
+  const duplicadas = finPendCountDuplicadas(_finPendencias);
+  let html = '';
+  if (duplicadas > 0) {
+    html += `<div class="fin-pend-dup">${duplicadas} registro(s) com possível duplicidade (mesmo tipo, descrição, favorecido, valor e vencimento) — nada foi excluído.</div>`;
+  }
+  if (comData.length) {
+    html += `<div class="fin-pend-group">Vencimento no período (${comData.length})</div>` + comData.map(finPendRowHtml).join('');
+  }
+  if (semData.length) {
+    html += `<div class="fin-pend-group">Sem data (${semData.length})</div>` + semData.map(finPendRowHtml).join('');
+  }
+
+  wrap.innerHTML = html;
+  initIcons();
 }
 
 function clearFinError(name) {
@@ -24301,12 +24482,19 @@ function bindFinViewTabs() {
       const view = tab.dataset.finview;
       const extrato = document.getElementById('finViewExtrato');
       const recor = document.getElementById('finViewRecorrentes');
+      const pend = document.getElementById('finViewPendencias');
+      const toolbar = document.getElementById('finToolbar');
+      const newBtn = document.getElementById('finNewBtn');
       if (extrato) extrato.hidden = view !== 'extrato';
       if (recor) recor.hidden = view !== 'recorrentes';
+      if (pend) pend.hidden = view !== 'pendencias';
+      if (toolbar) toolbar.hidden = view === 'recorrentes';
+      if (newBtn) newBtn.hidden = view === 'pendencias';
       if (view === 'recorrentes') {
         bindDespesasControls();
         initDespesasRecorrentes();
       }
+      if (view === 'pendencias') renderFinPendencias();
     });
   });
 }

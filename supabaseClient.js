@@ -1282,7 +1282,7 @@ async function deleteFinanceiroCategoriaSupabase(id) {
 }
 
 async function fetchFinanceiroTransacoesSupabase(range) {
-  if (!_supabase) return [];
+  if (!_supabase) return { data: [], error: { message: 'Supabase client não inicializado.' } };
 
   let query = _supabase
     .from('financeiro_transacoes')
@@ -1296,12 +1296,34 @@ async function fetchFinanceiroTransacoesSupabase(range) {
   const { data, error } = await query;
 
   if (error) {
-    console.error('[Supabase] Erro ao buscar transações financeiras:', error.message, error.code);
-    return [];
+    // Erro (permissão/RLS/coluna) NÃO deve ser confundido com lista vazia:
+    // a tela exibe a mensagem em vez de um extrato vazio.
+    console.error('[Supabase] Erro ao buscar transações financeiras:', error.message, error.code, error.hint || '');
+    return { data: [], error };
   }
 
   console.log('[Supabase] Transações financeiras encontradas:', (data || []).length);
-  return data || [];
+  return { data: data || [], error: null };
+}
+
+async function fetchFinanceiroPendenciasSupabase() {
+  if (!_supabase) return { data: [], error: { message: 'Supabase client não inicializado.' } };
+
+  // Sem filtro de período no servidor: "vencimento" pode ser nulo e uma
+  // comparação gte/lte excluiria o registro silenciosamente (NULL never
+  // matches). O período é aplicado no cliente; registros sem data ficam
+  // no grupo "Sem data" da aba Pendências.
+  const { data, error } = await _supabase
+    .from('financeiro_pendencias')
+    .select('*');
+
+  if (error) {
+    console.error('[Supabase] Erro ao buscar pendências financeiras:', error.message, error.code, error.hint || '');
+    return { data: [], error };
+  }
+
+  console.log('[Supabase] Pendências financeiras encontradas:', (data || []).length);
+  return { data: data || [], error: null };
 }
 
 async function insertFinanceiroTransacaoSupabase(data) {
@@ -1453,6 +1475,7 @@ window.fetchFinanceiroCategoriasSupabase = fetchFinanceiroCategoriasSupabase;
 window.insertFinanceiroCategoriaSupabase = insertFinanceiroCategoriaSupabase;
 window.deleteFinanceiroCategoriaSupabase = deleteFinanceiroCategoriaSupabase;
 window.fetchFinanceiroTransacoesSupabase = fetchFinanceiroTransacoesSupabase;
+window.fetchFinanceiroPendenciasSupabase = fetchFinanceiroPendenciasSupabase;
 window.insertFinanceiroTransacaoSupabase = insertFinanceiroTransacaoSupabase;
 window.updateFinanceiroTransacaoSupabase = updateFinanceiroTransacaoSupabase;
 window.deleteFinanceiroTransacaoSupabase = deleteFinanceiroTransacaoSupabase;
